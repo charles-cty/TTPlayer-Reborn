@@ -1,0 +1,34 @@
+# ---- 构建产物 ----
+build/
+build*/
+build-*/
+out/
+*/build/
+
+# ---- CMake ----
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+CMakeUserPresets.json
+
+# ---- Qt ----
+*_autogen/
+*.moc
+*.moc.*
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+
+# ---- IDE / 编辑器 ----
+.vscode/
+.idea/
+*.user
+*.swp
+*~
+.DS_Store
+
+# ---- 运行时生成 ----
+PlayList/
+*.log
