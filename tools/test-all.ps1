@@ -19,7 +19,8 @@
 [CmdletBinding()]
 param(
     [switch]$SkipLayer1,
-    [switch]$SkipFPCUnit
+    [switch]$SkipFPCUnit,
+    [switch]$SkipSmoke    # 跳过 GUI 冒烟测试（无显示环境时使用）
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,6 +53,22 @@ if (-not $SkipFPCUnit) {
     }
     & $testsExe -a --format=plain
     if ($LASTEXITCODE -ne 0) { $failed += 'FPCUnit' }
+}
+
+# ── Layer 5：GUI 冒烟测试（pywinauto，需要可见桌面会话）────────────────────
+if (-not $SkipSmoke) {
+    Write-Host ''
+    Write-Host '── Layer 5  GUI 冒烟（skinpreview + pywinauto）──' -ForegroundColor Cyan
+    $smokeScript = Join-Path $PSScriptRoot 'smoke_skinpreview.py'
+    $pyExe = 'C:\Program Files\Python312\python.exe'
+    if (-not (Test-Path $pyExe)) {
+        Write-Host '  [跳过] 未找到 Python，请安装 python.org Python 3.12+' -ForegroundColor Yellow
+    } elseif (-not (Test-Path (Join-Path $RepoRoot 'pascal\bin\skinpreview.exe'))) {
+        Write-Host '  [跳过] skinpreview.exe 未构建，请先运行 tools\build-pascal.ps1' -ForegroundColor Yellow
+    } else {
+        & $pyExe $smokeScript
+        if ($LASTEXITCODE -ne 0) { $failed += 'Smoke' }
+    }
 }
 
 # ── 汇总 ─────────────────────────────────────────────────────────────────────

@@ -31,7 +31,7 @@ foreach ($pkg in $Packages) {
 }
 
 # 工程列表（按依赖顺序）
-$Projects = @('ttdump', 'tests')
+$Projects = @('ttdump', 'skinpreview', 'tests')
 if ($Project) { $Projects = @($Project) }
 
 foreach ($proj in $Projects) {
