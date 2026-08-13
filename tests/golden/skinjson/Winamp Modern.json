@@ -1,0 +1,3485 @@
+{
+    "author": "很高很瘦",
+    "email": "tallboythinboy@163.com",
+    "equalizer_window": {
+        "background_image_name": "equalizer_skin.bmp",
+        "background_size": {
+            "h": 145,
+            "w": 290
+        },
+        "default_position": {
+            "h": 145,
+            "w": 290,
+            "x": 290,
+            "y": 145
+        },
+        "elements": [
+            {
+                "align": "right",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "close.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 11,
+                    "x": 273,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "close",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "eq_enabled.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 13,
+                    "w": 38,
+                    "x": 14,
+                    "y": 80
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 13,
+                        "w": 38
+                    },
+                    {
+                        "h": 13,
+                        "w": 38
+                    },
+                    {
+                        "h": 13,
+                        "w": 38
+                    },
+                    {
+                        "h": 13,
+                        "w": 38
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "enabled",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "eq_profile.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 13,
+                    "w": 51,
+                    "x": 14,
+                    "y": 95
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 13,
+                        "w": 51
+                    },
+                    {
+                        "h": 13,
+                        "w": 51
+                    },
+                    {
+                        "h": 13,
+                        "w": 51
+                    },
+                    {
+                        "h": 13,
+                        "w": 51
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "profile",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "eq_reset.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 13,
+                    "w": 48,
+                    "x": 14,
+                    "y": 110
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 13,
+                        "w": 51
+                    },
+                    {
+                        "h": 13,
+                        "w": 51
+                    },
+                    {
+                        "h": 13,
+                        "w": 51
+                    },
+                    {
+                        "h": 13,
+                        "w": 51
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "reset",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 69,
+                    "x": 5,
+                    "y": 40
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "eq_thumb1.bmp",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    {
+                        "h": 9,
+                        "w": 18
+                    },
+                    {
+                        "h": 9,
+                        "w": 18
+                    },
+                    {
+                        "h": 9,
+                        "w": 18
+                    },
+                    {
+                        "h": 9,
+                        "w": 18
+                    }
+                ],
+                "type": "balance",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 69,
+                    "x": 5,
+                    "y": 59
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "eq_thumb1.bmp",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    {
+                        "h": 9,
+                        "w": 18
+                    },
+                    {
+                        "h": 9,
+                        "w": 18
+                    },
+                    {
+                        "h": 9,
+                        "w": 18
+                    },
+                    {
+                        "h": 9,
+                        "w": 18
+                    }
+                ],
+                "type": "surround",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 80,
+                    "w": 8,
+                    "x": 78,
+                    "y": 32
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "eq_thumb.bmp",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    {
+                        "h": 16,
+                        "w": 8
+                    },
+                    {
+                        "h": 16,
+                        "w": 8
+                    },
+                    {
+                        "h": 16,
+                        "w": 8
+                    },
+                    {
+                        "h": 16,
+                        "w": 8
+                    }
+                ],
+                "type": "preamp",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 80,
+                    "w": 8,
+                    "x": 124,
+                    "y": 32
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "eq_thumb.bmp",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    {
+                        "h": 16,
+                        "w": 8
+                    },
+                    {
+                        "h": 16,
+                        "w": 8
+                    },
+                    {
+                        "h": 16,
+                        "w": 8
+                    },
+                    {
+                        "h": 16,
+                        "w": 8
+                    }
+                ],
+                "type": "eqfactor",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            }
+        ],
+        "eq_interval": 8,
+        "hilight_color": null,
+        "resize_rect": {
+            "h": 0,
+            "w": 0,
+            "x": 0,
+            "y": 0
+        },
+        "resize_tile": false,
+        "type": "equalizer_window"
+    },
+    "layout_config": {
+        "equalizer_window": {
+            "geometry": {
+                "h": 145,
+                "w": 290,
+                "x": 953,
+                "y": 607
+            },
+            "has_geometry": true,
+            "has_visible": false,
+            "visible": false
+        },
+        "lyric_window": {
+            "geometry": {
+                "h": 145,
+                "w": 290,
+                "x": 953,
+                "y": 752
+            },
+            "has_geometry": true,
+            "has_visible": false,
+            "visible": false
+        },
+        "mini_window": {
+            "geometry": {
+                "h": 25,
+                "w": 358,
+                "x": 794,
+                "y": 507
+            },
+            "has_geometry": true,
+            "has_visible": false,
+            "visible": false
+        },
+        "player_window": {
+            "geometry": {
+                "h": 145,
+                "w": 290,
+                "x": 953,
+                "y": 239
+            },
+            "has_geometry": true,
+            "has_visible": false,
+            "visible": false
+        },
+        "playlist_window": {
+            "geometry": {
+                "h": 223,
+                "w": 290,
+                "x": 953,
+                "y": 384
+            },
+            "has_geometry": true,
+            "has_visible": false,
+            "visible": false
+        }
+    },
+    "lyric_config": {
+        "bkgnd_color": "#1c3d7d",
+        "font": {
+            "bold": false,
+            "family": "宋体",
+            "italic": false,
+            "pixel_size": 12
+        },
+        "hilight_color": "#ffffff",
+        "text_color": "#80b0ff"
+    },
+    "lyric_window": {
+        "background_image_name": "lyric_skin.bmp",
+        "background_size": {
+            "h": 88,
+            "w": 290
+        },
+        "default_position": {
+            "h": 145,
+            "w": 290,
+            "x": 290,
+            "y": 0
+        },
+        "elements": [
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": "#000000",
+                "position": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": "#000000",
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "mini_border",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "center",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "lyric_title.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 17,
+                    "w": 359,
+                    "x": 220,
+                    "y": 0
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    {
+                        "h": 17,
+                        "w": 59
+                    },
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "title",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "right",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "close.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 11,
+                    "x": 273,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "close",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "right",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "ontop.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 11,
+                    "x": 261,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "ontop",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 54,
+                    "w": 278,
+                    "x": 6,
+                    "y": 24
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "lyric",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            }
+        ],
+        "eq_interval": 2,
+        "hilight_color": null,
+        "resize_rect": {
+            "h": 12,
+            "w": 220,
+            "x": 30,
+            "y": 24
+        },
+        "resize_tile": false,
+        "type": "lyric_window"
+    },
+    "mini_window": {
+        "background_image_name": "mini_skin.bmp",
+        "background_size": {
+            "h": 25,
+            "w": 358
+        },
+        "default_position": {
+            "h": 0,
+            "w": 0,
+            "x": 0,
+            "y": 0
+        },
+        "elements": [
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 16,
+                    "w": 16,
+                    "x": 8,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "icon",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "mini_prev.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 21,
+                    "w": 20,
+                    "x": 28,
+                    "y": 2
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 20,
+                        "w": 20
+                    },
+                    {
+                        "h": 20,
+                        "w": 20
+                    },
+                    {
+                        "h": 20,
+                        "w": 20
+                    },
+                    {
+                        "h": 20,
+                        "w": 20
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "prev",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "mini_play.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 21,
+                    "w": 21,
+                    "x": 48,
+                    "y": 2
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 20,
+                        "w": 21
+                    },
+                    {
+                        "h": 20,
+                        "w": 21
+                    },
+                    {
+                        "h": 20,
+                        "w": 21
+                    },
+                    {
+                        "h": 20,
+                        "w": 21
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "play",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "mini_pause.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 21,
+                    "w": 21,
+                    "x": 48,
+                    "y": 2
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 20,
+                        "w": 21
+                    },
+                    {
+                        "h": 20,
+                        "w": 21
+                    },
+                    {
+                        "h": 20,
+                        "w": 21
+                    },
+                    {
+                        "h": 20,
+                        "w": 21
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "pause",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "mini_stop.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 21,
+                    "w": 22,
+                    "x": 68,
+                    "y": 2
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 20,
+                        "w": 21
+                    },
+                    {
+                        "h": 20,
+                        "w": 21
+                    },
+                    {
+                        "h": 20,
+                        "w": 21
+                    },
+                    {
+                        "h": 20,
+                        "w": 21
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "stop",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "mini_next.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 21,
+                    "w": 20,
+                    "x": 90,
+                    "y": 2
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 20,
+                        "w": 20
+                    },
+                    {
+                        "h": 20,
+                        "w": 20
+                    },
+                    {
+                        "h": 20,
+                        "w": 20
+                    },
+                    {
+                        "h": 20,
+                        "w": 20
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "next",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "mini_mute.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 11,
+                    "w": 11,
+                    "x": 125,
+                    "y": 9
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 11,
+                        "w": 11
+                    },
+                    {
+                        "h": 11,
+                        "w": 11
+                    },
+                    {
+                        "h": 11,
+                        "w": 11
+                    },
+                    {
+                        "h": 11,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "mute",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "close.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 11,
+                    "x": 341,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "exit",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "mini_normal.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 11,
+                    "x": 329,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "minimode",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "minimize.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 11,
+                    "x": 305,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "minimize",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "ontop.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 11,
+                    "x": 317,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "lyric",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 12,
+                    "w": 65,
+                    "x": 218,
+                    "y": 5
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "visual",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "mini_volume_fill.bmp",
+                "fill_size": {
+                    "h": 2,
+                    "w": 48
+                },
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 7,
+                    "w": 52,
+                    "x": 142,
+                    "y": 15
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "mini_thumb.bmp",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    {
+                        "h": 7,
+                        "w": 12
+                    },
+                    {
+                        "h": 7,
+                        "w": 12
+                    },
+                    {
+                        "h": 7,
+                        "w": 12
+                    },
+                    {
+                        "h": 7,
+                        "w": 12
+                    }
+                ],
+                "type": "volume",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            }
+        ],
+        "eq_interval": 2,
+        "hilight_color": null,
+        "resize_rect": {
+            "h": 0,
+            "w": 0,
+            "x": 0,
+            "y": 0
+        },
+        "resize_tile": false,
+        "type": "mini_window"
+    },
+    "name": "Winamp Modern",
+    "player_window": {
+        "background_image_name": "player_skin.bmp",
+        "background_size": {
+            "h": 145,
+            "w": 290
+        },
+        "default_position": {
+            "h": 0,
+            "w": 0,
+            "x": 0,
+            "y": 0
+        },
+        "elements": [
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "play.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 29,
+                    "w": 30,
+                    "x": 35,
+                    "y": 112
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "play",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "pause.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 29,
+                    "w": 30,
+                    "x": 35,
+                    "y": 112
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "pause",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "stop.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 29,
+                    "w": 30,
+                    "x": 65,
+                    "y": 112
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "stop",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "prev.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 29,
+                    "w": 30,
+                    "x": 5,
+                    "y": 112
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "prev",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "next.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 29,
+                    "w": 30,
+                    "x": 95,
+                    "y": 112
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    },
+                    {
+                        "h": 29,
+                        "w": 30
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "next",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "mute.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 13,
+                    "w": 13,
+                    "x": 136,
+                    "y": 124
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 13,
+                        "w": 13
+                    },
+                    {
+                        "h": 13,
+                        "w": 13
+                    },
+                    {
+                        "h": 13,
+                        "w": 13
+                    },
+                    {
+                        "h": 13,
+                        "w": 13
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "mute",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "open.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 23,
+                    "w": 28,
+                    "x": 248,
+                    "y": 65
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 23,
+                        "w": 28
+                    },
+                    {
+                        "h": 23,
+                        "w": 28
+                    },
+                    {
+                        "h": 23,
+                        "w": 28
+                    },
+                    {
+                        "h": 23,
+                        "w": 28
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "open",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "lyric.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 13,
+                    "w": 22,
+                    "x": 202,
+                    "y": 94
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 13,
+                        "w": 22
+                    },
+                    {
+                        "h": 13,
+                        "w": 22
+                    },
+                    {
+                        "h": 13,
+                        "w": 22
+                    },
+                    {
+                        "h": 13,
+                        "w": 22
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "lyric",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "equalizer.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 13,
+                    "w": 22,
+                    "x": 229,
+                    "y": 94
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 13,
+                        "w": 22
+                    },
+                    {
+                        "h": 13,
+                        "w": 22
+                    },
+                    {
+                        "h": 13,
+                        "w": 22
+                    },
+                    {
+                        "h": 13,
+                        "w": 22
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "equalizer",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "playlist.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 13,
+                    "w": 22,
+                    "x": 256,
+                    "y": 94
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 13,
+                        "w": 22
+                    },
+                    {
+                        "h": 13,
+                        "w": 22
+                    },
+                    {
+                        "h": 13,
+                        "w": 22
+                    },
+                    {
+                        "h": 13,
+                        "w": 22
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "playlist",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "minimize.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 11,
+                    "x": 249,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "minimize",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "minimode.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 11,
+                    "x": 261,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "minimode",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "close.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 11,
+                    "x": 273,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "exit",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "progress_fill.bmp",
+                "fill_size": {
+                    "h": 4,
+                    "w": 183
+                },
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 11,
+                    "w": 183,
+                    "x": 8,
+                    "y": 95
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "progress_thumb.bmp",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    {
+                        "h": 9,
+                        "w": 30
+                    },
+                    {
+                        "h": 9,
+                        "w": 30
+                    },
+                    {
+                        "h": 9,
+                        "w": 30
+                    },
+                    {
+                        "h": 9,
+                        "w": 30
+                    }
+                ],
+                "type": "progress",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "volume_fill.bmp",
+                "fill_size": {
+                    "h": 4,
+                    "w": 81
+                },
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 9,
+                    "w": 83,
+                    "x": 158,
+                    "y": 129
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "thumb.bmp",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    {
+                        "h": 9,
+                        "w": 17
+                    },
+                    {
+                        "h": 9,
+                        "w": 17
+                    },
+                    {
+                        "h": 9,
+                        "w": 17
+                    },
+                    {
+                        "h": 9,
+                        "w": 17
+                    }
+                ],
+                "type": "volume",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 28,
+                    "w": 55,
+                    "x": 175,
+                    "y": 34
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "visual",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 16,
+                    "w": 16,
+                    "x": 266,
+                    "y": 26
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "icon",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": "#ffffff",
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "SimSun",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 12,
+                    "w": 215,
+                    "x": 17,
+                    "y": 67
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "info",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "left",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "number.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 3,
+                    "w": 65,
+                    "x": 26,
+                    "y": 39
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    {
+                        "h": 17,
+                        "w": 156
+                    },
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "led",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "right",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": "#ffffff",
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "SimSun",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 12,
+                    "w": 60,
+                    "x": 109,
+                    "y": 34
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "stereo",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "right",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": "#ffffff",
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "SimSun",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 12,
+                    "w": 60,
+                    "x": 109,
+                    "y": 50
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "status",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            }
+        ],
+        "eq_interval": 2,
+        "hilight_color": null,
+        "resize_rect": {
+            "h": 0,
+            "w": 0,
+            "x": 0,
+            "y": 0
+        },
+        "resize_tile": false,
+        "type": "player_window"
+    },
+    "playlist_config": {
+        "color_bkgnd": "#1c3d7d",
+        "color_bkgnd2": "#1c3d7d",
+        "color_duration": "#5877b8",
+        "color_hilight": "#ffffff",
+        "color_number": "#5877b8",
+        "color_select": "#6788c9",
+        "color_text": "#80b0ff",
+        "font": {
+            "bold": false,
+            "family": "Tahoma",
+            "italic": false,
+            "pixel_size": 11
+        },
+        "has_color_bkgnd": true,
+        "has_color_bkgnd2": true,
+        "has_color_duration": true,
+        "has_color_hilight": true,
+        "has_color_number": true,
+        "has_color_select": true,
+        "has_color_text": true,
+        "has_font": true
+    },
+    "playlist_window": {
+        "background_image_name": "playlist_skin.bmp",
+        "background_size": {
+            "h": 105,
+            "w": 290
+        },
+        "default_position": {
+            "h": 145,
+            "w": 290,
+            "x": 0,
+            "y": 145
+        },
+        "elements": [
+            {
+                "align": "center",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "playlist_title.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 18,
+                    "w": 66,
+                    "x": 122,
+                    "y": 0
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    {
+                        "h": 18,
+                        "w": 66
+                    },
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "title",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "right",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "close.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 10,
+                    "w": 11,
+                    "x": 273,
+                    "y": 4
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 4,
+                "state_sizes": [
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    },
+                    {
+                        "h": 10,
+                        "w": 11
+                    }
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "close",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "hot_playlist_toolbar.bmp",
+                "hot_size": {
+                    "h": 16,
+                    "w": 273
+                },
+                "icon_name": "",
+                "image_name": "playlist_toolbar.bmp",
+                "left_top_color": null,
+                "position": {
+                    "h": 16,
+                    "w": 273,
+                    "x": 1,
+                    "y": 18
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    {
+                        "h": 16,
+                        "w": 273
+                    },
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "toolbar",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "scrollbar_bar.bmp",
+                "bar_size": {
+                    "h": 18,
+                    "w": 15
+                },
+                "bkgnd_color": null,
+                "buttons_image_name": "scrollbar_button.bmp",
+                "buttons_size": {
+                    "h": 16,
+                    "w": 45
+                },
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "scrollbar_thumb.bmp",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    {
+                        "h": 18,
+                        "w": 15
+                    },
+                    {
+                        "h": 18,
+                        "w": 15
+                    },
+                    {
+                        "h": 18,
+                        "w": 15
+                    },
+                    {
+                        "h": 18,
+                        "w": 15
+                    }
+                ],
+                "type": "scrollbar",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            },
+            {
+                "align": "",
+                "bar_image_name": "",
+                "bar_size": null,
+                "bkgnd_color": null,
+                "buttons_image_name": "",
+                "buttons_size": null,
+                "color": null,
+                "fill_image_name": "",
+                "fill_size": null,
+                "font_family": "",
+                "font_size": 12,
+                "hot_image_name": "",
+                "hot_size": null,
+                "icon_name": "",
+                "image_name": "",
+                "left_top_color": null,
+                "position": {
+                    "h": 55,
+                    "w": 276,
+                    "x": 8,
+                    "y": 40
+                },
+                "resize_rect": {
+                    "h": 0,
+                    "w": 0,
+                    "x": 0,
+                    "y": 0
+                },
+                "resize_tile": false,
+                "right_bottom_color": null,
+                "selected_image_name": "",
+                "selected_size": null,
+                "state_count": 1,
+                "state_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "thumb_image_name": "",
+                "thumb_resize_center": 0,
+                "thumb_resize_tile": false,
+                "thumb_sizes": [
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "type": "playlist",
+                "use_frame_size_for_bounds": false,
+                "vertical": false
+            }
+        ],
+        "eq_interval": 2,
+        "hilight_color": null,
+        "resize_rect": {
+            "h": 1,
+            "w": 230,
+            "x": 30,
+            "y": 45
+        },
+        "resize_tile": false,
+        "type": "playlist_window"
+    },
+    "transparent_color": "#ff00ff",
+    "url": "http://www.tallboythinboy.com/",
+    "version": 2,
+    "visual_config": {
+        "blur": false,
+        "blur_scope_color": "#ffffff",
+        "blur_speed": 3,
+        "font": {
+            "bold": false,
+            "family": "Tahoma",
+            "italic": false,
+            "pixel_size": 11
+        },
+        "frames_per_sec": 30,
+        "spectrum_btm_color": "#ffffff",
+        "spectrum_mid_color": "#ffffff",
+        "spectrum_peak_color": "#ffffff",
+        "spectrum_top_color": "#ffffff",
+        "spectrum_wide": 1,
+        "text_color": "#c1aafd",
+        "type": 0
+    }
+}
