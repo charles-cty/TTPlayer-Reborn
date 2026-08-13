@@ -1,7 +1,70 @@
 #include "app/Application.h"
+#include "tools/SkinDumper.h"
+#include "tools/FrameDumper.h"
+#include <QApplication>
 #include <QByteArray>
+#include <QStringList>
+#include <QTextStream>
 
 namespace {
+
+// 从参数列表中取出 --key 后跟的值，取到后从列表中移除该键值对。
+QString takeOption(QStringList& args, const QString& key) {
+    const int idx = args.indexOf(key);
+    if (idx < 0 || idx + 1 >= args.size()) {
+        return {};
+    }
+    const QString value = args.at(idx + 1);
+    args.removeAt(idx + 1);
+    args.removeAt(idx);
+    return value;
+}
+
+// 测试辅助模式分发：--dump-skin 导出皮肤解析结果供 differential testing 使用。
+// 返回 -1 表示不是辅助模式，应继续正常启动播放器。
+int runToolMode(int argc, char** argv) {
+    QStringList args;
+    for (int i = 1; i < argc; ++i) {
+        args.append(QString::fromLocal8Bit(argv[i]));
+    }
+    if (!args.contains(QStringLiteral("--dump-skin")) &&
+        !args.contains(QStringLiteral("--dump-frames"))) {
+        return -1;
+    }
+
+    QTextStream err(stderr);
+
+    if (args.contains(QStringLiteral("--dump-frames"))) {
+        const QString skinPath = takeOption(args, QStringLiteral("--dump-frames"));
+        const QString outDir = takeOption(args, QStringLiteral("--outdir"));
+        if (skinPath.isEmpty() || outDir.isEmpty()) {
+            err << "usage: --dump-frames <skn|dir> --outdir <dir>\n";
+            return 1;
+        }
+        // 帧渲染同样离屏执行；固定 1x 缩放保证跨机器输出一致。
+        if (qgetenv("QT_QPA_PLATFORM").isEmpty()) {
+            qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
+        }
+        qputenv("QT_SCALE_FACTOR", QByteArrayLiteral("1"));
+        qputenv("QT_ENABLE_HIGHDPI_SCALING", QByteArrayLiteral("0"));
+        QApplication app(argc, argv);
+        return FrameDumper::run(skinPath, outDir);
+    }
+
+    const QString skinPath = takeOption(args, QStringLiteral("--dump-skin"));
+    const QString outPath = takeOption(args, QStringLiteral("--out"));
+    if (skinPath.isEmpty() || outPath.isEmpty()) {
+        err << "usage: --dump-skin <skn|dir> --out <file.json>\n";
+        return 1;
+    }
+
+    // QPixmap 需要 GUI 应用实例；离屏平台让该模式在无显示环境下也能运行。
+    if (qgetenv("QT_QPA_PLATFORM").isEmpty()) {
+        qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
+    }
+    QApplication app(argc, argv);
+    return SkinDumper::run(skinPath, outPath);
+}
 // 将常见环境变量值归一化为布尔值。
 // 例如 '1', 'true', 'yes', 'on' 都被视为真。
 bool isTruthy(const QByteArray& value) {
@@ -34,6 +97,12 @@ bool shouldForceXcbOnWayland() {
 } // 命名空间结束
 
 int main(int argc, char* argv[]) {
+    // 优先处理测试辅助模式（--dump-skin 等），它们不启动播放器界面。
+    const int toolResult = runToolMode(argc, argv);
+    if (toolResult >= 0) {
+        return toolResult;
+    }
+
     // 在 Wayland 环境下强制 Qt 使用 xcb 后端，避免某些平台出现异常。
     if (shouldForceXcbOnWayland()) {
         qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("xcb"));
