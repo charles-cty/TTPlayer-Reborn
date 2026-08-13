@@ -1,0 +1,3 @@
+[submodule "pascal/vendor/bgrabitmap"]
+	path = pascal/vendor/bgrabitmap
+	url = https://github.com/bgrabitmap/bgrabitmap.git
