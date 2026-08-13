@@ -42,7 +42,8 @@
 // SMTC (Windows.Media) \u9700\u8981 Windows SDK 10.0.15063+ \u4e14 MSVC/WRL \u5934\u6587\u4ef6\u53ef\u7528
 #  if defined(_WIN32_WINNT_WIN10) && _WIN32_WINNT >= _WIN32_WINNT_WIN10 \
       && __has_include(<systemmediatransportcontrolsinterop.h>) \
-      && __has_include(<wrl/client.h>)
+      && __has_include(<wrl/client.h>) \
+      && __has_include(<wrl/event.h>)
 #    define HAS_WIN_SMTC 1
 #    include <systemmediatransportcontrolsinterop.h>
 #    include <Windows.Media.h>

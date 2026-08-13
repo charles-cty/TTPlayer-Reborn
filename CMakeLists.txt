@@ -42,11 +42,12 @@ set(SOURCES
     src/audio/Decoder.cpp
     src/audio/DspChain.cpp
     src/audio/Equalizer.cpp
-    src/audio/Resampler.cpp
     src/audio/AudioOutput.cpp
     src/skin/SkinEngine.cpp
     src/skin/SkinParser.cpp
     src/skin/SkinButton.cpp
+    src/tools/SkinDumper.cpp
+    src/tools/FrameDumper.cpp
     src/ui/PlayerWindow.cpp
     src/ui/LyricWindow.cpp
     src/ui/EqualizerWindow.cpp
@@ -67,11 +68,12 @@ set(HEADERS
     src/audio/Decoder.h
     src/audio/DspChain.h
     src/audio/Equalizer.h
-    src/audio/Resampler.h
     src/audio/AudioOutput.h
     src/skin/SkinEngine.h
     src/skin/SkinParser.h
     src/skin/SkinButton.h
+    src/tools/SkinDumper.h
+    src/tools/FrameDumper.h
     src/ui/PlayerWindow.h
     src/ui/LyricWindow.h
     src/ui/EqualizerWindow.h

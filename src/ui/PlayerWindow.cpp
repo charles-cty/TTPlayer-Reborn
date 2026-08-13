@@ -199,6 +199,7 @@ void PlayerWindow::createButtons(const SkinWindow& skinWnd) {
         for (const auto& elem : skinWnd.elements) {
             if (elem.type == type) {
                 auto* btn = new SkinButton(this);
+                btn->setObjectName(type);  // 供测试设施按类型定位控件
                 btn->setSkinElement(elem);
                 btn->move(elem.position.topLeft());
                 btn->show();
@@ -265,6 +266,7 @@ void PlayerWindow::createSliders(const SkinWindow& skinWnd) {
     for (const auto& elem : skinWnd.elements) {
         if (elem.type == "progress") {
             sliderProgress_ = new SkinSlider(this);
+            sliderProgress_->setObjectName(elem.type);
             sliderProgress_->setSkinElement(elem);
             sliderProgress_->move(elem.position.topLeft());
             sliderProgress_->setRange(0, 1.0);
@@ -277,6 +279,7 @@ void PlayerWindow::createSliders(const SkinWindow& skinWnd) {
         }
         else if (elem.type == "volume") {
             sliderVolume_ = new SkinSlider(this);
+            sliderVolume_->setObjectName(elem.type);
             sliderVolume_->setSkinElement(elem);
             sliderVolume_->move(elem.position.topLeft());
             sliderVolume_->setRange(0, 100);

@@ -41,6 +41,9 @@ void SkinButton::setSkinElement(const SkinElement& element) {
 }
 
 int SkinButton::currentState() const {
+    if (visualStateOverride_ >= 0 && visualStateOverride_ <= 3) {
+        return visualStateOverride_;  // 测试钩子优先
+    }
     if (!isEnabled()) return 3;  // 已禁用
     if (toggleable_ && toggled_ && usePressedStateForToggle_ && lockVisualWhenToggled_) {
         return 2; // 锁定到切换视觉（按下状态）
@@ -172,7 +175,9 @@ void SkinSlider::paintEvent(QPaintEvent*) {
 
     // 以原始大小绘制滑块拇指
     int state = 0;
-    if (!isEnabled()) {
+    if (visualStateOverride_ >= 0 && visualStateOverride_ <= 3) {
+        state = visualStateOverride_;  // 测试钩子优先
+    } else if (!isEnabled()) {
         state = 3;
     } else if (dragging_) {
         state = 2;

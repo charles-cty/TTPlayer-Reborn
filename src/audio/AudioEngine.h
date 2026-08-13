@@ -1,7 +1,6 @@
 #pragma once
 #include "Decoder.h"
 #include "DspChain.h"
-#include "Resampler.h"
 #include "AudioOutput.h"
 #include <QObject>
 #include <QString>
@@ -81,7 +80,6 @@ private:
 
     Decoder decoder_;
     DspChain dsp_;
-    Resampler resampler_;
     AudioOutput output_;
 
     QMutex mutex_;

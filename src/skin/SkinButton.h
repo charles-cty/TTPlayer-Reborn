@@ -22,6 +22,10 @@ public:
     void setLockVisualWhenToggled(bool on) { lockVisualWhenToggled_ = on; update(); }
     bool isToggled() const { return toggled_; }
 
+    // 测试钩子：强制按指定视觉状态渲染（0-3），-1 恢复正常逻辑。
+    // 仅供 FrameDumper 等测试辅助设施使用，不影响交互行为。
+    void setVisualStateOverride(int state) { visualStateOverride_ = state; update(); }
+
 signals:
     void clicked();
     void toggled(bool checked);
@@ -39,6 +43,7 @@ private:
     QPixmap states_[4];  // 正常、悬停、按下、禁用 状态图
     QString align_;
     int stateCount_ = 1;
+    int visualStateOverride_ = -1;  // 测试钩子；-1 表示未启用
     bool hovered_ = false;
     bool pressed_ = false;
     bool toggleable_ = false;
@@ -58,6 +63,9 @@ public:
     void setValue(double value);
     double value() const { return value_; }
     void setVertical(bool v) { vertical_ = v; update(); }
+
+    // 测试钩子：强制按指定 thumb 视觉状态渲染（0-3），-1 恢复正常逻辑。
+    void setVisualStateOverride(int state) { visualStateOverride_ = state; update(); }
 
 signals:
     void valueChanged(double value);
@@ -81,6 +89,7 @@ private:
     QPixmap fillPixmap_;
     bool vertical_ = false;
     double min_ = 0, max_ = 1.0, value_ = 0;
+    int visualStateOverride_ = -1;  // 测试钩子；-1 表示未启用
     bool dragging_ = false;
     bool hovered_ = false;
 };
