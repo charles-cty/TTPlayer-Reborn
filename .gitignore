@@ -32,3 +32,14 @@ ui_*.h
 # ---- 运行时生成 ----
 PlayList/
 *.log
+
+# ---- Lazarus / FPC 构建产物 ----
+pascal/bin/
+pascal/lib/
+pascal/probe.lpi
+pascal/probe.lpr
+pascal/probebmp.lpi
+pascal/probebmp.lpr
+
+# ---- 测试临时产物（本地，不入库）----
+tests/artifacts/

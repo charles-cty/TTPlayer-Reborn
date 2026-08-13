@@ -1,0 +1,50 @@
+# TTPlayer Reborn — line ending policy
+#
+# 本仓库代码主要在 Windows 侧开发，统一使用 CRLF 作为工作区行尾。
+# 所有文本文件在仓库中以 CRLF 存储（eol=crlf），
+# 避免 WSL / Linux 环境写入 LF 后产生格式噪音。
+
+# 默认：所有文本文件 CRLF
+* text=auto eol=crlf
+
+# C++ 源代码
+*.cpp  text eol=crlf
+*.h    text eol=crlf
+*.c    text eol=crlf
+
+# Pascal / Lazarus
+*.pas  text eol=crlf
+*.lpi  text eol=crlf
+*.lpr  text eol=crlf
+*.lpk  text eol=crlf
+*.lfm  text eol=crlf
+
+# 构建 & 脚本
+CMakeLists.txt    text eol=crlf
+*.cmake           text eol=crlf
+*.ps1             text eol=crlf
+*.sh              text eol=lf
+
+# 数据 & 配置
+*.xml  text eol=crlf
+*.json text eol=crlf
+*.md   text eol=crlf
+*.txt  text eol=crlf
+*.ini  text eol=crlf
+*.yml  text eol=crlf
+*.yaml text eol=crlf
+.gitignore        text eol=crlf
+.gitattributes    text eol=crlf
+
+# 二进制文件——不做任何行尾转换
+*.skn  binary
+*.bmp  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.exe  binary
+*.dll  binary
+*.so   binary
+*.a    binary
+*.lib  binary
