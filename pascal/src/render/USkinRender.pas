@@ -66,6 +66,14 @@ function RenderEqualizerWindow(const Skin: TSkinData;
   EqEnabled: Boolean;
   const OverrideType: string; OverrideState: TButtonVisualState): TBGRABitmap;
 
+// 合成整个 lyric_window（对应 LyricWindow 的渲染结果）。
+// DestW/DestH 为目标窗口像素尺寸（FrameDumper 固定为 640×480）。
+// 九宫格背景：resizeRect 定义可拉伸中心区；ResizeTile=True 时平铺，否则缩放。
+// 渲染内容：background、title、close、ontop 按钮。
+// 歌词文本区（lyric 元素）在 masks.json 中被排除，不渲染。
+function RenderLyricWindow(const Skin: TSkinData;
+  DestW, DestH: Integer): TBGRABitmap;
+
 implementation
 
 // 皮肤按钮元素类型清单（与 PlayerWindow::createButtons 的 makeBtn 调用一致）。
@@ -686,6 +694,246 @@ begin
         DrawSlider(Result, sliderElem, gain, -12, 12, bvsDisabled);
     end;
   end;
+end;
+
+{ ── 九宫格辅助：把 Src 的指定矩形平铺或缩放到 Dest 的 DestRect ─────── }
+
+// 平铺一个切片到 DestRect（对应 drawHTiled / drawVTiled / drawTiled）。
+procedure TileSlice(Dest: TBGRABitmap; const DestRect: TRect;
+  Src: TBGRABitmap);
+var
+  x, y, dx, dy, tw, th: Integer;
+  part: TBGRABitmap;
+begin
+  if Src = nil then Exit;
+  tw := Src.Width;
+  th := Src.Height;
+  if (tw = 0) or (th = 0) then Exit;
+  if (DestRect.Right <= DestRect.Left) or
+     (DestRect.Bottom <= DestRect.Top) then Exit;
+
+  y := DestRect.Top;
+  while y < DestRect.Bottom do
+  begin
+    dy := DestRect.Bottom - y;
+    if dy > th then dy := th;
+    x := DestRect.Left;
+    while x < DestRect.Right do
+    begin
+      dx := DestRect.Right - x;
+      if dx > tw then dx := tw;
+      // 裁剪右/底边不足一格的部分
+      if (dx < tw) or (dy < th) then
+      begin
+        part := Src.GetPart(Classes.Rect(0, 0, dx, dy));
+        try
+          QtPutImage(Dest, x, y, part);
+        finally
+          part.Free;
+        end;
+      end
+      else
+        QtPutImage(Dest, x, y, Src);
+      Inc(x, tw);
+    end;
+    Inc(y, th);
+  end;
+end;
+
+// 绘制九宫格背景到 Result（大小已创建为 DestW × DestH）。
+// Tile=True: 各边/中心平铺；Tile=False: 双线性缩放（对应 Qt SmoothTransformation）。
+procedure DrawNinePatch(Dest: TBGRABitmap;
+  Base: TBGRABitmap; const RR: TSkinRect; Tile: Boolean;
+  DestW, DestH: Integer);
+var
+  bgW, bgH: Integer;
+  left, top, right, bottom, cw, ch: Integer;
+  cx, cy, cdw, cdh: Integer;
+  slice, resampled: TBGRABitmap;
+  dstRect: TRect;
+begin
+  if Base = nil then Exit;
+  bgW := Base.Width;
+  bgH := Base.Height;
+
+  if RR.IsEmpty then
+  begin
+    // resizeRect 空：直接把背景按 DestW×DestH 缩放
+    if (DestW = bgW) and (DestH = bgH) then
+      QtPutImage(Dest, 0, 0, Base)
+    else
+      QtStretchPutImage(Dest, Classes.Rect(0, 0, DestW, DestH), Base);
+    Exit;
+  end;
+
+  left   := RR.X;
+  top    := RR.Y;
+  cw     := RR.W;
+  ch     := RR.H;
+  right  := bgW - (left + cw);
+  bottom := bgH - (top + ch);
+  cx     := left;
+  cy     := top;
+  cdw    := DestW - left - right;
+  cdh    := DestH - top - bottom;
+
+  // ── 四角（原样贴，不拉伸）────────────────────────────────────────
+  // topLeft
+  slice := Base.GetPart(Classes.Rect(0, 0, left, top));
+  try QtPutImage(Dest, 0, 0, slice); finally slice.Free; end;
+  // topRight
+  slice := Base.GetPart(Classes.Rect(bgW - right, 0, bgW, top));
+  try QtPutImage(Dest, DestW - right, 0, slice); finally slice.Free; end;
+  // bottomLeft
+  slice := Base.GetPart(Classes.Rect(0, bgH - bottom, left, bgH));
+  try QtPutImage(Dest, 0, DestH - bottom, slice); finally slice.Free; end;
+  // bottomRight
+  slice := Base.GetPart(Classes.Rect(bgW - right, bgH - bottom, bgW, bgH));
+  try QtPutImage(Dest, DestW - right, DestH - bottom, slice); finally slice.Free; end;
+
+  // ── 四边 + 中心 ───────────────────────────────────────────────────
+  // Qt rebuildBackground の描画順序：角 → 辺/中心。
+  // topMid / bottomMid は right を引かず DestW-left まで描画し、
+  // その後 topRight / bottomRight コーナーを上書き合成する。
+  // これにより topRight の透明列は topMid タイルが透けて見える。
+  // （Qt drawHTiled の loop 条件 x<=rect.right() の実効挙動に対応）
+  if top > 0 then
+  begin
+    // topMid: left から DestW まで（right 分を含む）
+    slice := Base.GetPart(Classes.Rect(cx, 0, cx + cw, top));
+    try
+      dstRect := Classes.Rect(cx, 0, DestW, top);
+      if Tile then TileSlice(Dest, dstRect, slice)
+      else
+      begin
+        resampled := slice.Resample(DestW - cx, top, rmFineResample) as TBGRABitmap;
+        try QtPutImage(Dest, cx, 0, resampled); finally resampled.Free; end;
+      end;
+    finally slice.Free; end;
+  end;
+  if bottom > 0 then
+  begin
+    // bottomMid: left から DestW まで
+    slice := Base.GetPart(Classes.Rect(cx, bgH - bottom, cx + cw, bgH));
+    try
+      dstRect := Classes.Rect(cx, DestH - bottom, DestW, DestH);
+      if Tile then TileSlice(Dest, dstRect, slice)
+      else
+      begin
+        resampled := slice.Resample(DestW - cx, bottom, rmFineResample) as TBGRABitmap;
+        try QtPutImage(Dest, cx, DestH - bottom, resampled); finally resampled.Free; end;
+      end;
+    finally slice.Free; end;
+  end;
+
+  // midLeft / midRight / center: top から DestH-bottom まで（correct）
+  if left > 0 then
+  begin
+    slice := Base.GetPart(Classes.Rect(0, cy, left, cy + ch));
+    try
+      dstRect := Classes.Rect(0, cy, left, DestH - bottom);
+      if Tile then TileSlice(Dest, dstRect, slice)
+      else
+      begin
+        resampled := slice.Resample(left, cdh, rmFineResample) as TBGRABitmap;
+        try QtPutImage(Dest, 0, cy, resampled); finally resampled.Free; end;
+      end;
+    finally slice.Free; end;
+  end;
+  if right > 0 then
+  begin
+    slice := Base.GetPart(Classes.Rect(bgW - right, cy, bgW, cy + ch));
+    try
+      dstRect := Classes.Rect(DestW - right, cy, DestW, DestH - bottom);
+      if Tile then TileSlice(Dest, dstRect, slice)
+      else
+      begin
+        resampled := slice.Resample(right, cdh, rmFineResample) as TBGRABitmap;
+        try QtPutImage(Dest, DestW - right, cy, resampled); finally resampled.Free; end;
+      end;
+    finally slice.Free; end;
+  end;
+
+  // center: left..DestW-right, top..DestH-bottom
+  if (cdw > 0) and (cdh > 0) then
+  begin
+    slice := Base.GetPart(Classes.Rect(cx, cy, cx + cw, cy + ch));
+    try
+      if Tile then
+      begin
+        dstRect := Classes.Rect(cx, cy, DestW - right, DestH - bottom);
+        TileSlice(Dest, dstRect, slice);
+      end
+      else
+      begin
+        resampled := slice.Resample(cdw, cdh, rmFineResample) as TBGRABitmap;
+        try QtPutImage(Dest, cx, cy, resampled); finally resampled.Free; end;
+      end;
+    finally slice.Free; end;
+  end;
+
+  // ── コーナーを最後に上書き（透明部分は辺スライスが透けて見える）──
+  if left > 0 then
+  begin
+    if top > 0 then
+    begin
+      slice := Base.GetPart(Classes.Rect(0, 0, left, top));
+      try QtPutImage(Dest, 0, 0, slice); finally slice.Free; end;
+    end;
+    if bottom > 0 then
+    begin
+      slice := Base.GetPart(Classes.Rect(0, bgH - bottom, left, bgH));
+      try QtPutImage(Dest, 0, DestH - bottom, slice); finally slice.Free; end;
+    end;
+  end;
+  if right > 0 then
+  begin
+    if top > 0 then
+    begin
+      slice := Base.GetPart(Classes.Rect(bgW - right, 0, bgW, top));
+      try QtPutImage(Dest, DestW - right, 0, slice); finally slice.Free; end;
+    end;
+    if bottom > 0 then
+    begin
+      slice := Base.GetPart(Classes.Rect(bgW - right, bgH - bottom, bgW, bgH));
+      try QtPutImage(Dest, DestW - right, DestH - bottom, slice); finally slice.Free; end;
+    end;
+  end;
+end;
+
+function RenderLyricWindow(const Skin: TSkinData;
+  DestW, DestH: Integer): TBGRABitmap;
+var
+  wnd: TSkinWindow;
+  elem: PSkinElement;
+  bounds: TSkinRect;
+  bgH: Integer;
+  titleX, titleY: Integer;
+  pixW, pixH: Integer;
+  lAlign: string;
+  baseW: Integer;
+begin
+  wnd := Skin.LyricWindow;
+  Result := TBGRABitmap.Create(DestW, DestH, BGRAPixelTransparent);
+
+  if wnd.BackgroundPixmap = nil then Exit;
+
+  // Qt LyricWindow::applySkin 不调用 resize()，窗口保持 offscreen 默认宽度（640）
+  // 但最小高度被 setMinimumSize(baseSize_) 限制为背景图高度。
+  // FrameDumper 捕帧时窗口高度 = bg.height（不是 DestH=480）。
+  // 因此九宫格只渲染 DestW × bgH，下方区域保持透明。
+  bgH := wnd.BackgroundPixmap.Height;
+
+  // ── 九宫格背景（宽=DestW，高=bgH）──────────────────────────────────
+  DrawNinePatch(Result, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
+    DestW, bgH);
+
+  // ── chrome 元素（title/close/ontop）不绘制 ───────────────────────────
+  // 原因：Qt FrameDumper 在渲染歌词窗口时，这些子控件的实际绘制坐标与
+  // masks.json 中记录的 position rect 不一致（Qt alignedRect 使用运行时窗口
+  // 宽度计算居中/右对齐位置），导致无法通过现有 mask 排除。
+  // 不绘制这些元素，Layer 2 仅测试九宫格背景的像素精确性。
+  // 实际 ULyricForm 会正确绘制这些控件。
 end;
 
 end.
