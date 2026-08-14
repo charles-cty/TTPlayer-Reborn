@@ -10,7 +10,7 @@ uses
   Interfaces,  // 拉入平台 widgetset（Win32/GTK 等），必须放在 Forms 之前
   Classes, SysUtils, Forms, Controls, StdCtrls, ExtCtrls, Dialogs,
   LazFileUtils, LazUTF8,
-  USkinTypes, USkinLoader, UPlayerForm, UEqualizerForm, ULyricForm, UPlayerBackend;
+  USkinTypes, USkinLoader, UPlayerForm, UEqualizerForm, ULyricForm, UVisualWidget, UPlayerBackend;
 
 type
   TPreviewMainForm = class(TForm)

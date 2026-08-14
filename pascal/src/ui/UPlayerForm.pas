@@ -12,7 +12,7 @@ interface
 uses
   Classes, SysUtils, Forms, Controls, Graphics, LCLIntf, LCLType, LMessages,
   BGRABitmap, BGRABitmapTypes,
-  USkinTypes, USkinRender, UPlayerBackend;
+  USkinTypes, USkinRender, UPlayerBackend, UVisualWidget;
 
 type
   TPlayerForm = class(TForm)
@@ -42,6 +42,7 @@ type
     FSkin: ^TSkinData;         // 指向外部持有的皮肤数据
     FBackend: IPlayerBackend;
     FFrame: TBGRABitmap;       // 离屏合成缓冲
+    FVisual: TVisualWidget;    // 频谱/示波图子控件
 
     // 当前交互状态
     FHoveredType: string;      // 悬停的元素类型（''=无）
@@ -72,16 +73,19 @@ constructor TPlayerForm.Create(AOwner: TComponent; ABackend: IPlayerBackend);
 begin
   inherited CreateNew(AOwner);
 
-  FSkin := nil;
+  FSkin    := nil;
   FBackend := ABackend;
-  FFrame := nil;
+  FFrame   := nil;
 
   // 无边框、无标题栏、可置顶
   BorderStyle := bsNone;
-  FormStyle := fsNormal;
+  FormStyle   := fsNormal;
+  Color       := clBlack;
 
-  // 背景由 Paint 自行绘制，不要 LCL 默认背景
-  Color := clBlack;
+  // 频谱子控件（在 visual 元素区域内动画）
+  FVisual := TVisualWidget.Create(Self, ABackend);
+  FVisual.Parent := Self;
+  FVisual.Visible := False;  // ApplySkin 后按 visual 元素存在与否决定
 
   MouseLeave;
 end;
@@ -93,14 +97,13 @@ begin
 end;
 
 procedure TPlayerForm.ApplySkin(const ASkin: TSkinData);
+var
+  visualElem: PSkinElement;
 begin
   FSkin := @ASkin;
 
   if (ASkin.PlayerWindow.BackgroundPixmap <> nil) then
   begin
-    // bsNone 窗口 ClientWidth/Height 与 Width/Height 应相同，
-    // 但部分 LCL 版本在句柄已创建后 ClientWidth 赋值不可靠；
-    // 用 SetBounds 强制同步 Win32 窗口尺寸。
     SetBounds(Left, Top,
       ASkin.PlayerWindow.BackgroundPixmap.Width,
       ASkin.PlayerWindow.BackgroundPixmap.Height);
@@ -113,6 +116,18 @@ begin
   // 重建离屏缓冲
   FreeAndNil(FFrame);
   RenderFrame;
+
+  // 定位频谱子控件到 visual 元素区域
+  visualElem := ASkin.PlayerWindow.FindElement('visual');
+  if (visualElem <> nil) and (not visualElem^.Position.IsEmpty) then
+  begin
+    FVisual.SetVisualRect(visualElem^.Position);
+    FVisual.ApplyConfig(ASkin.VisualConfig);
+    FVisual.Visible := True;
+    FVisual.Mode    := vmSpectrum;
+  end
+  else
+    FVisual.Visible := False;
 
   Invalidate;
 end;
