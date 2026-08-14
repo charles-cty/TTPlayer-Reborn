@@ -173,79 +173,95 @@ def main() -> int:
         assert skin_count <= 20, f'皮肤数量异常（{skin_count}），可能目录路径错误'
         print(f'[smoke] 3/7  下拉框有 {skin_count} 个皮肤')
 
-        # ── 3. PlayerForm + EqualizerForm 两个子窗口 ─────────────────────
+        # ── 3. PlayerForm + EqualizerForm + LyricForm 三个子窗口 ──────────
         def proc_subwins():
             return [w for w in Desktop(backend='uia').windows(visible_only=True)
                     if w.process_id() == ctrl_win.process_id()
                        and w.handle != ctrl_win.handle]
 
         try:
-            wait_until(timeout=5, retry_interval=0.2,
-                func=lambda: len(proc_subwins()) >= 2)
+            wait_until(timeout=8, retry_interval=0.2,
+                func=lambda: len(proc_subwins()) >= 3)
         except PWATimeout:
             pass
 
         sub = proc_subwins()
-        assert len(sub) >= 2, \
-            f'期望 ≥2 个子窗口（PlayerForm + EqualizerForm），实际 {len(sub)}'
+        assert len(sub) >= 3, \
+            f'期望 ≥3 个子窗口（Player+EQ+Lyric），实际 {len(sub)}'
 
-        # 按面积升序：PlayerForm 通常比 EqualizerForm 小或相同
+        # 按面积升序：LyricForm 通常最小，Player 和 EQ 次之
         sub_sizes = [(physical_size(w.handle), i) for i, w in enumerate(sub)]
         sub_sizes.sort(key=lambda t: t[0][0] * t[0][1])
-        player_win = sub[sub_sizes[0][1]]
+        lyric_win  = sub[sub_sizes[0][1]]
+        player_win = sub[sub_sizes[1][1]]
         eq_win     = sub[sub_sizes[-1][1]]
 
+        lw, lh = physical_size(lyric_win.handle)
         pw, ph = physical_size(player_win.handle)
         ew, eh = physical_size(eq_win.handle)
         assert pw >= 100 and ph >= 50, f'PlayerForm 尺寸异常: {pw}×{ph}'
         assert ew >= 100 and eh >= 50, f'EqualizerForm 尺寸异常: {ew}×{eh}'
-        print(f'[smoke] 4/7  PlayerForm {pw}×{ph}  EqualizerForm {ew}×{eh}')
+        assert lw >= 100 and lh >= 30, f'LyricForm 尺寸异常: {lw}×{lh}'
+        print(f'[smoke] 4/7  Player {pw}×{ph}  EQ {ew}×{eh}  Lyric {lw}×{lh}')
 
-        # ── 4. 背景已渲染（PrintWindow 截图）────────────────────────────
+        # ── 4. 全部窗口背景已渲染（PrintWindow 截图）───────────────────
         img_p = grab_window(player_win.handle)
         img_e = grab_window(eq_win.handle)
+        img_l = grab_window(lyric_win.handle)
         assert img_p is not None, 'PlayerForm 截图失败'
         assert img_e is not None, 'EqualizerForm 截图失败'
+        assert img_l is not None, 'LyricForm 截图失败'
         save(img_p, 'player_default')
         save(img_e, 'equalizer_default')
+        save(img_l, 'lyric_default')
 
         sp = nonblank_spread(img_p)
         se = nonblank_spread(img_e)
+        sl = nonblank_spread(img_l)
         assert sp > 10, f'PlayerForm 近乎空白（spread={sp}），皮肤可能未渲染'
         assert se > 10, f'EqualizerForm 近乎空白（spread={se}），皮肤可能未渲染'
-        print(f'[smoke] 5/7  背景渲染 OK  player_spread={sp}  eq_spread={se}')
+        assert sl > 10, f'LyricForm 近乎空白（spread={sl}），皮肤可能未渲染'
+        print(f'[smoke] 5/7  背景渲染 OK  player={sp}  eq={se}  lyric={sl}')
 
-        # ── 5. 切换到第二个皮肤，两窗口应同步更新 ──────────────────────
+        # ── 5. 切换到第二个皮肤，三个窗口应同步更新 ────────────────────
         if skin_count > 1:
             select_combo_item(ctrl_win.handle, combo_hwnd, 1)
             time.sleep(0.8)
 
             sub2 = proc_subwins()
-            if len(sub2) >= 2:
+            if len(sub2) >= 3:
                 sub2_sizes = [(physical_size(w.handle), i)
                               for i, w in enumerate(sub2)]
                 sub2_sizes.sort(key=lambda t: t[0][0] * t[0][1])
-                p2 = sub2[sub2_sizes[0][1]]
+                l2 = sub2[sub2_sizes[0][1]]
+                p2 = sub2[sub2_sizes[1][1]]
                 e2 = sub2[sub2_sizes[-1][1]]
 
+                lw2, lh2 = physical_size(l2.handle)
                 pw2, ph2 = physical_size(p2.handle)
                 ew2, eh2 = physical_size(e2.handle)
                 img_p2 = grab_window(p2.handle)
                 img_e2 = grab_window(e2.handle)
+                img_l2 = grab_window(l2.handle)
                 if img_p2: save(img_p2, 'player_skin2')
                 if img_e2: save(img_e2, 'equalizer_skin2')
+                if img_l2: save(img_l2, 'lyric_skin2')
 
                 p_changed = (pw2, ph2) != (pw, ph)
                 e_changed = (ew2, eh2) != (ew, eh)
-                print(f'[smoke] 6/7  切换皮肤后 Player {pw2}×{ph2}'
-                      f'（{"已变化" if p_changed else "同前"}）  '
-                      f'EQ {ew2}×{eh2}（{"已变化" if e_changed else "同前"}）')
+                l_changed = (lw2, lh2) != (lw, lh)
+                print(f'[smoke] 6/7  切换皮肤  Player {"变化" if p_changed else "同前"}  '
+                      f'EQ {"变化" if e_changed else "同前"}  '
+                      f'Lyric {"变化" if l_changed else "同前"}')
 
-                # 验证 EQ 背景也重绘了
                 if img_e2:
                     se2 = nonblank_spread(img_e2)
                     assert se2 > 10, \
                         f'切换皮肤后 EqualizerForm 近乎空白（spread={se2}）'
+                if img_l2:
+                    sl2 = nonblank_spread(img_l2)
+                    assert sl2 > 10, \
+                        f'切换皮肤后 LyricForm 近乎空白（spread={sl2}）'
 
         # ── 6. 皮肤名出现在标题中 ────────────────────────────────────────
         new_title = ctrl_win.window_text()

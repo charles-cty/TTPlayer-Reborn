@@ -2,15 +2,15 @@ program skinpreview;
 
 {$mode objfpc}{$H+}
 
-// 皮肤预览工具：加载 Skin/ 目录下的皮肤，用 TPlayerForm / TEqualizerForm 实时显示。
-// 作为 PlayerWindow / EqualizerWindow 的开发脚手架，兼作目视验收工具。
+// 皮肤预览工具：加载 Skin/ 目录下的皮肤，用 TPlayerForm / TEqualizerForm / TLyricForm 实时显示。
+// 作为 PlayerWindow / EqualizerWindow / LyricWindow 的开发脚手架，兼作目视验收工具。
 
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   Interfaces,  // 拉入平台 widgetset（Win32/GTK 等），必须放在 Forms 之前
   Classes, SysUtils, Forms, Controls, StdCtrls, ExtCtrls, Dialogs,
   LazFileUtils, LazUTF8,
-  USkinTypes, USkinLoader, UPlayerForm, UEqualizerForm, UPlayerBackend;
+  USkinTypes, USkinLoader, UPlayerForm, UEqualizerForm, ULyricForm, UPlayerBackend;
 
 type
   TPreviewMainForm = class(TForm)
@@ -19,6 +19,7 @@ type
     FLabel: TLabel;
     FPlayerForm: TPlayerForm;
     FEqForm: TEqualizerForm;
+    FLyricForm: TLyricForm;
     FEngine: TSkinEngine;
     FBackend: TStubBackend;
     FRepoRoot: string;
@@ -54,6 +55,7 @@ destructor TPreviewMainForm.Destroy;
 begin
   FPlayerForm.Free;
   FEqForm.Free;
+  FLyricForm.Free;
   FEngine.Free;
   FBackend.Free;
   inherited Destroy;
@@ -132,7 +134,7 @@ begin
     Exit;
   end;
 
-  // 首次加载时创建 PlayerForm 和 EqualizerForm，此后复用
+  // 首次加载时创建 PlayerForm、EqualizerForm 和 LyricForm，此后复用
   if FPlayerForm = nil then
   begin
     FPlayerForm := TPlayerForm.Create(Self, FBackend);
@@ -145,8 +147,15 @@ begin
     FEqForm.Show;
   end;
 
+  if FLyricForm = nil then
+  begin
+    FLyricForm := TLyricForm.Create(Self, FBackend);
+    FLyricForm.Show;
+  end;
+
   FPlayerForm.ApplySkin(FEngine.SkinData);
   FEqForm.ApplySkin(FEngine.SkinData);
+  FLyricForm.ApplySkin(FEngine.SkinData);
   Caption := 'Skin Preview — ' + FEngine.SkinData.Name;
 end;
 

@@ -55,6 +55,13 @@ function RenderPlayerWindow(const Skin: TSkinData;
 // 公开供 UEqualizerForm 命中测试使用，与 RenderEqualizerWindow 保持一致。
 function EqFactorRect(const Elem: TSkinElement; Band, EqInterval: Integer): TSkinRect;
 
+// 九宫格背景绘制（公开供 ULyricForm 等使用）。
+// Tile=True: 各边/中心平铺；Tile=False: 双线性缩放。
+// 绘制范围为 DestW × DestH（已在 Dest 上直接合成）。
+procedure DrawNinePatch(Dest: TBGRABitmap;
+  Base: TBGRABitmap; const RR: TSkinRect; Tile: Boolean;
+  DestW, DestH: Integer);
+
 // 合成整个 equalizer_window（对应 EqualizerWindow 的渲染结果）。
 // EqGains: 10 波段增益 dB [-12..+12]；PreampGain 前置增益 dB；
 // BalanceValue [-100..+100]；SurroundValue [0..100]；
@@ -792,14 +799,14 @@ begin
   try QtPutImage(Dest, DestW - right, DestH - bottom, slice); finally slice.Free; end;
 
   // ── 四边 + 中心 ───────────────────────────────────────────────────
-  // Qt rebuildBackground の描画順序：角 → 辺/中心。
-  // topMid / bottomMid は right を引かず DestW-left まで描画し、
-  // その後 topRight / bottomRight コーナーを上書き合成する。
-  // これにより topRight の透明列は topMid タイルが透けて見える。
-  // （Qt drawHTiled の loop 条件 x<=rect.right() の実効挙動に対応）
+  // Qt rebuildBackground 的绘制顺序：角 → 边/中心。
+  // topMid / bottomMid 不减去 right，绘制到 DestW-left 为止，
+  // 之后 topRight / bottomRight 角片覆盖合成。
+  // 这样 topRight 的透明列由 topMid 瓦片透出。
+  // （对应 Qt drawHTiled 循环条件 x<=rect.right() 的实际行为）
   if top > 0 then
   begin
-    // topMid: left から DestW まで（right 分を含む）
+    // topMid: left 到 DestW（含 right 区域）
     slice := Base.GetPart(Classes.Rect(cx, 0, cx + cw, top));
     try
       dstRect := Classes.Rect(cx, 0, DestW, top);
@@ -813,7 +820,7 @@ begin
   end;
   if bottom > 0 then
   begin
-    // bottomMid: left から DestW まで
+    // bottomMid: left 到 DestW
     slice := Base.GetPart(Classes.Rect(cx, bgH - bottom, cx + cw, bgH));
     try
       dstRect := Classes.Rect(cx, DestH - bottom, DestW, DestH);
@@ -826,7 +833,7 @@ begin
     finally slice.Free; end;
   end;
 
-  // midLeft / midRight / center: top から DestH-bottom まで（correct）
+  // midLeft / midRight / center: top 到 DestH-bottom
   if left > 0 then
   begin
     slice := Base.GetPart(Classes.Rect(0, cy, left, cy + ch));
@@ -872,7 +879,7 @@ begin
     finally slice.Free; end;
   end;
 
-  // ── コーナーを最後に上書き（透明部分は辺スライスが透けて見える）──
+  // ── 角片最后覆盖（透明角由边缘切片透出）──
   if left > 0 then
   begin
     if top > 0 then
@@ -905,13 +912,7 @@ function RenderLyricWindow(const Skin: TSkinData;
   DestW, DestH: Integer): TBGRABitmap;
 var
   wnd: TSkinWindow;
-  elem: PSkinElement;
-  bounds: TSkinRect;
   bgH: Integer;
-  titleX, titleY: Integer;
-  pixW, pixH: Integer;
-  lAlign: string;
-  baseW: Integer;
 begin
   wnd := Skin.LyricWindow;
   Result := TBGRABitmap.Create(DestW, DestH, BGRAPixelTransparent);
