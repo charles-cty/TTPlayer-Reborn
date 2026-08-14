@@ -98,8 +98,12 @@ begin
 
   if (ASkin.PlayerWindow.BackgroundPixmap <> nil) then
   begin
-    ClientWidth  := ASkin.PlayerWindow.BackgroundPixmap.Width;
-    ClientHeight := ASkin.PlayerWindow.BackgroundPixmap.Height;
+    // bsNone 窗口 ClientWidth/Height 与 Width/Height 应相同，
+    // 但部分 LCL 版本在句柄已创建后 ClientWidth 赋值不可靠；
+    // 用 SetBounds 强制同步 Win32 窗口尺寸。
+    SetBounds(Left, Top,
+      ASkin.PlayerWindow.BackgroundPixmap.Width,
+      ASkin.PlayerWindow.BackgroundPixmap.Height);
   end;
 
   // 重建异形 Region

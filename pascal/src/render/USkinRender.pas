@@ -51,6 +51,21 @@ function RenderPlayerWindow(const Skin: TSkinData;
   const OverrideType: string; OverrideState: TButtonVisualState;
   ToggledMute: Boolean): TBGRABitmap;
 
+// 计算第 Band 个 eqfactor 滑块的实际 Position（X 按 eqInterval 偏移）。
+// 公开供 UEqualizerForm 命中测试使用，与 RenderEqualizerWindow 保持一致。
+function EqFactorRect(const Elem: TSkinElement; Band, EqInterval: Integer): TSkinRect;
+
+// 合成整个 equalizer_window（对应 EqualizerWindow 的渲染结果）。
+// EqGains: 10 波段增益 dB [-12..+12]；PreampGain 前置增益 dB；
+// BalanceValue [-100..+100]；SurroundValue [0..100]；
+// EqEnabled: 均衡器开关（对应 btnEnabled_ 的 toggled 状态）。
+// OverrideType/OverrideState: 强制单个按钮视觉状态（测试用），'' 表示不启用。
+function RenderEqualizerWindow(const Skin: TSkinData;
+  const EqGains: array of Double; PreampGain: Double;
+  BalanceValue, SurroundValue: Double;
+  EqEnabled: Boolean;
+  const OverrideType: string; OverrideState: TButtonVisualState): TBGRABitmap;
+
 implementation
 
 // 皮肤按钮元素类型清单（与 PlayerWindow::createButtons 的 makeBtn 调用一致）。
@@ -310,6 +325,8 @@ begin
     if Elem.Vertical then
     begin
       fillH := Trunc(Elem.Position.H * ratio);
+      // 夹取到 fill 图实际高度（防止 GetPart 收到负数 Y 导致行偏移）
+      if fillH > Elem.FillPixmap.Height then fillH := Elem.FillPixmap.Height;
       xOff := (Elem.Position.W - Elem.FillPixmap.Width) div 2;
       if fillH > 0 then
       begin
@@ -566,6 +583,109 @@ begin
   if ratio < 0 then ratio := 0;
   if ratio > 1 then ratio := 1;
   Result := MinV + ratio * (MaxV - MinV);
+end;
+
+// 均衡器按钮类型清单（对应 EqualizerWindow::applySkin 中处理的按钮元素）。
+const
+  kEqButtonTypes: array[0..3] of string = ('close', 'enabled', 'profile', 'reset');
+
+function EqFactorRect(const Elem: TSkinElement; Band, EqInterval: Integer): TSkinRect;
+begin
+  Result := Elem.Position;
+  Result.X := Elem.Position.X + Band * (Elem.Position.W + EqInterval);
+end;
+
+function RenderEqualizerWindow(const Skin: TSkinData;
+  const EqGains: array of Double; PreampGain: Double;
+  BalanceValue, SurroundValue: Double;
+  EqEnabled: Boolean;
+  const OverrideType: string; OverrideState: TButtonVisualState): TBGRABitmap;
+var
+  wnd: TSkinWindow;
+  i, band: Integer;
+  elem: PSkinElement;
+  bounds: TSkinRect;
+  state: TButtonVisualState;
+  sliderElem: TSkinElement;
+  bandRect: TSkinRect;
+  gain: Double;
+begin
+  wnd := Skin.EqualizerWindow;
+  if wnd.BackgroundPixmap = nil then
+    Exit(TBGRABitmap.Create(1, 1, BGRAPixelTransparent));
+
+  Result := TBGRABitmap.Create(wnd.BackgroundPixmap.Width,
+    wnd.BackgroundPixmap.Height, BGRAPixelTransparent);
+
+  // 背景
+  QtPutImage(Result, 0, 0, wnd.BackgroundPixmap);
+
+  // title：直接按 position 绘制，不做 hover/press 状态变换
+  elem := wnd.FindElement('title');
+  if (elem <> nil) and (elem^.StatePixmaps[0] <> nil) then
+    QtPutImage(Result, elem^.Position.X, elem^.Position.Y, elem^.StatePixmaps[0]);
+
+  // 按钮：close / enabled / profile / reset
+  for i := 0 to High(kEqButtonTypes) do
+  begin
+    elem := wnd.FindElement(kEqButtonTypes[i]);
+    if elem = nil then Continue;
+
+    state := bvsNormal;
+    if SameText(OverrideType, kEqButtonTypes[i]) then
+      state := OverrideState
+    else if SameText(kEqButtonTypes[i], 'enabled') and EqEnabled then
+      state := bvsPressed;  // usePressedStateForToggle
+
+    bounds := ButtonBounds(elem^);
+    DrawButton(Result, elem^, bounds, state);
+  end;
+
+  // preamp 滑块（Qt applySkin 显式调用 setVertical(true)，不依赖 XML 的 vertical 字段）。
+  // EqEnabled=False 时 Qt 调用 setEnabled(false) → 滑块用 bvsDisabled(state 3) 绘制 thumb。
+  elem := wnd.FindElement('preamp');
+  if elem <> nil then
+  begin
+    sliderElem := elem^;
+    sliderElem.Vertical := True;
+    if EqEnabled then
+      DrawSlider(Result, sliderElem, PreampGain, -12, 12, bvsNormal)
+    else
+      DrawSlider(Result, sliderElem, PreampGain, -12, 12, bvsDisabled);
+  end;
+
+  // balance 滑块（水平，-100..+100；禁用态不受 EqEnabled 影响）
+  elem := wnd.FindElement('balance');
+  if elem <> nil then
+    DrawSlider(Result, elem^, BalanceValue, -100, 100, bvsNormal);
+
+  // surround 滑块（水平，0..100）
+  elem := wnd.FindElement('surround');
+  if elem <> nil then
+    DrawSlider(Result, elem^, SurroundValue, 0, 100, bvsNormal);
+
+  // eqfactor：单个元素模板 → 10 个垂直滑块；EqEnabled=False 时 thumb 用 bvsDisabled。
+  elem := wnd.FindElement('eqfactor');
+  if elem <> nil then
+  begin
+    sliderElem := elem^;
+    for band := 0 to 9 do
+    begin
+      bandRect := EqFactorRect(elem^, band, wnd.EqInterval);
+      sliderElem.Position := bandRect;
+      sliderElem.Vertical := True;
+
+      if band < Length(EqGains) then
+        gain := EqGains[band]
+      else
+        gain := 0;
+
+      if EqEnabled then
+        DrawSlider(Result, sliderElem, gain, -12, 12, bvsNormal)
+      else
+        DrawSlider(Result, sliderElem, gain, -12, 12, bvsDisabled);
+    end;
+  end;
 end;
 
 end.

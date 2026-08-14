@@ -2,12 +2,14 @@ unit UTestLayer2;
 
 {$mode objfpc}{$H+}
 
-// Layer 2：渲染快照测试。用 USkinRender 离屏渲染 player_window 的各状态帧，
-// 与 Qt 版 golden PNG 逐像素比对（masks.json 中的文本/动画区域除外）。
+// Layer 2：渲染快照测试。用 USkinRender 离屏渲染 player_window / equalizer_window
+// 的各状态帧，与 Qt 版 golden PNG 逐像素比对（masks.json 中的文本/动画区域除外）。
 // 失败时输出 expected/actual/diff 三联 PNG 到 tests/artifacts/layer2/。
 //
-// 本阶段覆盖 USkinRender 已实现的合成（背景+按钮+滑块），
-// 对应 golden 帧：player__default / player__progress37 /
+// 覆盖帧：
+//   player__default / player__progress37 / player__hover-play /
+//   player__pressed-play / player__toggled-mute
+//   equalizer__default / equalizer__sliders
 // player__hover-play / player__pressed-play / player__toggled-mute。
 // equalizer/lyric/playlist 帧随后续窗口移植接入。
 
@@ -32,7 +34,8 @@ implementation
 var
   RepoRoot: string;
 
-function LoadMaskRects(const SkinName: string): TJSONArray;
+// 加载 masks.json 中指定 section（'player'/'equalizer'）的矩形列表。
+function LoadMaskSection(const SkinName, Section: string): TJSONArray;
 var
   path, content: string;
   fs: TFileStream;
@@ -51,13 +54,22 @@ begin
     fs.Free;
   end;
   data := GetJSON(content);
-  if data is TJSONObject then
-  begin
-    obj := TJSONObject(data);
-    if obj.IndexOfName('player') >= 0 then
-      Result := TJSONArray(obj.Extract(obj.IndexOfName('player')));
+  try
+    if data is TJSONObject then
+    begin
+      obj := TJSONObject(data);
+      if obj.IndexOfName(Section) >= 0 then
+        Result := TJSONArray(obj.Extract(obj.IndexOfName(Section)));
+    end;
+  finally
+    data.Free;
   end;
-  data.Free;
+end;
+
+// LoadMaskRects: 旧接口，加载 'player' section（兼容现有调用）
+function LoadMaskRects(const SkinName: string): TJSONArray;
+begin
+  Result := LoadMaskSection(SkinName, 'player');
 end;
 
 function InMask(X, Y: Integer; Masks: TJSONArray): Boolean;
@@ -75,8 +87,6 @@ begin
       Exit(True);
   end;
 end;
-
-// 单通道绝对差（含 alpha）
 function ChanDiff(A, B: Byte): Integer; inline;
 begin
   Result := Abs(Integer(A) - Integer(B));
@@ -174,8 +184,9 @@ procedure TSnapshotTest.CheckSkinFrames(const SkinName: string);
 var
   engine: TSkinEngine;
   frame: TBGRABitmap;
-  masks: TJSONArray;
+  masks, eqMasks: TJSONArray;
   sknPath: string;
+  eqGains: array[0..9] of Double;
 begin
   sknPath := RepoRoot + 'Skin' + PathDelim + SkinName + '.skn';
   if not FileExists(sknPath) then Exit;
@@ -223,6 +234,39 @@ begin
       CompareFrame(SkinName, 'player__toggled-mute', frame, masks);
     finally
       frame.Free;
+    end;
+
+    // ── 均衡器帧 ──────────────────────────────────────────────────────
+    // equalizer__default: 初始状态（gains=0, preamp=0, balance=0, surround=0）。
+    // equalizer__sliders: 各频段错落图案（对应 FrameDumper 的确定性 pattern[]）。
+    //   pattern = {-12,-6,0,6,12,6,0,-6,-12,0,6,3}，按 XML slider 顺序应用：
+    //   balance(-12), surround(clamp→0), preamp(0), eqfactor[0..9]
+    eqMasks := LoadMaskSection(SkinName, 'equalizer');
+    try
+      // equalizer__default: EQ 初始状态 — Qt 默认均衡器关闭（EqEnabled=False）
+      FillChar(eqGains, SizeOf(eqGains), 0);
+      frame := RenderEqualizerWindow(engine.SkinData,
+        eqGains, 0.0, 0.0, 0.0, False, '', bvsNormal);
+      try
+        CompareFrame(SkinName, 'equalizer__default', frame, eqMasks);
+      finally
+        frame.Free;
+      end;
+
+      // equalizer__sliders: EQ 仍关闭（FrameDumper 仅移动滑块，不改变开关状态）
+      eqGains[0] :=  6.0;  eqGains[1] := 12.0;  eqGains[2] :=  6.0;
+      eqGains[3] :=  0.0;  eqGains[4] := -6.0;  eqGains[5] := -12.0;
+      eqGains[6] :=  0.0;  eqGains[7] :=  6.0;  eqGains[8] :=  3.0;
+      eqGains[9] := -12.0;
+      frame := RenderEqualizerWindow(engine.SkinData,
+        eqGains, 0.0, -12.0, 0.0, False, '', bvsNormal);
+      try
+        CompareFrame(SkinName, 'equalizer__sliders', frame, eqMasks);
+      finally
+        frame.Free;
+      end;
+    finally
+      eqMasks.Free;
     end;
   finally
     masks.Free;
