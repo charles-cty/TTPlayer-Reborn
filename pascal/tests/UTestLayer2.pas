@@ -185,7 +185,7 @@ procedure TSnapshotTest.CheckSkinFrames(const SkinName: string);
 var
   engine: TSkinEngine;
   frame: TBGRABitmap;
-  masks, eqMasks, lyricMasks: TJSONArray;
+  masks, eqMasks, lyricMasks, plMasks: TJSONArray;
   extraMask: TJSONObject;
   titleElem: PSkinElement;
   titleDrawX: Integer;
@@ -282,6 +282,29 @@ begin
     //   3. Chrome 元素（title/close/ontop）绘制位置与 masks.json 的 position rect 不重合
     // TODO: 在 FrameDumper 中记录实际窗口尺寸，或改为以 baseSize 渲染，再补全此测试。
     { if engine.SkinData.LyricWindow.ResizeTile then ... }
+
+    // ── 播放列表窗口帧 ──────────────────────────────────────────────────
+    // playlist__default: 仅测试 resize_tile=True 皮肤。
+    // resize_tile=False 皮肤（ArcticAMP/HiFi/TT-07/Relunamp 等）使用 Qt
+    // SmoothTransformation 双线性缩放，与 BGRABitmap rfLinear 存在系统性差异，
+    // 参照 lyric__default 的处理方式跳过。
+    // FrameDumper 渲染 PlaylistWindow 时窗口保持 Qt 默认未显示尺寸（640×480），
+    // 因此 RenderPlaylistWindow 以 640×480 渲染。
+    if engine.SkinData.PlaylistWindow.ResizeTile then
+    begin
+      plMasks := LoadMaskSection(SkinName, 'playlist');
+      try
+        frame := RenderPlaylistWindow(engine.SkinData, 640, 480);
+        try
+          CompareFrame(SkinName, 'playlist__default', frame, plMasks);
+        finally
+          frame.Free;
+        end;
+      finally
+        plMasks.Free;
+      end;
+    end;
+    // TODO: playlist__default resize_tile=False — 待 FrameDumper 改用双线性路径后启用。
   finally
     masks.Free;
     engine.Free;

@@ -36,6 +36,7 @@ PlayList/
 # ---- Lazarus / FPC 构建产物 ----
 pascal/bin/
 pascal/lib/
+pascal/*.compiled
 pascal/probe.lpi
 pascal/probe.lpr
 pascal/probebmp.lpi

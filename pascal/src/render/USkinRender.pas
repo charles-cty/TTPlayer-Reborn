@@ -81,6 +81,18 @@ function RenderEqualizerWindow(const Skin: TSkinData;
 function RenderLyricWindow(const Skin: TSkinData;
   DestW, DestH: Integer): TBGRABitmap;
 
+// 合成整个 playlist_window（对应 PlaylistWindow 的渲染结果）。
+// DestW/DestH 为目标窗口像素尺寸（FrameDumper 固定为 640×480）。
+// 渲染内容：
+//   · 九宫格背景（resizeRect / resizeTile 同 LyricWindow）
+//   · 工具栏 7 组，普通态精灵图居中裁剪到各组矩形（无悬停/按下状态）
+//   · close 按钮（align='right' 时由 rightMargin 计算 X）
+//   · 列表区背景色填充（PlaylistConfig.ColorBkgnd，拉伸填满随窗口扩展的 playlistRect）
+//   · title / scrollbar 区域：跳过（masks.json 排除 / 未渲染）
+// 此函数为纯渲染，无状态，供 Layer 2 快照测试调用。
+function RenderPlaylistWindow(const Skin: TSkinData;
+  DestW, DestH: Integer): TBGRABitmap;
+
 implementation
 
 // 皮肤按钮元素类型清单（与 PlayerWindow::createButtons 的 makeBtn 调用一致）。
@@ -935,6 +947,137 @@ begin
   // 宽度计算居中/右对齐位置），导致无法通过现有 mask 排除。
   // 不绘制这些元素，Layer 2 仅测试九宫格背景的像素精确性。
   // 实际 ULyricForm 会正确绘制这些控件。
+end;
+
+// kToolbarGroupCount 与 Qt PlaylistWindow::kToolbarGroupCount 一致。
+const
+  kPlaylistToolbarGroupCount = 7;
+
+function RenderPlaylistWindow(const Skin: TSkinData;
+  DestW, DestH: Integer): TBGRABitmap;
+var
+  wnd: TSkinWindow;
+  bgW, bgH: Integer;
+  elem: PSkinElement;
+  // 工具栏
+  tbElem: PSkinElement;
+  tbX, tbY, tbW, tbH: Integer;
+  group, gLeft, gRight, gW, gH: Integer;
+  srcLeft, srcRight, srcW, srcH: Integer;
+  drawX, drawY: Integer;
+  sheet, clip_: TBGRABitmap;
+  srcRect: TRect;
+  // close 按钮
+  closeElem: PSkinElement;
+  closeX, closeBtnW: Integer;
+  rightMargin, bottomMargin: Integer;
+  closeBounds: TSkinRect;
+  // playlist area fill
+  plElem: PSkinElement;
+  plX, plY, plW, plH: Integer;
+  fillColor: TBGRAPixel;
+begin
+  wnd := Skin.PlaylistWindow;
+  Result := TBGRABitmap.Create(DestW, DestH, BGRAPixelTransparent);
+
+  if wnd.BackgroundPixmap = nil then Exit;
+
+  bgW := wnd.BackgroundPixmap.Width;
+  bgH := wnd.BackgroundPixmap.Height;
+
+  // ── 九宫格背景（DestW × DestH，与 Qt FrameDumper 的 640×480 窗口一致）─
+  DrawNinePatch(Result, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
+    DestW, DestH);
+
+  // ── 列表区背景色填充（覆盖扩展后的 playlistRect）────────────────────────
+  // playlistRect 公式（同 Qt PlaylistWindow::playlistRect()）：
+  //   rightMargin  = bgW - (playlist.x + playlist.w)
+  //   bottomMargin = bgH - (playlist.y + playlist.h)
+  //   rect = (playlist.x, playlist.y,
+  //           DestW - playlist.x - rightMargin,
+  //           DestH - playlist.y - bottomMargin)
+  plElem := wnd.FindElement('playlist');
+  if plElem <> nil then
+  begin
+    rightMargin  := bgW - (plElem^.Position.X + plElem^.Position.W);
+    bottomMargin := bgH - (plElem^.Position.Y + plElem^.Position.H);
+    plX := plElem^.Position.X;
+    plY := plElem^.Position.Y;
+    plW := DestW - plX - rightMargin;
+    plH := DestH - plY - bottomMargin;
+    if (plW > 0) and (plH > 0) and Skin.PlaylistConfig.ColorBkgnd.Valid then
+    begin
+      fillColor := Skin.PlaylistConfig.ColorBkgnd.ToBGRA;
+      Result.FillRect(plX, plY, plX + plW, plY + plH, fillColor, dmSet);
+    end;
+  end;
+
+  // ── 工具栏（7 组，普通态精灵图，不绘制悬停/按下状态）──────────────────
+  // toolbarAreaRect() = toolbar.position (align='top+left', 无拉伸)
+  // 每组矩形：左 = tbX + tbW*g/7, 右 = tbX + tbW*(g+1)/7
+  // 精灵图各组：srcLeft = sheet.w*g/7, srcRight = sheet.w*(g+1)/7
+  // 绘制方式：裁剪到 groupRect，图像在 groupRect 中居中
+  tbElem := wnd.FindElement('toolbar');
+  if (tbElem <> nil) and (tbElem^.StatePixmaps[0] <> nil) then
+  begin
+    sheet := tbElem^.StatePixmaps[0];
+    tbX := tbElem^.Position.X;
+    tbY := tbElem^.Position.Y;
+    tbW := tbElem^.Position.W;
+    tbH := tbElem^.Position.H;
+
+    for group := 0 to kPlaylistToolbarGroupCount - 1 do
+    begin
+      // groupRect：整数除法，与 Qt (left + w * g) / 7 保持一致
+      gLeft  := tbX + (tbW * group)       div kPlaylistToolbarGroupCount;
+      gRight := tbX + (tbW * (group + 1)) div kPlaylistToolbarGroupCount;
+      gW := gRight - gLeft;
+      gH := tbH;
+      if gW <= 0 then Continue;
+
+      // 源精灵图切片
+      srcLeft  := (sheet.Width * group)       div kPlaylistToolbarGroupCount;
+      srcRight := (sheet.Width * (group + 1)) div kPlaylistToolbarGroupCount;
+      srcW := srcRight - srcLeft;
+      if srcW <= 0 then srcW := 1;
+      srcH := sheet.Height;
+
+      // 在 groupRect 内居中（Qt toolbarGroupDrawRect 的居中逻辑）
+      drawX := gLeft + (gW - srcW) div 2;
+      drawY := tbY  + (gH - srcH) div 2;
+
+      // 剪裁到 groupRect，再绘制精灵子图
+      srcRect := Classes.Rect(srcLeft, 0, srcLeft + srcW, srcH);
+      clip_ := sheet.GetPart(srcRect);
+      try
+        Result.ClipRect := Classes.Rect(gLeft, tbY, gRight, tbY + tbH);
+        QtPutImage(Result, drawX, drawY, clip_);
+        Result.NoClip;
+      finally
+        clip_.Free;
+      end;
+    end;
+  end;
+
+  // ── close 按钮（普通态；align='right' → rightMargin 修正 X）────────────
+  // 与 Qt PlaylistWindow::updateChromeGeometry 中 closeButton_->move() 等价：
+  //   rightMargin = bgW - (close.x + close.w)
+  //   closeX      = DestW - rightMargin - btnW
+  closeElem := wnd.FindElement('close');
+  if closeElem <> nil then
+  begin
+    closeBounds := ButtonBounds(closeElem^);
+    closeBtnW   := closeBounds.W;
+    if Pos('right', LowerCase(closeElem^.Align)) > 0 then
+    begin
+      rightMargin := bgW - (closeElem^.Position.X + closeElem^.Position.W);
+      closeX      := DestW - rightMargin - closeBtnW;
+    end
+    else
+      closeX := closeElem^.Position.X;
+    closeBounds.X := closeX;
+    DrawButton(Result, closeElem^, closeBounds, bvsNormal);
+  end;
 end;
 
 end.

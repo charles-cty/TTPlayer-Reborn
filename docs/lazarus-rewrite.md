@@ -110,24 +110,28 @@ Lazarus 工程（全自绘）
 
 ---
 
-## 当前状态（2026-08-13）
+## 当前状态（2026-08-14）
 
-**已完成（Step 0–1 + 测试框架）**：
+**已完成（Step 0–5 + 测试框架）**：
 
 | 交付物 | 位置 |
 |---|---|
 | git 分支 `lazarus-rewrite` | — |
 | BGRABitmap v11.6.6 | `pascal/vendor/bgrabitmap`（git submodule） |
 | 皮肤引擎 | `pascal/src/skin/`（USkinTypes/USkinXmlParser/USkinLoader/USkinJsonDump） |
-| 渲染原语 | `pascal/src/render/USkinRender` |
-| 后端接口+桩 | `pascal/src/backend/UPlayerBackend` |
-| Pascal dump 工具 | `pascal/ttdump.lpi` |
+| 渲染原语 | `pascal/src/render/USkinRender`（QtPutImage 精确合成、九宫格、LED） |
+| 后端接口+桩 | `pascal/src/backend/UPlayerBackend`（IPlayerBackend + TStubBackend） |
+| PlayerForm | `pascal/src/ui/UPlayerForm`（无边框、Region、按钮交互、拖动） |
+| EqualizerForm | `pascal/src/ui/UEqualizerForm`（10 波段 + preamp/balance/surround 滑块） |
+| LyricForm | `pascal/src/ui/ULyricForm`（九宫格、右/下边缘调整大小） |
+| VisualWidget | `pascal/src/ui/UVisualWidget`（柱状频谱 + 模糊示波图动画） |
+| Pascal 工具集 | `pascal/ttdump.lpi`、`pascal/skinpreview.lpi`、`pascal/ttplayer.lpi` |
 | Qt SkinDumper | `src/tools/SkinDumper.{h,cpp}` + `--dump-skin` |
 | Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames` |
 | Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
-| 测试（11/11） | `tools/test-all.ps1` |
+| 测试（11/11） | `tools/test-all.ps1`（Layer 1/2/3/4 + Layer 5 GUI 冒烟） |
 
-**下一步**：Step 2 — PlayerForm（无边框窗口 + Shape + 按钮交互）。
+**下一步**：Step 3 — PlaylistWindow（虚拟列表、拖放、内嵌搜索，约 4.8k 行 C++ 对应量）。
 
 ---
 

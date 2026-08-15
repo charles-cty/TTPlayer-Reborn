@@ -2,15 +2,15 @@ program skinpreview;
 
 {$mode objfpc}{$H+}
 
-// 皮肤预览工具：加载 Skin/ 目录下的皮肤，用 TPlayerForm / TEqualizerForm / TLyricForm 实时显示。
-// 作为 PlayerWindow / EqualizerWindow / LyricWindow 的开发脚手架，兼作目视验收工具。
+// 皮肤预览工具：加载 Skin/ 目录下的皮肤，用 TPlayerForm / TEqualizerForm /
+// TLyricForm / TPlaylistForm 实时显示。LyricForm 默认隐藏（与原版行为一致）。
 
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
-  Interfaces,  // 拉入平台 widgetset（Win32/GTK 等），必须放在 Forms 之前
+  Interfaces,
   Classes, SysUtils, Forms, Controls, StdCtrls, ExtCtrls, Dialogs,
   LazFileUtils, LazUTF8,
-  USkinTypes, USkinLoader, UPlayerForm, UEqualizerForm, ULyricForm, UVisualWidget, UPlayerBackend;
+  USkinTypes, USkinLoader, UPlayerForm, UEqualizerForm, ULyricForm, UVisualWidget, UPlaylistForm, UPlayerBackend;
 
 type
   TPreviewMainForm = class(TForm)
@@ -20,6 +20,7 @@ type
     FPlayerForm: TPlayerForm;
     FEqForm: TEqualizerForm;
     FLyricForm: TLyricForm;
+    FPlaylistForm: TPlaylistForm;
     FEngine: TSkinEngine;
     FBackend: TStubBackend;
     FRepoRoot: string;
@@ -53,11 +54,9 @@ end;
 
 destructor TPreviewMainForm.Destroy;
 begin
-  FPlayerForm.Free;
-  FEqForm.Free;
-  FLyricForm.Free;
+  // 子 Form 均以 Self 为 Owner 创建，LCL 在本对象销毁时自动释放，无需手动 Free。
   FEngine.Free;
-  FBackend.Free;
+  FBackend := nil;  // TInterfacedObject，引用计数归零自动释放，不能手动 Free
   inherited Destroy;
 end;
 
@@ -134,28 +133,44 @@ begin
     Exit;
   end;
 
-  // 首次加载时创建 PlayerForm、EqualizerForm 和 LyricForm，此后复用
+  // 首次加载时创建各子窗口，错开初始位置避免堆叠。
+  // LyricForm 创建但不 Show（与原版行为一致：歌词窗口默认隐藏）。
   if FPlayerForm = nil then
   begin
     FPlayerForm := TPlayerForm.Create(Self, FBackend);
+    FPlayerForm.Left := 20;
+    FPlayerForm.Top  := 160;
     FPlayerForm.Show;
   end;
 
   if FEqForm = nil then
   begin
     FEqForm := TEqualizerForm.Create(Self, FBackend);
+    FEqForm.Left := 310;
+    FEqForm.Top  := 160;
     FEqForm.Show;
   end;
 
   if FLyricForm = nil then
   begin
     FLyricForm := TLyricForm.Create(Self, FBackend);
-    FLyricForm.Show;
+    FLyricForm.Left := 20;
+    FLyricForm.Top  := 360;
+    // 不调用 Show —— 歌词窗口默认隐藏
+  end;
+
+  if FPlaylistForm = nil then
+  begin
+    FPlaylistForm := TPlaylistForm.Create(Self, FBackend);
+    FPlaylistForm.Left := 310;
+    FPlaylistForm.Top  := 350;
+    FPlaylistForm.Show;
   end;
 
   FPlayerForm.ApplySkin(FEngine.SkinData);
   FEqForm.ApplySkin(FEngine.SkinData);
   FLyricForm.ApplySkin(FEngine.SkinData);
+  FPlaylistForm.ApplySkin(FEngine.SkinData);
   Caption := 'Skin Preview — ' + FEngine.SkinData.Name;
 end;
 
