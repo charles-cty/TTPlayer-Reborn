@@ -3,7 +3,7 @@ program skinpreview;
 {$mode objfpc}{$H+}
 
 // 皮肤预览工具：加载 Skin/ 目录下的皮肤，用 TPlayerForm / TEqualizerForm /
-// TLyricForm / TPlaylistForm 实时显示。LyricForm 默认隐藏（与原版行为一致）。
+// TLyricForm / TPlaylistForm 实时显示四个子窗口（Layer 5 冒烟按标题识别）。
 
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
@@ -134,7 +134,7 @@ begin
   end;
 
   // 首次加载时创建各子窗口，错开初始位置避免堆叠。
-  // LyricForm 创建但不 Show（与原版行为一致：歌词窗口默认隐藏）。
+  // 预览工具显示全部四个窗口，便于 Layer 5 冒烟核对。
   if FPlayerForm = nil then
   begin
     FPlayerForm := TPlayerForm.Create(Self, FBackend);
@@ -156,7 +156,7 @@ begin
     FLyricForm := TLyricForm.Create(Self, FBackend);
     FLyricForm.Left := 20;
     FLyricForm.Top  := 360;
-    // 不调用 Show —— 歌词窗口默认隐藏
+    FLyricForm.Show;
   end;
 
   if FPlaylistForm = nil then

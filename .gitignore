@@ -30,7 +30,8 @@ ui_*.h
 .DS_Store
 
 # ---- 运行时生成 ----
-PlayList/
+# 仅忽略仓库根目录的 PlayList/（运行时 TTBL），不要误伤 pascal/src/playlist/
+/PlayList/
 *.log
 
 # ---- Lazarus / FPC 构建产物 ----

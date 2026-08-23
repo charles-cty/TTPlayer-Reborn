@@ -99,6 +99,7 @@ begin
   BorderStyle := bsNone;
   FormStyle   := fsNormal;
   Color       := clBlack;
+  Caption     := 'Lyric';
 
   MouseLeave;
 end;

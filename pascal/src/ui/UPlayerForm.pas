@@ -81,6 +81,7 @@ begin
   BorderStyle := bsNone;
   FormStyle   := fsNormal;
   Color       := clBlack;
+  Caption     := 'Player';
 
   // 频谱子控件（在 visual 元素区域内动画）
   FVisual := TVisualWidget.Create(Self, ABackend);

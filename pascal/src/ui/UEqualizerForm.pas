@@ -136,6 +136,7 @@ begin
   BorderStyle := bsNone;
   FormStyle   := fsNormal;
   Color       := clBlack;
+  Caption     := 'Equalizer';
 
   FProfileMenu := TPopupMenu.Create(Self);
   BuildProfileMenu;
