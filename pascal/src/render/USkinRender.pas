@@ -58,9 +58,22 @@ function EqFactorRect(const Elem: TSkinElement; Band, EqInterval: Integer): TSki
 // 九宫格背景绘制（公开供 ULyricForm 等使用）。
 // Tile=True: 各边/中心平铺；Tile=False: 双线性缩放。
 // 绘制范围为 DestW × DestH（已在 Dest 上直接合成）。
+// ExclusiveMids=True：边/中心不伸进四角（与 Qt PlaylistWindow::rebuildBackground
+// 的 width()-left-right 矩形一致）。False：topMid/bottomMid 先铺到 DestW，
+// 再由角片覆盖，透明角会透出中段瓦片（Lyric 路径沿用此行为）。
 procedure DrawNinePatch(Dest: TBGRABitmap;
   Base: TBGRABitmap; const RR: TSkinRect; Tile: Boolean;
-  DestW, DestH: Integer);
+  DestW, DestH: Integer; ExclusiveMids: Boolean = False);
+
+// Qt alignedRect：按 align 把内容矩形放到当前窗口中。
+// ContentW/H<=0 时退回 BaseRect 的宽高。
+function AlignedRect(const BaseRect: TSkinRect;
+  BaseW, BaseH, CurW, CurH: Integer; const Align: string;
+  ContentW: Integer = 0; ContentH: Integer = 0): TSkinRect;
+
+// Qt PlaylistWindow::playlistRect()：随窗口拉伸的列表区。
+function PlaylistContentRect(const Skin: TSkinData;
+  DestW, DestH: Integer): TSkinRect;
 
 // 合成整个 equalizer_window（对应 EqualizerWindow 的渲染结果）。
 // EqGains: 10 波段增益 dB [-12..+12]；PreampGain 前置增益 dB；
@@ -84,12 +97,12 @@ function RenderLyricWindow(const Skin: TSkinData;
 // 合成整个 playlist_window（对应 PlaylistWindow 的渲染结果）。
 // DestW/DestH 为目标窗口像素尺寸（FrameDumper 固定为 640×480）。
 // 渲染内容：
-//   · 九宫格背景（resizeRect / resizeTile 同 LyricWindow）
+//   · 九宫格背景（ExclusiveMids，对齐 Qt rebuildBackground）
+//   · title（alignedRect，与 paintEvent 一致）
 //   · 工具栏 7 组，普通态精灵图居中裁剪到各组矩形（无悬停/按下状态）
 //   · close 按钮（align='right' 时由 rightMargin 计算 X）
-//   · 列表区背景色填充（PlaylistConfig.ColorBkgnd，拉伸填满随窗口扩展的 playlistRect）
-//   · title / scrollbar 区域：跳过（masks.json 排除 / 未渲染）
-// 此函数为纯渲染，无状态，供 Layer 2 快照测试调用。
+// 列表区（playlistRect 内的 tabs/divider/list/scrollbar）由 Layer 2 掩码排除，
+// 不在此填充 ColorBkgnd，以免盖住九宫格底边倒角。
 function RenderPlaylistWindow(const Skin: TSkinData;
   DestW, DestH: Integer): TBGRABitmap;
 
@@ -759,11 +772,75 @@ begin
   end;
 end;
 
+function AlignedRect(const BaseRect: TSkinRect;
+  BaseW, BaseH, CurW, CurH: Integer; const Align: string;
+  ContentW: Integer; ContentH: Integer): TSkinRect;
+var
+  lowerAlign: string;
+  rightMargin, bottomMargin: Integer;
+begin
+  Result := BaseRect;
+  if ContentW > 0 then Result.W := ContentW;
+  if ContentH > 0 then Result.H := ContentH;
+  lowerAlign := LowerCase(Align);
+  if Pos('center', lowerAlign) > 0 then
+    Result.X := (CurW - Result.W) div 2
+  else if Pos('right', lowerAlign) > 0 then
+  begin
+    rightMargin := BaseW - (BaseRect.X + BaseRect.W);
+    Result.X := CurW - rightMargin - Result.W;
+  end;
+  if Pos('bottom', lowerAlign) > 0 then
+  begin
+    bottomMargin := BaseH - (BaseRect.Y + BaseRect.H);
+    Result.Y := CurH - bottomMargin - Result.H;
+  end;
+end;
+
+function PlaylistContentRect(const Skin: TSkinData;
+  DestW, DestH: Integer): TSkinRect;
+var
+  wnd: TSkinWindow;
+  pl: PSkinElement;
+  bgW, bgH, rightMargin, bottomMargin: Integer;
+begin
+  wnd := Skin.PlaylistWindow;
+  pl := wnd.FindElement('playlist');
+  if wnd.BackgroundPixmap <> nil then
+  begin
+    bgW := wnd.BackgroundPixmap.Width;
+    bgH := wnd.BackgroundPixmap.Height;
+  end
+  else
+  begin
+    bgW := DestW;
+    bgH := DestH;
+  end;
+  if (pl = nil) or pl^.Position.IsEmpty then
+  begin
+    Result.X := 4;
+    Result.Y := 50;
+    Result.W := DestW - 8;
+    Result.H := DestH - 74;
+  end
+  else
+  begin
+    rightMargin  := bgW - (pl^.Position.X + pl^.Position.W);
+    bottomMargin := bgH - (pl^.Position.Y + pl^.Position.H);
+    Result.X := pl^.Position.X;
+    Result.Y := pl^.Position.Y;
+    Result.W := DestW - Result.X - rightMargin;
+    Result.H := DestH - Result.Y - bottomMargin;
+  end;
+  if Result.W < 1 then Result.W := 1;
+  if Result.H < 1 then Result.H := 1;
+end;
+
 // 绘制九宫格背景到 Result（大小已创建为 DestW × DestH）。
 // Tile=True: 各边/中心平铺；Tile=False: 双线性缩放（对应 Qt SmoothTransformation）。
 procedure DrawNinePatch(Dest: TBGRABitmap;
   Base: TBGRABitmap; const RR: TSkinRect; Tile: Boolean;
-  DestW, DestH: Integer);
+  DestW, DestH: Integer; ExclusiveMids: Boolean);
 var
   bgW, bgH: Integer;
   left, top, right, bottom, cw, ch: Integer;
@@ -811,35 +888,40 @@ begin
   try QtPutImage(Dest, DestW - right, DestH - bottom, slice); finally slice.Free; end;
 
   // ── 四边 + 中心 ───────────────────────────────────────────────────
-  // Qt rebuildBackground 的绘制顺序：角 → 边/中心。
-  // topMid / bottomMid 不减去 right，绘制到 DestW-left 为止，
-  // 之后 topRight / bottomRight 角片覆盖合成。
-  // 这样 topRight 的透明列由 topMid 瓦片透出。
-  // （对应 Qt drawHTiled 循环条件 x<=rect.right() 的实际行为）
+  // ExclusiveMids=True：与 Qt PlaylistWindow::rebuildBackground 一致，
+  // topMid/bottomMid 宽 = DestW-left-right，不伸进四角。
+  // ExclusiveMids=False：topMid/bottomMid 铺到 DestW，之后角片覆盖，
+  // 透明角由中段瓦片透出（Lyric 路径）。
   if top > 0 then
   begin
-    // topMid: left 到 DestW（含 right 区域）
     slice := Base.GetPart(Classes.Rect(cx, 0, cx + cw, top));
     try
-      dstRect := Classes.Rect(cx, 0, DestW, top);
+      if ExclusiveMids then
+        dstRect := Classes.Rect(cx, 0, DestW - right, top)
+      else
+        dstRect := Classes.Rect(cx, 0, DestW, top);
       if Tile then TileSlice(Dest, dstRect, slice)
       else
       begin
-        resampled := slice.Resample(DestW - cx, top, rmFineResample) as TBGRABitmap;
+        resampled := slice.Resample(dstRect.Right - dstRect.Left, top,
+          rmFineResample) as TBGRABitmap;
         try QtPutImage(Dest, cx, 0, resampled); finally resampled.Free; end;
       end;
     finally slice.Free; end;
   end;
   if bottom > 0 then
   begin
-    // bottomMid: left 到 DestW
     slice := Base.GetPart(Classes.Rect(cx, bgH - bottom, cx + cw, bgH));
     try
-      dstRect := Classes.Rect(cx, DestH - bottom, DestW, DestH);
+      if ExclusiveMids then
+        dstRect := Classes.Rect(cx, DestH - bottom, DestW - right, DestH)
+      else
+        dstRect := Classes.Rect(cx, DestH - bottom, DestW, DestH);
       if Tile then TileSlice(Dest, dstRect, slice)
       else
       begin
-        resampled := slice.Resample(DestW - cx, bottom, rmFineResample) as TBGRABitmap;
+        resampled := slice.Resample(dstRect.Right - dstRect.Left, bottom,
+          rmFineResample) as TBGRABitmap;
         try QtPutImage(Dest, cx, DestH - bottom, resampled); finally resampled.Free; end;
       end;
     finally slice.Free; end;
@@ -892,30 +974,34 @@ begin
   end;
 
   // ── 角片最后覆盖（透明角由边缘切片透出）──
-  if left > 0 then
+  // ExclusiveMids 路径角片已在最前绘制且中段不侵入，无需再盖一次。
+  if not ExclusiveMids then
   begin
-    if top > 0 then
+    if left > 0 then
     begin
-      slice := Base.GetPart(Classes.Rect(0, 0, left, top));
-      try QtPutImage(Dest, 0, 0, slice); finally slice.Free; end;
+      if top > 0 then
+      begin
+        slice := Base.GetPart(Classes.Rect(0, 0, left, top));
+        try QtPutImage(Dest, 0, 0, slice); finally slice.Free; end;
+      end;
+      if bottom > 0 then
+      begin
+        slice := Base.GetPart(Classes.Rect(0, bgH - bottom, left, bgH));
+        try QtPutImage(Dest, 0, DestH - bottom, slice); finally slice.Free; end;
+      end;
     end;
-    if bottom > 0 then
+    if right > 0 then
     begin
-      slice := Base.GetPart(Classes.Rect(0, bgH - bottom, left, bgH));
-      try QtPutImage(Dest, 0, DestH - bottom, slice); finally slice.Free; end;
-    end;
-  end;
-  if right > 0 then
-  begin
-    if top > 0 then
-    begin
-      slice := Base.GetPart(Classes.Rect(bgW - right, 0, bgW, top));
-      try QtPutImage(Dest, DestW - right, 0, slice); finally slice.Free; end;
-    end;
-    if bottom > 0 then
-    begin
-      slice := Base.GetPart(Classes.Rect(bgW - right, bgH - bottom, bgW, bgH));
-      try QtPutImage(Dest, DestW - right, DestH - bottom, slice); finally slice.Free; end;
+      if top > 0 then
+      begin
+        slice := Base.GetPart(Classes.Rect(bgW - right, 0, bgW, top));
+        try QtPutImage(Dest, DestW - right, 0, slice); finally slice.Free; end;
+      end;
+      if bottom > 0 then
+      begin
+        slice := Base.GetPart(Classes.Rect(bgW - right, bgH - bottom, bgW, bgH));
+        try QtPutImage(Dest, DestW - right, DestH - bottom, slice); finally slice.Free; end;
+      end;
     end;
   end;
 end;
@@ -958,9 +1044,13 @@ function RenderPlaylistWindow(const Skin: TSkinData;
 var
   wnd: TSkinWindow;
   bgW, bgH: Integer;
-  elem: PSkinElement;
+  // title
+  titleElem: PSkinElement;
+  titleRect: TSkinRect;
+  titleW, titleH: Integer;
   // 工具栏
   tbElem: PSkinElement;
+  tbRect: TSkinRect;
   tbX, tbY, tbW, tbH: Integer;
   group, gLeft, gRight, gW, gH: Integer;
   srcLeft, srcRight, srcW, srcH: Integer;
@@ -970,12 +1060,8 @@ var
   // close 按钮
   closeElem: PSkinElement;
   closeX, closeBtnW: Integer;
-  rightMargin, bottomMargin: Integer;
+  rightMargin: Integer;
   closeBounds: TSkinRect;
-  // playlist area fill
-  plElem: PSkinElement;
-  plX, plY, plW, plH: Integer;
-  fillColor: TBGRAPixel;
 begin
   wnd := Skin.PlaylistWindow;
   Result := TBGRABitmap.Create(DestW, DestH, BGRAPixelTransparent);
@@ -987,33 +1073,21 @@ begin
 
   // ── 九宫格背景（DestW × DestH，与 Qt FrameDumper 的 640×480 窗口一致）─
   DrawNinePatch(Result, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
-    DestW, DestH);
+    DestW, DestH, True);
 
-  // ── 列表区背景色填充（覆盖扩展后的 playlistRect）────────────────────────
-  // playlistRect 公式（同 Qt PlaylistWindow::playlistRect()）：
-  //   rightMargin  = bgW - (playlist.x + playlist.w)
-  //   bottomMargin = bgH - (playlist.y + playlist.h)
-  //   rect = (playlist.x, playlist.y,
-  //           DestW - playlist.x - rightMargin,
-  //           DestH - playlist.y - bottomMargin)
-  plElem := wnd.FindElement('playlist');
-  if plElem <> nil then
+  // ── title（Qt paintEvent：drawPixmap(titleDrawRect().topLeft(), pixmap)）─
+  titleElem := wnd.FindElement('title');
+  if (titleElem <> nil) and (titleElem^.StatePixmaps[0] <> nil) then
   begin
-    rightMargin  := bgW - (plElem^.Position.X + plElem^.Position.W);
-    bottomMargin := bgH - (plElem^.Position.Y + plElem^.Position.H);
-    plX := plElem^.Position.X;
-    plY := plElem^.Position.Y;
-    plW := DestW - plX - rightMargin;
-    plH := DestH - plY - bottomMargin;
-    if (plW > 0) and (plH > 0) and Skin.PlaylistConfig.ColorBkgnd.Valid then
-    begin
-      fillColor := Skin.PlaylistConfig.ColorBkgnd.ToBGRA;
-      Result.FillRect(plX, plY, plX + plW, plY + plH, fillColor, dmSet);
-    end;
+    titleW := titleElem^.StatePixmaps[0].Width;
+    titleH := titleElem^.StatePixmaps[0].Height;
+    titleRect := AlignedRect(titleElem^.Position, bgW, bgH, DestW, DestH,
+      titleElem^.Align, titleW, titleH);
+    QtPutImage(Result, titleRect.X, titleRect.Y, titleElem^.StatePixmaps[0]);
   end;
 
   // ── 工具栏（7 组，普通态精灵图，不绘制悬停/按下状态）──────────────────
-  // toolbarAreaRect() = toolbar.position (align='top+left', 无拉伸)
+  // toolbarAreaRect() = alignedRect(toolbar.position, ..., position.size())
   // 每组矩形：左 = tbX + tbW*g/7, 右 = tbX + tbW*(g+1)/7
   // 精灵图各组：srcLeft = sheet.w*g/7, srcRight = sheet.w*(g+1)/7
   // 绘制方式：裁剪到 groupRect，图像在 groupRect 中居中
@@ -1021,10 +1095,12 @@ begin
   if (tbElem <> nil) and (tbElem^.StatePixmaps[0] <> nil) then
   begin
     sheet := tbElem^.StatePixmaps[0];
-    tbX := tbElem^.Position.X;
-    tbY := tbElem^.Position.Y;
-    tbW := tbElem^.Position.W;
-    tbH := tbElem^.Position.H;
+    tbRect := AlignedRect(tbElem^.Position, bgW, bgH, DestW, DestH,
+      tbElem^.Align, tbElem^.Position.W, tbElem^.Position.H);
+    tbX := tbRect.X;
+    tbY := tbRect.Y;
+    tbW := tbRect.W;
+    tbH := tbRect.H;
 
     for group := 0 to kPlaylistToolbarGroupCount - 1 do
     begin

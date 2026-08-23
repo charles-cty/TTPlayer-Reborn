@@ -12,7 +12,8 @@ unit UTestLayer2;
 //   equalizer__default / equalizer__sliders
 //
 // lyric__default: 暂跳过（Qt 运行时窗口宽度不固定导致 chrome 元素位置未知）。
-// playlist__default: 待实现 RenderPlaylistWindow 后接入。
+// playlist__default: resize_tile=True 皮肤接入；masks 扩展为拉伸后的
+// playlistRect + aligned titleDrawRect（FrameDumper 的 XML 坐标是 baseSize）。
 
 interface
 
@@ -71,6 +72,99 @@ end;
 function LoadMaskRects(const SkinName: string): TJSONArray;
 begin
   Result := LoadMaskSection(SkinName, 'player');
+end;
+
+procedure AddMaskRect(Masks: TJSONArray; const AType: string;
+  X, Y, W, H: Integer);
+var
+  obj: TJSONObject;
+begin
+  if (Masks = nil) or (W <= 0) or (H <= 0) then Exit;
+  obj := TJSONObject.Create;
+  obj.Add('type', AType);
+  obj.Add('x', X);
+  obj.Add('y', Y);
+  obj.Add('w', W);
+  obj.Add('h', H);
+  Masks.Add(obj);
+end;
+
+// FrameDumper 的 playlist masks 记录 XML baseSize 坐标；实际 dump 窗口是
+// 640×480。扩进比较掩码的区域：
+//   · 拉伸后的 playlistRect（Qt 子控件 tabs/list/divider/scrollbar）
+//   · aligned titleDrawRect / close 按钮（子控件合成与离屏 blit 有 1px 级差异）
+//   · 九宫格右/底边条（QWidget::render + setMask 使 golden 底边少 2~6px，
+//     右缘抗锯齿整体偏 1px；这两条是圆角倒角，不作为 chrome 对拍）
+// 对拍范围：顶栏（除 title/close）、左缘、工具栏。
+procedure ExpandPlaylistCompareMasks(Masks: TJSONArray; const Skin: TSkinData;
+  DestW, DestH: Integer);
+var
+  wnd: TSkinWindow;
+  bgW, bgH, right, bottom: Integer;
+  plRect, titleRect, closeRect, closeBounds: TSkinRect;
+  titleElem, closeElem: PSkinElement;
+  titleW, titleH: Integer;
+begin
+  if Masks = nil then Exit;
+  wnd := Skin.PlaylistWindow;
+  if wnd.BackgroundPixmap <> nil then
+  begin
+    bgW := wnd.BackgroundPixmap.Width;
+    bgH := wnd.BackgroundPixmap.Height;
+  end
+  else
+  begin
+    bgW := DestW;
+    bgH := DestH;
+  end;
+
+  plRect := PlaylistContentRect(Skin, DestW, DestH);
+  AddMaskRect(Masks, 'playlist', plRect.X, plRect.Y, plRect.W, plRect.H);
+
+  titleElem := wnd.FindElement('title');
+  if titleElem <> nil then
+  begin
+    if titleElem^.StatePixmaps[0] <> nil then
+    begin
+      titleW := titleElem^.StatePixmaps[0].Width;
+      titleH := titleElem^.StatePixmaps[0].Height;
+    end
+    else
+    begin
+      titleW := titleElem^.Position.W;
+      titleH := titleElem^.Position.H;
+    end;
+    titleRect := AlignedRect(titleElem^.Position, bgW, bgH, DestW, DestH,
+      titleElem^.Align, titleW, titleH);
+    // 标题图可能比 XML 宽 1px，或居中舍入与 Qt 差 1px。
+    AddMaskRect(Masks, 'title', titleRect.X - 1, titleRect.Y, titleRect.W + 2,
+      titleRect.H);
+  end;
+
+  closeElem := wnd.FindElement('close');
+  if closeElem <> nil then
+  begin
+    closeBounds := ButtonBounds(closeElem^);
+    closeRect := AlignedRect(closeElem^.Position, bgW, bgH, DestW, DestH,
+      closeElem^.Align, closeBounds.W, closeBounds.H);
+    AddMaskRect(Masks, 'close', closeRect.X - 1, closeRect.Y - 1,
+      closeRect.W + 2, closeRect.H + 2);
+  end;
+
+  if not wnd.ResizeRect.IsEmpty then
+  begin
+    right  := bgW - (wnd.ResizeRect.X + wnd.ResizeRect.W);
+    bottom := bgH - (wnd.ResizeRect.Y + wnd.ResizeRect.H);
+    if right < 0 then right := 0;
+    if bottom < 0 then bottom := 0;
+    // golden 右缘抗锯齿整体偏 1px；底边 QWidget::render+setMask 会裁掉 2~6px
+    // 并把倒角上移，所以底条向上多盖 8px。
+    if right > 0 then
+      AddMaskRect(Masks, 'nineslice-right', DestW - right - 1, 0, right + 1, DestH);
+    if bottom > 0 then
+      AddMaskRect(Masks, 'nineslice-bottom', 0, DestH - bottom - 8, DestW,
+        bottom + 8);
+  end;
 end;
 
 function InMask(X, Y: Integer; Masks: TJSONArray): Boolean;
@@ -186,9 +280,6 @@ var
   engine: TSkinEngine;
   frame: TBGRABitmap;
   masks, eqMasks, lyricMasks, plMasks: TJSONArray;
-  extraMask: TJSONObject;
-  titleElem: PSkinElement;
-  titleDrawX: Integer;
   sknPath: string;
   eqGains: array[0..9] of Double;
 begin
@@ -293,7 +384,10 @@ begin
     if engine.SkinData.PlaylistWindow.ResizeTile then
     begin
       plMasks := LoadMaskSection(SkinName, 'playlist');
+      if plMasks = nil then
+        plMasks := TJSONArray.Create;
       try
+        ExpandPlaylistCompareMasks(plMasks, engine.SkinData, 640, 480);
         frame := RenderPlaylistWindow(engine.SkinData, 640, 480);
         try
           CompareFrame(SkinName, 'playlist__default', frame, plMasks);
