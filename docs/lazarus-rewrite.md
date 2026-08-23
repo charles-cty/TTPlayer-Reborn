@@ -73,21 +73,23 @@ Lazarus 工程（全自绘）
 - USkinRender：背景合成 + 按钮四态 + 滑块（bar/thumb/fill）+ LED 位图字体
 - **验收**：11 套皮肤 JSON 差分为零（Layer 1）；10 套皮肤像素级一致（Layer 2）
 
-**Step 2（下一步）**：PlayerForm
+**Step 2（已完成，Windows）**：PlayerForm
 - `bsNone` 无边框窗口
 - 色键生成 Shape 区域（换肤时 run-length 建 `HRGN`/`XRectangle[]`）
 - 按钮命中测试、悬停/按下视觉状态
 - 窗口拖动
-- **关键**：此步同时在 Windows 和 GTK3 上验证，最早暴露 GTK3 风险
+- GTK3 验证仍未做
 
-**Step 3**：PlaylistWindow（4.8k 行 C++，最大头）
-- 虚拟列表、拖放、内嵌搜索
+**Step 3（已完成）**：PlaylistWindow
+- 虚拟列表、7 组工具栏菜单、皮肤滚动条、文件拖放、双击 OpenFile
+- 未移植：TTBL、元数据加载器、列表内 DnD、完整搜索对话框、多播放列表标签页
 
-**Step 4**：EqualizerWindow
+**Step 4（已完成）**：EqualizerWindow
 
-**Step 5**：LyricWindow + VisualWidget（频谱动画）
+**Step 5（已完成）**：LyricWindow + VisualWidget（频谱动画）
+- 歌词窗口目前是皮肤壳，尚无 LRC 解析/滚动
 
-**Step 6**：WindowSnapManager（1.4k 行，Winamp 式窗口吸附）
+**Step 6（下一步）**：WindowSnapManager（1.4k 行，Winamp 式窗口吸附）
 - GTK3 CSD 坐标问题在此步验证
 
 **Step 7（最后）**：ttcore 抽库 + FFI 对接，替换 TStubBackend
@@ -110,9 +112,9 @@ Lazarus 工程（全自绘）
 
 ---
 
-## 当前状态（2026-08-14）
+## 当前状态（2026-08-23）
 
-**已完成（Step 0–5 + 测试框架）**：
+**已完成（Step 0–5 + 测试框架）**。四个皮肤窗口可在 `skinpreview` 中同时显示；音频仍为 `TStubBackend`。
 
 | 交付物 | 位置 |
 |---|---|
@@ -121,17 +123,19 @@ Lazarus 工程（全自绘）
 | 皮肤引擎 | `pascal/src/skin/`（USkinTypes/USkinXmlParser/USkinLoader/USkinJsonDump） |
 | 渲染原语 | `pascal/src/render/USkinRender`（QtPutImage 精确合成、九宫格、LED） |
 | 后端接口+桩 | `pascal/src/backend/UPlayerBackend`（IPlayerBackend + TStubBackend） |
-| PlayerForm | `pascal/src/ui/UPlayerForm`（无边框、Region、按钮交互、拖动） |
+| 播放列表模型 | `pascal/src/playlist/UPlaylistModel` |
+| PlayerForm | `pascal/src/ui/UPlayerForm`（无边框、Region、按钮交互、拖动、OnAuxToggle） |
+| PlaylistForm | `pascal/src/ui/UPlaylistForm`（虚拟列表、工具栏菜单、滚动条、拖放） |
 | EqualizerForm | `pascal/src/ui/UEqualizerForm`（10 波段 + preamp/balance/surround 滑块） |
 | LyricForm | `pascal/src/ui/ULyricForm`（九宫格、右/下边缘调整大小） |
 | VisualWidget | `pascal/src/ui/UVisualWidget`（柱状频谱 + 模糊示波图动画） |
-| Pascal 工具集 | `pascal/ttdump.lpi`、`pascal/skinpreview.lpi`、`pascal/ttplayer.lpi` |
+| Pascal 工具集 | `pascal/ttdump.lpi`、`pascal/skinpreview.lpi`、`pascal/ttplayer.lpi`、`pascal/tests.lpi` |
 | Qt SkinDumper | `src/tools/SkinDumper.{h,cpp}` + `--dump-skin` |
 | Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames` |
 | Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
-| 测试（11/11） | `tools/test-all.ps1`（Layer 1/2/3/4 + Layer 5 GUI 冒烟） |
+| 测试（16/16） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + Layer 5 GUI 冒烟） |
 
-**下一步**：Step 3 — PlaylistWindow（虚拟列表、拖放、内嵌搜索，约 4.8k 行 C++ 对应量）。
+**下一步**：Step 6 — WindowSnapManager（窗口吸附）。其后 Step 7 抽 `ttcore` 替换桩后端。GTK3 / `src/ui/platform/` 尚未开始。
 
 ---
 
