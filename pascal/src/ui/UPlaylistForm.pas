@@ -277,52 +277,76 @@ begin
   ClampDividerPos;
   RebuildVisible;
   InvalidateFrame;
+  if HandleAllocated then
+    BuildRegion;
 end;
 
 procedure TPlaylistForm.BuildRegion;
 var
-  bmp: TBGRABitmap;
+  src, bmp: TBGRABitmap;
+  own: Boolean;
   totalRgn, rowRgn, segRgn: HRGN;
   bx, by, startX, bw, bh: Integer;
   p: PBGRAPixel;
 begin
-  if FFrame = nil then Exit;
-  bmp := FFrame;
-  bw := bmp.Width;
-  bh := bmp.Height;
-  totalRgn := CreateRectRgn(0, 0, 0, 0);
+  // 与 Qt PlaylistWindow::updateChromeGeometry → setMask(background_.mask())
+  // 一致：遮罩来自九宫格后的 chrome，而不是带列表填充的 FFrame。
+  if (FSkin = nil) or (not HandleAllocated) then Exit;
+  src := FSkin^.PlaylistWindow.BackgroundPixmap;
+  if src = nil then Exit;
 
-  for by := 0 to bh - 1 do
+  own := False;
+  if (src.Width = FLogicW) and (src.Height = FLogicH) then
+    bmp := src
+  else
   begin
-    p := bmp.ScanLine[by];
-    startX := -1;
-    for bx := 0 to bw - 1 do
+    bmp := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);
+    own := True;
+    DrawNinePatch(bmp, src, FSkin^.PlaylistWindow.ResizeRect,
+      FSkin^.PlaylistWindow.ResizeTile, FLogicW, FLogicH, True);
+  end;
+
+  try
+    bw := bmp.Width;
+    bh := bmp.Height;
+    totalRgn := CreateRectRgn(0, 0, 0, 0);
+
+    for by := 0 to bh - 1 do
     begin
-      if p^.alpha > 0 then
+      p := bmp.ScanLine[by];
+      startX := -1;
+      for bx := 0 to bw - 1 do
       begin
-        if startX < 0 then startX := bx;
-      end
-      else if startX >= 0 then
+        if p^.alpha > 0 then
+        begin
+          if startX < 0 then startX := bx;
+        end
+        else if startX >= 0 then
+        begin
+          segRgn := CreateRectRgn(startX, by, bx, by + 1);
+          rowRgn := CreateRectRgn(0, 0, 0, 0);
+          CombineRgn(rowRgn, totalRgn, segRgn, RGN_OR);
+          DeleteObject(totalRgn);
+          DeleteObject(segRgn);
+          totalRgn := rowRgn;
+          startX := -1;
+        end;
+        Inc(p);
+      end;
+      if startX >= 0 then
       begin
-        segRgn := CreateRectRgn(startX, by, bx, by + 1);
+        segRgn := CreateRectRgn(startX, by, bw, by + 1);
         rowRgn := CreateRectRgn(0, 0, 0, 0);
         CombineRgn(rowRgn, totalRgn, segRgn, RGN_OR);
-        DeleteObject(totalRgn); DeleteObject(segRgn);
+        DeleteObject(totalRgn);
+        DeleteObject(segRgn);
         totalRgn := rowRgn;
-        startX := -1;
       end;
-      Inc(p);
     end;
-    if startX >= 0 then
-    begin
-      segRgn := CreateRectRgn(startX, by, bw, by + 1);
-      rowRgn := CreateRectRgn(0, 0, 0, 0);
-      CombineRgn(rowRgn, totalRgn, segRgn, RGN_OR);
-      DeleteObject(totalRgn); DeleteObject(segRgn);
-      totalRgn := rowRgn;
-    end;
+    SetWindowRgn(Handle, totalRgn, True);
+  finally
+    if own then bmp.Free;
   end;
-  SetWindowRgn(Handle, totalRgn, True);
 end;
 
 procedure TPlaylistForm.InvalidateFrame;
