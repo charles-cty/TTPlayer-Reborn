@@ -15,6 +15,9 @@ uses
   USkinTypes, USkinRender, UPlayerBackend, UVisualWidget;
 
 type
+  TAuxToggleEvent = procedure(Sender: TObject; const AType: string;
+    AToggled: Boolean) of object;
+
   TPlayerForm = class(TForm)
   public
     constructor Create(AOwner: TComponent; ABackend: IPlayerBackend); reintroduce;
@@ -51,6 +54,7 @@ type
       ElemType: string;
       Value: Boolean;
     end;
+    FOnAuxToggle: TAuxToggleEvent;
 
     procedure BuildRegion;
     procedure RenderFrame;
@@ -60,6 +64,9 @@ type
     function  GetToggled(const AType: string): Boolean;
     procedure SetToggled(const AType: string; AValue: Boolean);
     procedure FireButtonClick(const AType: string);
+  public
+    // lyric / equalizer / playlist 点击后通知宿主显示或隐藏对应窗口。
+    property OnAuxToggle: TAuxToggleEvent read FOnAuxToggle write FOnAuxToggle;
   end;
 
 implementation
@@ -299,7 +306,13 @@ procedure TPlayerForm.FireButtonClick(const AType: string);
 begin
   // 切换按钮：翻转状态
   if IsToggleButton(AType) then
+  begin
     SetToggled(AType, not GetToggled(AType));
+    if Assigned(FOnAuxToggle) and
+       (SameText(AType, 'lyric') or SameText(AType, 'equalizer') or
+        SameText(AType, 'playlist')) then
+      FOnAuxToggle(Self, AType, GetToggled(AType));
+  end;
 
   // 特殊操作（后续接入 Backend）
   if SameText(AType, 'play') or SameText(AType, 'pause') then

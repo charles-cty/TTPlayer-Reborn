@@ -2,19 +2,19 @@ unit UPlaylistForm;
 
 {$mode objfpc}{$H+}
 
-// 播放列表窗口，对应 Qt 版 src/ui/PlaylistWindow。
-// 无边框自绘，九宫格背景（ExclusiveMids），右/下边缘可调整大小。
-// 工具栏 7 组按钮（HTCLIENT 命中，悬停/按下偏移）；close（align=right）；
-// 垂直分割条（Qt drawSplitterBar/Arrow + 拖动/点击折叠）。
-// WMNCHitTest：chrome → HTCAPTION，按钮/工具栏/分割条/列表区/边缘 → HTCLIENT。
+// 播放列表窗口，对应 Qt 版 src/ui/PlaylistWindow（精简移植）。
+// Phase 2：无边框九宫格、工具栏 HTCLIENT、分割条拖动/折叠。
+// Phase 3：TPlaylistModel 虚拟列表、7 组工具栏菜单、皮肤滚动条、
+//          AllowDropFiles、双击 OpenFile。不移植 TTBL / 元数据加载器 /
+//          列表内 DnD / 完整搜索对话框 / 多播放列表标签页。
 
 interface
 
 uses
-  Classes, SysUtils, Forms, Controls, Graphics, LCLIntf, LCLType, LMessages,
-  Math, Types,
+  Classes, SysUtils, Forms, Controls, Graphics, Dialogs, Menus,
+  LCLIntf, LCLType, LMessages, LazUTF8, Math, Types,
   BGRABitmap, BGRABitmapTypes,
-  USkinTypes, USkinRender, UPlayerBackend;
+  USkinTypes, USkinRender, UPlayerBackend, UPlaylistModel;
 
 type
   TPlaylistForm = class(TForm)
@@ -24,10 +24,10 @@ type
 
     procedure ApplySkin(const ASkin: TSkinData);
 
-    // 列表条目接口（Phase 3 接入 TPlaylistModel）。
     procedure AddEntry(const FilePath, Title, Artist: string; DurationMs: Int64);
     procedure Clear;
     procedure SetCurrentIndex(Index: Integer);
+    function CurrentFile: string;
 
   protected
     procedure Paint; override;
@@ -38,6 +38,8 @@ type
       X, Y: Integer); override;
     procedure MouseLeave; override;
     procedure DblClick; override;
+    function DoMouseWheel(Shift: TShiftState; WheelDelta: Integer;
+      MousePos: TPoint): Boolean; override;
 
     procedure WMNCHitTest(var Msg: TLMessage); message LM_NCHITTEST;
 
@@ -45,31 +47,47 @@ type
     FSkin: ^TSkinData;
     FBackend: IPlayerBackend;
     FFrame: TBGRABitmap;
+    FModel: TPlaylistModel;
 
     FLogicW, FLogicH: Integer;
+    FRowHeight: Integer;
 
-    FHoveredType: string;       // 'close' 或 ''
+    FHoveredType: string;
     FPressedType: string;
-    FHoveredToolbar: Integer;   // -1 = 无
+    FHoveredToolbar: Integer;
     FPressedToolbar: Integer;
 
     FResizing: Boolean;
     FResizeEdgeRight: Boolean;
     FResizeEdgeBottom: Boolean;
-    FResizeStartX: Integer;
-    FResizeStartY: Integer;
-    FResizeStartW: Integer;
-    FResizeStartH: Integer;
+    FResizeStartX, FResizeStartY, FResizeStartW, FResizeStartH: Integer;
 
-    FDividerPos: Integer;
-    FDividerSavedPos: Integer;
-    FDividerDragging: Boolean;
-    FDividerHandlePressed: Boolean;
+    FDividerPos, FDividerSavedPos: Integer;
+    FDividerDragging, FDividerHandlePressed: Boolean;
     FDividerDragStartX: Integer;
+
+    FSelected: array of Boolean;
+    FSelAnchor: Integer;
+    FScroll: Integer;
+    FFilter: string;
+    FVisible: array of Integer;
+
+    FSbButtons: array[0..1, 0..2] of TBGRABitmap;
+    FSbDragging: Boolean;
+    FSbDragOffset: Integer;
+    FSbHoverPart: Integer;    // 0=top 1=bottom 2=thumb -1=none
+    FSbPressedPart: Integer;
+
+    FMenu: TPopupMenu;
 
     procedure BuildRegion;
     procedure RenderFrame;
     procedure InvalidateFrame;
+    procedure ApplyListFont;
+    procedure RebuildVisible;
+    procedure SyncSelectionLength;
+    procedure ClampScroll;
+    procedure EnsureSourceVisible(SourceIndex: Integer);
 
     function HitButton(PX, PY: Integer): string;
     function HitResizeEdge(PX, PY: Integer;
@@ -81,21 +99,85 @@ type
     function ToolbarAreaRect: TSkinRect;
     function ToolbarGroupRect(Group: Integer): TSkinRect;
     function ToolbarGroupIndexAt(PX, PY: Integer): Integer;
+    function ToolbarMenuAnchor(Group: Integer): TPoint;
     function DividerVisualRect: TSkinRect;
     function DividerHotZoneRect: TSkinRect;
     function DividerHandleRect: TSkinRect;
     function IsDividerCollapsed: Boolean;
+    function ListRect: TSkinRect;
+    function ScrollBarRect: TSkinRect;
+    function ScrollBarWidth: Integer;
     function PtInSkinRect(PX, PY: Integer; const R: TSkinRect): Boolean;
     procedure ToggleDividerCollapsed;
     procedure ClampDividerPos;
+
+    function VisibleCount: Integer;
+    function VisibleRowsFit: Integer;
+    function SourceOfVisible(VisIndex: Integer): Integer;
+    function VisibleOfSource(SourceIndex: Integer): Integer;
+    function RowAt(PX, PY: Integer): Integer;
+    function ScrollMax: Integer;
+    function NeedScrollBar: Boolean;
+
+    function SbTopRect: TSkinRect;
+    function SbBottomRect: TSkinRect;
+    function SbTrackRect: TSkinRect;
+    function SbThumbRect: TSkinRect;
+    function SbHitPart(PX, PY: Integer): Integer;
+    procedure SplitScrollButtons;
+    procedure FreeScrollButtons;
+    procedure SetScrollValue(Value: Integer);
 
     procedure DrawSplitterBar(const R: TSkinRect; Front, Back: TBGRAPixel);
     procedure DrawSplitterArrow(const R: TSkinRect; ArrowColor: TBGRAPixel;
       Collapsed: Boolean);
     procedure DrawToolbarGroups;
+    procedure DrawListRows;
+    procedure DrawScrollBar;
+    procedure DrawVTiled(Src: TBGRABitmap; const R: TSkinRect);
+    procedure DrawVThreeSlice(Src: TBGRABitmap; const R: TSkinRect;
+      ResizeCenter: Integer; TileCenter: Boolean);
+    function ElideRight(const S: string; MaxW: Integer): string;
 
     procedure FireButtonClick(const AName: string);
     procedure FireToolbarClick(Group: Integer);
+    procedure PlaySource(SourceIndex: Integer);
+    procedure SelectRow(VisIndex: Integer; Shift: TShiftState);
+    procedure ImportPathList(Files: TStrings);
+    procedure CollectAudioFiles(const Path: string; Dest: TStrings);
+    function IsAudioFile(const Path: string): Boolean;
+    procedure HandleDropFiles(Sender: TObject; const FileNames: array of string);
+
+    function AddMenuItem(const Cap: string; Handler: TNotifyEvent;
+      ATag: Integer = 0): TMenuItem;
+    procedure ShowAddMenu;
+    procedure ShowDeleteMenu;
+    procedure ShowListMenu;
+    procedure ShowSortMenu;
+    procedure ShowFindMenu;
+    procedure ShowEditMenu;
+    procedure ShowModeMenu;
+
+    procedure OnAddFiles(Sender: TObject);
+    procedure OnAddFolder(Sender: TObject);
+    procedure OnRemoveSelected(Sender: TObject);
+    procedure OnClearAll(Sender: TObject);
+    procedure OnRemoveDupes(Sender: TObject);
+    procedure OnRemoveInvalid(Sender: TObject);
+    procedure OnLocateCurrent(Sender: TObject);
+    procedure OnSortByName(Sender: TObject);
+    procedure OnSortByTitle(Sender: TObject);
+    procedure OnSortByPath(Sender: TObject);
+    procedure OnSortRandom(Sender: TObject);
+    procedure OnSortReverse(Sender: TObject);
+    procedure OnPlaySelected(Sender: TObject);
+    procedure OnFileProps(Sender: TObject);
+    procedure OnSelectAll(Sender: TObject);
+    procedure OnInvertSel(Sender: TObject);
+    procedure OnClearSel(Sender: TObject);
+    procedure OnMoveUp(Sender: TObject);
+    procedure OnMoveDown(Sender: TObject);
+    procedure OnModeClick(Sender: TObject);
   end;
 
 implementation
@@ -111,6 +193,8 @@ const
   kDividerCollapseThreshold = 6;
   kDefaultDividerPos        = 55;
   kDividerHotPad            = 6;
+  kAudioExts: array[0..7] of string = (
+    '.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.ape');
 
 { TPlaylistForm }
 
@@ -121,9 +205,11 @@ begin
   FSkin    := nil;
   FBackend := ABackend;
   FFrame   := nil;
+  FModel   := TPlaylistModel.Create;
 
   FLogicW := 268;
   FLogicH := 165;
+  FRowHeight := 16;
 
   FHoveredType     := '';
   FPressedType     := '';
@@ -136,17 +222,30 @@ begin
   FDividerDragging      := False;
   FDividerHandlePressed := False;
 
+  FSelAnchor := -1;
+  FScroll := 0;
+  FFilter := '';
+  FSbHoverPart := -1;
+  FSbPressedPart := -1;
+  FSbDragging := False;
+
+  FMenu := TPopupMenu.Create(Self);
+
   BorderStyle := bsNone;
   FormStyle   := fsNormal;
   Color       := clBlack;
   Caption     := 'Playlist';
+  AllowDropFiles := True;
+  OnDropFiles := @HandleDropFiles;
 
   MouseLeave;
 end;
 
 destructor TPlaylistForm.Destroy;
 begin
+  FreeScrollButtons;
   FreeAndNil(FFrame);
+  FreeAndNil(FModel);
   inherited Destroy;
 end;
 
@@ -174,10 +273,9 @@ begin
     SetBounds(Left, Top, FLogicW, FLogicH);
   end;
 
+  SplitScrollButtons;
   ClampDividerPos;
-
-  // 播放列表窗口背景图角落透明像素极少，逐像素 HRGN 会在关闭时挂起。
-  // 直接使用矩形窗口，视觉效果与原版 Qt 几乎完全一致。
+  RebuildVisible;
   InvalidateFrame;
 end;
 
@@ -190,7 +288,6 @@ var
 begin
   if FFrame = nil then Exit;
   bmp := FFrame;
-
   bw := bmp.Width;
   bh := bmp.Height;
   totalRgn := CreateRectRgn(0, 0, 0, 0);
@@ -225,7 +322,6 @@ begin
       totalRgn := rowRgn;
     end;
   end;
-
   SetWindowRgn(Handle, totalRgn, True);
 end;
 
@@ -321,6 +417,17 @@ begin
     Result := -1;
 end;
 
+function TPlaylistForm.ToolbarMenuAnchor(Group: Integer): TPoint;
+var
+  r: TSkinRect;
+begin
+  r := ToolbarGroupRect(Group);
+  if r.IsEmpty then
+    Result := Mouse.CursorPos
+  else
+    Result := ClientToScreen(Point(r.X, r.Y + r.H));
+end;
+
 function TPlaylistForm.PtInSkinRect(PX, PY: Integer; const R: TSkinRect): Boolean;
 begin
   Result := (not R.IsEmpty) and
@@ -398,29 +505,598 @@ begin
   InvalidateFrame;
 end;
 
+function TPlaylistForm.ScrollBarWidth: Integer;
+var
+  elem: PSkinElement;
+  w: Integer;
+begin
+  Result := 0;
+  if FSkin = nil then Exit;
+  elem := FSkin^.PlaylistWindow.FindElement('scrollbar');
+  if (elem = nil) or (elem^.ButtonsPixmap = nil) then Exit;
+  Result := 8;
+  if FSbButtons[0, 0] <> nil then
+    Result := Max(Result, FSbButtons[0, 0].Width);
+  if FSbButtons[1, 0] <> nil then
+    Result := Max(Result, FSbButtons[1, 0].Width);
+  if elem^.BarPixmap <> nil then
+    Result := Max(Result, elem^.BarPixmap.Width);
+  if elem^.ThumbPixmaps[0] <> nil then
+    Result := Max(Result, elem^.ThumbPixmaps[0].Width);
+  w := Result;
+  Result := w;
+end;
+
+function TPlaylistForm.NeedScrollBar: Boolean;
+begin
+  Result := (ScrollBarWidth > 0) and (VisibleCount > VisibleRowsFit);
+end;
+
+function TPlaylistForm.ListRect: TSkinRect;
+var
+  pl, vis: TSkinRect;
+  sbW: Integer;
+begin
+  Result := TSkinRect.Zero;
+  pl := ContentRect;
+  vis := DividerVisualRect;
+  if pl.IsEmpty then Exit;
+  Result.X := vis.X + vis.W;
+  Result.Y := pl.Y;
+  sbW := 0;
+  if NeedScrollBar then sbW := ScrollBarWidth;
+  Result.W := Max(0, pl.X + pl.W - Result.X - sbW);
+  Result.H := pl.H;
+end;
+
+function TPlaylistForm.ScrollBarRect: TSkinRect;
+var
+  pl: TSkinRect;
+  sbW: Integer;
+begin
+  Result := TSkinRect.Zero;
+  if not NeedScrollBar then Exit;
+  pl := ContentRect;
+  sbW := ScrollBarWidth;
+  Result.X := pl.X + pl.W - sbW;
+  Result.Y := pl.Y;
+  Result.W := sbW;
+  Result.H := pl.H;
+end;
+
+function TPlaylistForm.VisibleCount: Integer;
+begin
+  Result := Length(FVisible);
+end;
+
+function TPlaylistForm.VisibleRowsFit: Integer;
+var
+  pl: TSkinRect;
+begin
+  // 用内容区高度，避免 ListRect ↔ NeedScrollBar 循环依赖。
+  pl := ContentRect;
+  if FRowHeight <= 0 then FRowHeight := 16;
+  Result := Max(1, pl.H div FRowHeight);
+end;
+
+function TPlaylistForm.SourceOfVisible(VisIndex: Integer): Integer;
+begin
+  if (VisIndex < 0) or (VisIndex >= Length(FVisible)) then Exit(-1);
+  Result := FVisible[VisIndex];
+end;
+
+function TPlaylistForm.VisibleOfSource(SourceIndex: Integer): Integer;
+var
+  i: Integer;
+begin
+  for i := 0 to High(FVisible) do
+    if FVisible[i] = SourceIndex then Exit(i);
+  Result := -1;
+end;
+
+function TPlaylistForm.RowAt(PX, PY: Integer): Integer;
+var
+  lr: TSkinRect;
+begin
+  Result := -1;
+  lr := ListRect;
+  if not PtInSkinRect(PX, PY, lr) then Exit;
+  if FRowHeight <= 0 then Exit;
+  Result := FScroll + (PY - lr.Y) div FRowHeight;
+  if (Result < 0) or (Result >= VisibleCount) then Result := -1;
+end;
+
+function TPlaylistForm.ScrollMax: Integer;
+begin
+  Result := Max(0, VisibleCount - VisibleRowsFit);
+end;
+
+procedure TPlaylistForm.ClampScroll;
+begin
+  if FScroll < 0 then FScroll := 0;
+  if FScroll > ScrollMax then FScroll := ScrollMax;
+end;
+
+procedure TPlaylistForm.SetScrollValue(Value: Integer);
+begin
+  if Value < 0 then Value := 0;
+  if Value > ScrollMax then Value := ScrollMax;
+  if Value <> FScroll then
+  begin
+    FScroll := Value;
+    InvalidateFrame;
+  end;
+end;
+
+procedure TPlaylistForm.EnsureSourceVisible(SourceIndex: Integer);
+var
+  vis: Integer;
+begin
+  vis := VisibleOfSource(SourceIndex);
+  if vis < 0 then Exit;
+  if vis < FScroll then
+    FScroll := vis
+  else if vis >= FScroll + VisibleRowsFit then
+    FScroll := vis - VisibleRowsFit + 1;
+  ClampScroll;
+end;
+
+procedure TPlaylistForm.SyncSelectionLength;
+var
+  oldLen, i: Integer;
+begin
+  oldLen := Length(FSelected);
+  SetLength(FSelected, FModel.Count);
+  for i := oldLen to High(FSelected) do
+    FSelected[i] := False;
+end;
+
+procedure TPlaylistForm.RebuildVisible;
+var
+  i: Integer;
+  e: TPlaylistEntry;
+  needle, hay: string;
+begin
+  SetLength(FVisible, 0);
+  if FModel = nil then Exit;
+  needle := UTF8LowerCase(Trim(FFilter));
+  for i := 0 to FModel.Count - 1 do
+  begin
+    if needle <> '' then
+    begin
+      e := FModel.Entries[i];
+      hay := UTF8LowerCase(DisplayTitleForEntry(e) + ' ' + e.FilePath);
+      if Pos(needle, hay) = 0 then Continue;
+    end;
+    SetLength(FVisible, Length(FVisible) + 1);
+    FVisible[High(FVisible)] := i;
+  end;
+  ClampScroll;
+end;
+
+procedure TPlaylistForm.ApplyListFont;
+var
+  f: TSkinFont;
+  st: TFontStyles;
+begin
+  if (FFrame = nil) or (FSkin = nil) then Exit;
+  f := FSkin^.PlaylistConfig.Font;
+  if f.Family <> '' then
+    FFrame.FontName := f.Family
+  else
+    FFrame.FontName := 'SimSun';
+  if f.PixelSize > 0 then
+    FFrame.FontHeight := f.PixelSize
+  else
+    FFrame.FontHeight := 12;
+  st := [];
+  if f.Bold then Include(st, fsBold);
+  if f.Italic then Include(st, fsItalic);
+  FFrame.FontStyle := st;
+  FFrame.FontAntialias := True;
+  FRowHeight := FFrame.TextSize('Ag').cy + 4;
+  if FRowHeight < 14 then FRowHeight := 14;
+end;
+
+procedure TPlaylistForm.FreeScrollButtons;
+var
+  r, c: Integer;
+begin
+  for r := 0 to 1 do
+    for c := 0 to 2 do
+      FreeAndNil(FSbButtons[r, c]);
+end;
+
+procedure TPlaylistForm.SplitScrollButtons;
+var
+  elem: PSkinElement;
+  sheet: TBGRABitmap;
+  cw, ch, row, col: Integer;
+begin
+  FreeScrollButtons;
+  if FSkin = nil then Exit;
+  elem := FSkin^.PlaylistWindow.FindElement('scrollbar');
+  if (elem = nil) or (elem^.ButtonsPixmap = nil) then Exit;
+  sheet := elem^.ButtonsPixmap;
+  if (sheet.Width < 3) or (sheet.Height < 2) then Exit;
+  cw := sheet.Width div 3;
+  ch := sheet.Height div 2;
+  if (cw <= 0) or (ch <= 0) then Exit;
+  for row := 0 to 1 do
+    for col := 0 to 2 do
+      FSbButtons[row, col] := sheet.GetPart(
+        Classes.Rect(col * cw, row * ch, (col + 1) * cw, (row + 1) * ch));
+end;
+
+function TPlaylistForm.SbTopRect: TSkinRect;
+var
+  bar: TSkinRect;
+  w, h: Integer;
+begin
+  Result := TSkinRect.Zero;
+  bar := ScrollBarRect;
+  if bar.IsEmpty then Exit;
+  w := bar.W; h := 0;
+  if FSbButtons[0, 0] <> nil then
+  begin
+    w := FSbButtons[0, 0].Width;
+    h := FSbButtons[0, 0].Height;
+  end;
+  Result.X := bar.X + (bar.W - w) div 2;
+  Result.Y := bar.Y;
+  Result.W := w;
+  Result.H := h;
+end;
+
+function TPlaylistForm.SbBottomRect: TSkinRect;
+var
+  bar: TSkinRect;
+  w, h: Integer;
+begin
+  Result := TSkinRect.Zero;
+  bar := ScrollBarRect;
+  if bar.IsEmpty then Exit;
+  w := bar.W; h := 0;
+  if FSbButtons[1, 0] <> nil then
+  begin
+    w := FSbButtons[1, 0].Width;
+    h := FSbButtons[1, 0].Height;
+  end;
+  Result.X := bar.X + (bar.W - w) div 2;
+  Result.Y := bar.Y + bar.H - h;
+  Result.W := w;
+  Result.H := h;
+end;
+
+function TPlaylistForm.SbTrackRect: TSkinRect;
+var
+  bar, topR, botR: TSkinRect;
+begin
+  Result := TSkinRect.Zero;
+  bar := ScrollBarRect;
+  if bar.IsEmpty then Exit;
+  topR := SbTopRect;
+  botR := SbBottomRect;
+  Result.X := bar.X;
+  Result.Y := bar.Y + topR.H;
+  Result.W := bar.W;
+  Result.H := Max(0, bar.H - topR.H - botR.H);
+end;
+
+function TPlaylistForm.SbThumbRect: TSkinRect;
+var
+  track: TSkinRect;
+  elem: PSkinElement;
+  thumb: TBGRABitmap;
+  baseH, propH, avail, y, tw: Integer;
+  ratio: Double;
+begin
+  Result := TSkinRect.Zero;
+  track := SbTrackRect;
+  if track.IsEmpty then Exit;
+  elem := nil;
+  thumb := nil;
+  tw := track.W;
+  baseH := 12;
+  if FSkin <> nil then
+  begin
+    elem := FSkin^.PlaylistWindow.FindElement('scrollbar');
+    if elem <> nil then
+    begin
+      thumb := elem^.ThumbPixmaps[0];
+      if thumb = nil then thumb := elem^.ThumbPixmaps[1];
+      if thumb <> nil then
+      begin
+        baseH := thumb.Height;
+        tw := thumb.Width;
+      end;
+    end;
+  end;
+  if ScrollMax <= 0 then
+    propH := Min(track.H, baseH)
+  else
+    propH := Min(track.H, Max(baseH, track.H * VisibleRowsFit div
+      Max(1, VisibleCount)));
+  avail := Max(0, track.H - propH);
+  y := track.Y;
+  if (ScrollMax > 0) and (avail > 0) then
+  begin
+    ratio := FScroll / ScrollMax;
+    y := y + Trunc(ratio * avail);
+  end;
+  Result.X := track.X + (track.W - tw) div 2;
+  Result.Y := y;
+  Result.W := tw;
+  Result.H := propH;
+end;
+
+function TPlaylistForm.SbHitPart(PX, PY: Integer): Integer;
+begin
+  Result := -1;
+  if not NeedScrollBar then Exit;
+  if PtInSkinRect(PX, PY, SbTopRect) then Exit(0);
+  if PtInSkinRect(PX, PY, SbBottomRect) then Exit(1);
+  if PtInSkinRect(PX, PY, SbThumbRect) then Exit(2);
+  if PtInSkinRect(PX, PY, SbTrackRect) then
+  begin
+    if PY < SbThumbRect.Y then Exit(3);  // page up
+    Exit(4);                              // page down
+  end;
+end;
+
+procedure TPlaylistForm.DrawVTiled(Src: TBGRABitmap; const R: TSkinRect);
+var
+  y, dh: Integer;
+  part: TBGRABitmap;
+begin
+  if (Src = nil) or (R.W <= 0) or (R.H <= 0) then Exit;
+  y := R.Y;
+  while y < R.Y + R.H do
+  begin
+    dh := Min(Src.Height, R.Y + R.H - y);
+    if dh < Src.Height then
+      part := Src.GetPart(Classes.Rect(0, 0, Src.Width, dh))
+    else
+      part := Src;
+    try
+      FFrame.PutImage(R.X + (R.W - Src.Width) div 2, y, part, dmDrawWithTransparency);
+    finally
+      if part <> Src then part.Free;
+    end;
+    Inc(y, Src.Height);
+  end;
+end;
+
+procedure TPlaylistForm.DrawVThreeSlice(Src: TBGRABitmap; const R: TSkinRect;
+  ResizeCenter: Integer; TileCenter: Boolean);
+var
+  fixedTop, fixedBottom: Integer;
+  topBmp, midBmp, botBmp: TBGRABitmap;
+  midR: TSkinRect;
+begin
+  if (Src = nil) or (R.W <= 0) or (R.H <= 0) then Exit;
+  if (ResizeCenter <= 0) or (Src.Height <= ResizeCenter) or (R.H <= Src.Height) then
+  begin
+    FFrame.StretchPutImage(Classes.Rect(R.X, R.Y, R.X + R.W, R.Y + R.H),
+      Src, dmDrawWithTransparency);
+    Exit;
+  end;
+  fixedTop := (Src.Height - ResizeCenter) div 2;
+  fixedBottom := Src.Height - fixedTop - ResizeCenter;
+  topBmp := Src.GetPart(Classes.Rect(0, 0, Src.Width, fixedTop));
+  midBmp := Src.GetPart(Classes.Rect(0, fixedTop, Src.Width, fixedTop + ResizeCenter));
+  botBmp := Src.GetPart(Classes.Rect(0, Src.Height - fixedBottom, Src.Width, Src.Height));
+  try
+    if (topBmp <> nil) and (fixedTop > 0) then
+      FFrame.PutImage(R.X, R.Y, topBmp, dmDrawWithTransparency);
+    if (botBmp <> nil) and (fixedBottom > 0) then
+      FFrame.PutImage(R.X, R.Y + R.H - fixedBottom, botBmp, dmDrawWithTransparency);
+    midR.X := R.X;
+    midR.Y := R.Y + fixedTop;
+    midR.W := R.W;
+    midR.H := Max(0, R.H - fixedTop - fixedBottom);
+    if (midBmp <> nil) and (midR.H > 0) then
+    begin
+      if TileCenter then
+        DrawVTiled(midBmp, midR)
+      else
+        FFrame.StretchPutImage(Classes.Rect(midR.X, midR.Y, midR.X + midR.W, midR.Y + midR.H),
+          midBmp, dmDrawWithTransparency);
+    end;
+  finally
+    topBmp.Free;
+    midBmp.Free;
+    botBmp.Free;
+  end;
+end;
+
+procedure TPlaylistForm.DrawScrollBar;
+var
+  elem: PSkinElement;
+  topR, botR, track, thumb: TSkinRect;
+  btn: TBGRABitmap;
+  state: Integer;
+  barRect: TSkinRect;
+begin
+  if not NeedScrollBar then Exit;
+  elem := FSkin^.PlaylistWindow.FindElement('scrollbar');
+  if elem = nil then Exit;
+
+  topR := SbTopRect;
+  botR := SbBottomRect;
+  track := SbTrackRect;
+  thumb := SbThumbRect;
+
+  if (elem^.BarPixmap <> nil) and (not track.IsEmpty) then
+  begin
+    barRect := track;
+    barRect.W := elem^.BarPixmap.Width;
+    barRect.X := track.X + (track.W - barRect.W) div 2;
+    DrawVTiled(elem^.BarPixmap, barRect);
+  end;
+
+  if FSbPressedPart = 0 then state := 2
+  else if FSbHoverPart = 0 then state := 1
+  else state := 0;
+  btn := FSbButtons[0, state];
+  if btn = nil then btn := FSbButtons[0, 0];
+  if (btn <> nil) and (not topR.IsEmpty) then
+    FFrame.PutImage(topR.X, topR.Y, btn, dmDrawWithTransparency);
+
+  if FSbPressedPart = 1 then state := 2
+  else if FSbHoverPart = 1 then state := 1
+  else state := 0;
+  btn := FSbButtons[1, state];
+  if btn = nil then btn := FSbButtons[1, 0];
+  if (btn <> nil) and (not botR.IsEmpty) then
+    FFrame.PutImage(botR.X, botR.Y, btn, dmDrawWithTransparency);
+
+  if not thumb.IsEmpty then
+  begin
+    if FSbDragging then state := 2
+    else if FSbHoverPart = 2 then state := 1
+    else state := 0;
+    btn := elem^.ThumbPixmaps[state];
+    if btn = nil then btn := elem^.ThumbPixmaps[0];
+    if btn <> nil then
+      DrawVThreeSlice(btn, thumb, elem^.ThumbResizeCenter, elem^.ThumbResizeTile);
+  end;
+end;
+
+function TPlaylistForm.ElideRight(const S: string; MaxW: Integer): string;
+begin
+  Result := S;
+  if (FFrame = nil) or (MaxW <= 0) then Exit;
+  if FFrame.TextSize(Result).cx <= MaxW then Exit;
+  while (UTF8Length(Result) > 0) and
+        (FFrame.TextSize(Result + '...').cx > MaxW) do
+    UTF8Delete(Result, UTF8Length(Result), 1);
+  Result := Result + '...';
+end;
+
+procedure TPlaylistForm.DrawListRows;
+var
+  lr: TSkinRect;
+  vis, src, y, hPad, numW, durW, gap, playW, crL, crR: Integer;
+  e: TPlaylistEntry;
+  selected, playing: Boolean;
+  bg, bg2, selC, textC, hiC, numC, durC, rowBg, useC: TBGRAPixel;
+  number, title, duration: string;
+  plElem: PSkinElement;
+  markerH: Integer;
+begin
+  lr := ListRect;
+  if (lr.W <= 0) or (lr.H <= 0) or (FSkin = nil) then Exit;
+
+  ApplyListFont;
+  FFrame.ClipRect := Classes.Rect(lr.X, lr.Y, lr.X + lr.W, lr.Y + lr.H);
+
+  bg   := FSkin^.PlaylistConfig.ColorBkgnd.ToBGRA;
+  bg2  := FSkin^.PlaylistConfig.ColorBkgnd2.ToBGRA;
+  selC := FSkin^.PlaylistConfig.ColorSelect.ToBGRA;
+  textC:= FSkin^.PlaylistConfig.ColorText.ToBGRA;
+  hiC  := FSkin^.PlaylistConfig.ColorHilight.ToBGRA;
+  numC := FSkin^.PlaylistConfig.ColorNumber.ToBGRA;
+  durC := FSkin^.PlaylistConfig.ColorDuration.ToBGRA;
+  if not FSkin^.PlaylistConfig.ColorBkgnd.Valid then bg := BGRA(0, 0, 0);
+  if not FSkin^.PlaylistConfig.ColorBkgnd2.Valid then bg2 := BGRA($20, $20, $20);
+  if not FSkin^.PlaylistConfig.ColorSelect.Valid then selC := BGRA($32, $69, $C8);
+  if not FSkin^.PlaylistConfig.ColorText.Valid then textC := BGRA($00, $80, $FF);
+  if not FSkin^.PlaylistConfig.ColorHilight.Valid then hiC := BGRA($00, $FF, $00);
+  if not FSkin^.PlaylistConfig.ColorNumber.Valid then numC := BGRA($00, $80, $00);
+  if not FSkin^.PlaylistConfig.ColorDuration.Valid then durC := BGRA($C0, $80, $20);
+
+  plElem := FSkin^.PlaylistWindow.FindElement('playlist');
+  hPad := 4;
+
+  for vis := FScroll to Min(VisibleCount, FScroll + VisibleRowsFit + 1) - 1 do
+  begin
+    src := SourceOfVisible(vis);
+    if src < 0 then Continue;
+    y := lr.Y + (vis - FScroll) * FRowHeight;
+    if y >= lr.Y + lr.H then Break;
+
+    selected := (src < Length(FSelected)) and FSelected[src];
+    playing  := src = FModel.CurrentIndex;
+    if vis mod 2 = 0 then rowBg := bg else rowBg := bg2;
+
+    if selected then
+    begin
+      if (plElem <> nil) and (plElem^.SelectedPixmap <> nil) then
+        FFrame.StretchPutImage(Classes.Rect(lr.X, y, lr.X + lr.W, y + FRowHeight),
+          plElem^.SelectedPixmap, dmSet)
+      else
+        FFrame.GradientFill(lr.X, y, lr.X + lr.W, y + FRowHeight,
+          rowBg, selC, gtLinear, PointF(lr.X, y), PointF(lr.X, y + FRowHeight),
+          dmSet, False);
+    end
+    else
+      FFrame.FillRect(lr.X, y, lr.X + lr.W, y + FRowHeight, rowBg, dmSet);
+
+    e := FModel.Entries[src];
+    number := IntToStr(src + 1);
+    title := DisplayTitleForEntry(e);
+    duration := DisplayDurationForEntry(e);
+
+    crL := lr.X + hPad;
+    crR := lr.X + lr.W - hPad;
+
+    if playing then
+    begin
+      markerH := Min(6, FRowHeight - 4);
+      FFrame.FillPolyAntialias(
+        [PointF(crL + 2, y + (FRowHeight - markerH) / 2),
+         PointF(crL + 2, y + (FRowHeight + markerH) / 2),
+         PointF(crL + 2 + markerH, y + FRowHeight / 2)],
+        hiC);
+      Inc(crL, markerH + 6);
+    end;
+
+    if selected or playing then useC := hiC else useC := durC;
+    durW := 0;
+    if duration <> '' then
+    begin
+      durW := FFrame.TextSize(duration).cx;
+      FFrame.TextOut(crR - durW, y + (FRowHeight - FFrame.TextSize(duration).cy) div 2,
+        duration, useC);
+    end;
+
+    if selected or playing then useC := hiC else useC := numC;
+    number := number + ' ';
+    numW := FFrame.TextSize(number).cx;
+    FFrame.TextOut(crL, y + (FRowHeight - FFrame.TextSize(number).cy) div 2,
+      number, useC);
+
+    if selected or playing then useC := hiC else useC := textC;
+    gap := 0;
+    if durW > 0 then gap := FFrame.TextSize('  ').cx;
+    playW := Max(1, (crR - durW - gap) - (crL + numW));
+    title := ElideRight(title, playW);
+    FFrame.TextOut(crL + numW, y + (FRowHeight - FFrame.TextSize(title).cy) div 2,
+      title, useC);
+  end;
+
+  FFrame.NoClip;
+end;
+
 procedure TPlaylistForm.DrawSplitterBar(const R: TSkinRect; Front, Back: TBGRAPixel);
 var
-  x, totalW: Integer;
+  x, totalW, frontW, backW: Integer;
   mix: TBGRAPixel;
-  frontW, backW: Integer;
 begin
   if (R.W <= 0) or (R.H <= 0) or (FFrame = nil) then Exit;
-
   FFrame.FillRect(R.X, R.Y, R.X + R.W, R.Y + 1, Front, dmSet);
   if R.H > 1 then
     FFrame.FillRect(R.X, R.Y + R.H - 1, R.X + R.W, R.Y + R.H, Front, dmSet);
   if R.H <= 2 then Exit;
-
   FFrame.FillRect(R.X, R.Y + 1, R.X + 1, R.Y + R.H - 1, Front, dmSet);
   if R.W > 1 then
     FFrame.FillRect(R.X + R.W - 1, R.Y + 1, R.X + R.W, R.Y + R.H - 1, Front, dmSet);
-
   totalW := R.W;
   for x := 1 to R.W - 2 do
   begin
     frontW := totalW - x;
     backW  := totalW - frontW;
-    if totalW <= 0 then Continue;
     mix.red   := Byte((Integer(Front.red)   * frontW + Integer(Back.red)   * backW) div totalW);
     mix.green := Byte((Integer(Front.green) * frontW + Integer(Back.green) * backW) div totalW);
     mix.blue  := Byte((Integer(Front.blue)  * frontW + Integer(Back.blue)  * backW) div totalW);
@@ -464,9 +1140,8 @@ procedure TPlaylistForm.DrawToolbarGroups;
 var
   elem: PSkinElement;
   tb: TSkinRect;
-  group, gLeft, gRight, gW, gH: Integer;
-  srcLeft, srcRight, srcW, srcH: Integer;
-  drawX, drawY: Integer;
+  group, gLeft, gRight, gW: Integer;
+  srcLeft, srcRight, srcW, srcH, drawX, drawY: Integer;
   sheet, clip_: TBGRABitmap;
   srcRect: TRect;
   hovered, pressed, hasHot: Boolean;
@@ -474,7 +1149,6 @@ begin
   if FSkin = nil then Exit;
   elem := FSkin^.PlaylistWindow.FindElement('toolbar');
   if (elem = nil) or (elem^.StatePixmaps[0] = nil) then Exit;
-
   tb := ToolbarAreaRect;
   if tb.IsEmpty then Exit;
   hasHot := elem^.HotPixmap <> nil;
@@ -484,7 +1158,6 @@ begin
     gLeft  := tb.X + (tb.W * group)       div kToolbarGroupCount;
     gRight := tb.X + (tb.W * (group + 1)) div kToolbarGroupCount;
     gW := gRight - gLeft;
-    gH := tb.H;
     if gW <= 0 then Continue;
 
     hovered := FHoveredToolbar = group;
@@ -500,9 +1173,8 @@ begin
     srcW := srcRight - srcLeft;
     if srcW <= 0 then srcW := 1;
     srcH := sheet.Height;
-
     drawX := gLeft + (gW - srcW) div 2;
-    drawY := tb.Y  + (gH - srcH) div 2;
+    drawY := tb.Y  + (tb.H - srcH) div 2;
     if hasHot then
     begin
       if pressed then begin Inc(drawX); Inc(drawY); end;
@@ -519,7 +1191,7 @@ begin
     srcRect := Classes.Rect(srcLeft, 0, srcLeft + srcW, srcH);
     clip_ := sheet.GetPart(srcRect);
     try
-      FFrame.ClipRect := Classes.Rect(gLeft, tb.Y, gRight, tb.Y + gH);
+      FFrame.ClipRect := Classes.Rect(gLeft, tb.Y, gRight, tb.Y + tb.H);
       FFrame.PutImage(drawX, drawY, clip_, dmDrawWithTransparency);
       FFrame.NoClip;
     finally
@@ -532,27 +1204,25 @@ procedure TPlaylistForm.RenderFrame;
 var
   wnd: TSkinWindow;
   elem: PSkinElement;
-  bounds: TSkinRect;
-  btnX: Integer;
+  bounds, pl, vis, leftPane, titleRect: TSkinRect;
+  btnX, titleW, titleH: Integer;
   overType: string;
   overState: TButtonVisualState;
-  pl, vis, leftPane, listPane: TSkinRect;
   fillBkgnd, fillBkgnd2, front, back: TBGRAPixel;
   sz: TPoint;
-  titleW, titleH: Integer;
-  titleRect: TSkinRect;
 begin
   if FSkin = nil then Exit;
 
   wnd := FSkin^.PlaylistWindow;
   sz := BgSize;
-
   FreeAndNil(FFrame);
   FFrame := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);
 
   if wnd.BackgroundPixmap <> nil then
     DrawNinePatch(FFrame, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
       FLogicW, FLogicH, True);
+
+  ApplyListFont;
 
   pl := ContentRect;
   fillBkgnd  := FSkin^.PlaylistConfig.ColorBkgnd.ToBGRA;
@@ -575,15 +1245,10 @@ begin
         FFrame.FillRect(leftPane.X, leftPane.Y,
           leftPane.X + leftPane.W, leftPane.Y + leftPane.H, fillBkgnd2, dmSet);
     end;
-    listPane.X := vis.X + vis.W;
-    listPane.Y := pl.Y;
-    listPane.W := Max(0, pl.X + pl.W - listPane.X);
-    listPane.H := pl.H;
-    if listPane.W > 0 then
-      FFrame.FillRect(listPane.X, listPane.Y,
-        listPane.X + listPane.W, listPane.Y + listPane.H, fillBkgnd, dmSet);
   end;
 
+  DrawListRows;
+  DrawScrollBar;
   DrawToolbarGroups;
 
   elem := wnd.FindElement('title');
@@ -621,7 +1286,6 @@ begin
   else
     front := BGRA($00, $80, $FF, 255);
   back := fillBkgnd;
-
   if (FDividerSavedPos > 0) or (not IsDividerCollapsed) then
   begin
     DrawSplitterBar(vis, front, back);
@@ -637,16 +1301,13 @@ end;
 
 function TPlaylistForm.HitButton(PX, PY: Integer): string;
 var
-  wnd: TSkinWindow;
   elem: PSkinElement;
   bounds: TSkinRect;
   btnX: Integer;
 begin
   Result := '';
   if FSkin = nil then Exit;
-  wnd := FSkin^.PlaylistWindow;
-
-  elem := wnd.FindElement('close');
+  elem := FSkin^.PlaylistWindow.FindElement('close');
   if elem = nil then Exit;
   bounds := ButtonBounds(elem^);
   btnX   := AlignedButtonX(elem^);
@@ -672,10 +1333,144 @@ end;
 
 procedure TPlaylistForm.FireToolbarClick(Group: Integer);
 begin
-  // Phase 3：弹出对应工具栏菜单。Phase 2 仅消费点击以免落入窗口拖动。
   case Group of
-    0..6: ;
+    0: ShowAddMenu;
+    1: ShowDeleteMenu;
+    2: ShowListMenu;
+    3: ShowSortMenu;
+    4: ShowFindMenu;
+    5: ShowEditMenu;
+    6: ShowModeMenu;
   end;
+end;
+
+procedure TPlaylistForm.PlaySource(SourceIndex: Integer);
+var
+  path: string;
+begin
+  if (SourceIndex < 0) or (SourceIndex >= FModel.Count) then Exit;
+  FModel.SetCurrentIndex(SourceIndex);
+  path := FModel.CurrentFile;
+  if (path <> '') and (FBackend <> nil) then
+    FBackend.OpenFile(path);
+  EnsureSourceVisible(SourceIndex);
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.SelectRow(VisIndex: Integer; Shift: TShiftState);
+var
+  src, i, a, b, vis: Integer;
+begin
+  src := SourceOfVisible(VisIndex);
+  if src < 0 then Exit;
+  SyncSelectionLength;
+  if ssCtrl in Shift then
+  begin
+    FSelected[src] := not FSelected[src];
+    FSelAnchor := src;
+  end
+  else if ssShift in Shift then
+  begin
+    if FSelAnchor < 0 then FSelAnchor := src;
+    a := Min(FSelAnchor, src);
+    b := Max(FSelAnchor, src);
+    for i := 0 to High(FSelected) do
+      FSelected[i] := False;
+    for vis := 0 to High(FVisible) do
+      if (FVisible[vis] >= a) and (FVisible[vis] <= b) then
+        FSelected[FVisible[vis]] := True;
+  end
+  else
+  begin
+    for i := 0 to High(FSelected) do
+      FSelected[i] := False;
+    FSelected[src] := True;
+    FSelAnchor := src;
+  end;
+  InvalidateFrame;
+end;
+
+function TPlaylistForm.IsAudioFile(const Path: string): Boolean;
+var
+  ext: string;
+  i: Integer;
+begin
+  ext := LowerCase(ExtractFileExt(Path));
+  for i := 0 to High(kAudioExts) do
+    if ext = kAudioExts[i] then Exit(True);
+  Result := False;
+end;
+
+procedure TPlaylistForm.CollectAudioFiles(const Path: string; Dest: TStrings);
+var
+  sr: TSearchRec;
+  full, dir: string;
+begin
+  if DirectoryExists(Path) then
+  begin
+    dir := IncludeTrailingPathDelimiter(Path);
+    if FindFirst(dir + '*', faAnyFile, sr) = 0 then
+    try
+      repeat
+        if (sr.Name = '.') or (sr.Name = '..') then Continue;
+        full := dir + sr.Name;
+        if (sr.Attr and faDirectory) <> 0 then
+          CollectAudioFiles(full, Dest)
+        else if IsAudioFile(full) then
+          Dest.Add(full);
+      until FindNext(sr) <> 0;
+    finally
+      FindClose(sr);
+    end;
+  end
+  else if FileExists(Path) and IsAudioFile(Path) then
+    Dest.Add(Path);
+end;
+
+procedure TPlaylistForm.ImportPathList(Files: TStrings);
+var
+  arr: array of string;
+  i: Integer;
+begin
+  if (Files = nil) or (Files.Count = 0) then Exit;
+  SetLength(arr, Files.Count);
+  for i := 0 to Files.Count - 1 do
+    arr[i] := Files[i];
+  FModel.AddFiles(arr);
+  SyncSelectionLength;
+  RebuildVisible;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.HandleDropFiles(Sender: TObject; const FileNames: array of string);
+var
+  i: Integer;
+  collected: TStringList;
+begin
+  if Sender = nil then ;
+  collected := TStringList.Create;
+  try
+    collected.Sorted := True;
+    collected.Duplicates := dupIgnore;
+    for i := 0 to High(FileNames) do
+      CollectAudioFiles(FileNames[i], collected);
+    ImportPathList(collected);
+  finally
+    collected.Free;
+  end;
+end;
+
+function TPlaylistForm.DoMouseWheel(Shift: TShiftState; WheelDelta: Integer;
+  MousePos: TPoint): Boolean;
+var
+  steps: Integer;
+begin
+  inherited DoMouseWheel(Shift, WheelDelta, MousePos);
+  Result := True;
+  steps := WheelDelta div 120;
+  if steps = 0 then
+    if WheelDelta > 0 then steps := 1 else steps := -1;
+  SetScrollValue(FScroll - steps);
 end;
 
 procedure TPlaylistForm.MouseDown(Button: TMouseButton; Shift: TShiftState;
@@ -683,7 +1478,8 @@ procedure TPlaylistForm.MouseDown(Button: TMouseButton; Shift: TShiftState;
 var
   er, eb: Boolean;
   hitName: string;
-  group: Integer;
+  group, row, part: Integer;
+  thumb: TSkinRect;
 begin
   if Button = mbLeft then
   begin
@@ -695,6 +1491,12 @@ begin
         FDividerHandlePressed := False;
         ToggleDividerCollapsed;
         Cursor := crDefault;
+        Exit;
+      end;
+      row := RowAt(X, Y);
+      if row >= 0 then
+      begin
+        PlaySource(SourceOfVisible(row));
         Exit;
       end;
     end;
@@ -713,24 +1515,63 @@ begin
         FPressedToolbar := group;
         InvalidateFrame;
       end
-      else if (FDividerSavedPos > 0) and PtInSkinRect(X, Y, DividerHotZoneRect) then
+      else
       begin
-        FDividerDragging := True;
-        FDividerHandlePressed := PtInSkinRect(X, Y, DividerHandleRect);
-        FDividerDragStartX := X;
-        SetCapture(Handle);
-      end
-      else if HitResizeEdge(X, Y, er, eb) then
-      begin
-        FResizing         := True;
-        FResizeEdgeRight  := er;
-        FResizeEdgeBottom := eb;
-        FResizeStartX     := Mouse.CursorPos.X;
-        FResizeStartY     := Mouse.CursorPos.Y;
-        FResizeStartW     := FLogicW;
-        FResizeStartH     := FLogicH;
-        SetCapture(Handle);
+        part := SbHitPart(X, Y);
+        if part >= 0 then
+        begin
+          case part of
+            0: begin FSbPressedPart := 0; SetScrollValue(FScroll - 1); end;
+            1: begin FSbPressedPart := 1; SetScrollValue(FScroll + 1); end;
+            2: begin
+                 FSbDragging := True;
+                 FSbHoverPart := 2;
+                 thumb := SbThumbRect;
+                 FSbDragOffset := Y - thumb.Y;
+                 SetCapture(Handle);
+               end;
+            3: SetScrollValue(FScroll - VisibleRowsFit);
+            4: SetScrollValue(FScroll + VisibleRowsFit);
+          end;
+          InvalidateFrame;
+        end
+        else if (FDividerSavedPos > 0) and PtInSkinRect(X, Y, DividerHotZoneRect) then
+        begin
+          FDividerDragging := True;
+          FDividerHandlePressed := PtInSkinRect(X, Y, DividerHandleRect);
+          FDividerDragStartX := X;
+          SetCapture(Handle);
+        end
+        else if HitResizeEdge(X, Y, er, eb) then
+        begin
+          FResizing         := True;
+          FResizeEdgeRight  := er;
+          FResizeEdgeBottom := eb;
+          FResizeStartX     := Mouse.CursorPos.X;
+          FResizeStartY     := Mouse.CursorPos.Y;
+          FResizeStartW     := FLogicW;
+          FResizeStartH     := FLogicH;
+          SetCapture(Handle);
+        end
+        else
+        begin
+          row := RowAt(X, Y);
+          if row >= 0 then
+            SelectRow(row, Shift);
+        end;
       end;
+    end;
+  end
+  else if Button = mbRight then
+  begin
+    row := RowAt(X, Y);
+    if row >= 0 then
+    begin
+      if (SourceOfVisible(row) >= 0) and
+         ((SourceOfVisible(row) >= Length(FSelected)) or
+          not FSelected[SourceOfVisible(row)]) then
+        SelectRow(row, []);
+      ShowEditMenu;
     end;
   end;
   inherited MouseDown(Button, Shift, X, Y);
@@ -745,10 +1586,11 @@ procedure TPlaylistForm.MouseMove(Shift: TShiftState; X, Y: Integer);
 var
   newName: string;
   er, eb: Boolean;
-  newW, newH, dx, dy, newPos: Integer;
-  newGroup: Integer;
-  pl: TSkinRect;
+  newW, newH, dx, dy, newPos, newGroup, part: Integer;
+  pl, track, thumb: TSkinRect;
   needRedraw: Boolean;
+  avail: Integer;
+  ratio: Double;
 begin
   if FResizing then
   begin
@@ -764,11 +1606,23 @@ begin
       FLogicH := newH;
       SetBounds(Left, Top, newW, newH);
       ClampDividerPos;
+      ClampScroll;
       FreeAndNil(FFrame);
       RenderFrame;
       if HandleAllocated then BuildRegion;
       Invalidate;
     end;
+  end
+  else if FSbDragging then
+  begin
+    track := SbTrackRect;
+    thumb := SbThumbRect;
+    avail := Max(1, track.H - thumb.H);
+    newPos := Y - FSbDragOffset;
+    if newPos < track.Y then newPos := track.Y;
+    if newPos > track.Y + avail then newPos := track.Y + avail;
+    ratio := (newPos - track.Y) / avail;
+    SetScrollValue(Round(ratio * ScrollMax));
   end
   else if FDividerDragging then
   begin
@@ -794,6 +1648,12 @@ begin
     if newGroup <> FHoveredToolbar then
     begin
       FHoveredToolbar := newGroup;
+      needRedraw := True;
+    end;
+    part := SbHitPart(X, Y);
+    if part <> FSbHoverPart then
+    begin
+      if part <= 2 then FSbHoverPart := part else FSbHoverPart := -1;
       needRedraw := True;
     end;
     if needRedraw then InvalidateFrame;
@@ -825,7 +1685,14 @@ var
 begin
   if Button = mbLeft then
   begin
-    if FDividerDragging then
+    if FSbDragging then
+    begin
+      ReleaseCapture;
+      FSbDragging := False;
+      FSbPressedPart := -1;
+      InvalidateFrame;
+    end
+    else if FDividerDragging then
     begin
       ReleaseCapture;
       wasDrag := Abs(X - FDividerDragStartX) > 3;
@@ -860,6 +1727,11 @@ begin
     end
     else
     begin
+      if FSbPressedPart >= 0 then
+      begin
+        FSbPressedPart := -1;
+        InvalidateFrame;
+      end;
       clickedType := FPressedType;
       FPressedType := '';
       if clickedType <> '' then
@@ -878,12 +1750,14 @@ end;
 procedure TPlaylistForm.MouseLeave;
 begin
   if (FHoveredType <> '') or (FPressedType <> '') or
-     (FHoveredToolbar >= 0) or (FPressedToolbar >= 0) then
+     (FHoveredToolbar >= 0) or (FPressedToolbar >= 0) or
+     (FSbHoverPart >= 0) then
   begin
     FHoveredType := '';
     FPressedType := '';
     FHoveredToolbar := -1;
     FPressedToolbar := -1;
+    FSbHoverPart := -1;
     InvalidateFrame;
   end;
   Cursor := crDefault;
@@ -918,20 +1792,514 @@ begin
   end;
 end;
 
+function TPlaylistForm.AddMenuItem(const Cap: string; Handler: TNotifyEvent;
+  ATag: Integer): TMenuItem;
+begin
+  Result := TMenuItem.Create(FMenu);
+  Result.Caption := Cap;
+  Result.OnClick := Handler;
+  Result.Tag := ATag;
+  FMenu.Items.Add(Result);
+end;
+
+procedure TPlaylistForm.ShowAddMenu;
+var
+  pt: TPoint;
+begin
+  FMenu.Items.Clear;
+  AddMenuItem('文件(&F)...', @OnAddFiles);
+  AddMenuItem('文件夹(&D)...', @OnAddFolder);
+  pt := ToolbarMenuAnchor(0);
+  FMenu.PopUp(pt.X, pt.Y);
+end;
+
+procedure TPlaylistForm.ShowDeleteMenu;
+var
+  pt: TPoint;
+begin
+  FMenu.Items.Clear;
+  AddMenuItem('从列表删除(&D)', @OnRemoveSelected);
+  AddMenuItem('清空列表(&L)', @OnClearAll);
+  AddMenuItem('-', nil);
+  AddMenuItem('删除重复项(&R)', @OnRemoveDupes);
+  AddMenuItem('删除无效文件(&I)', @OnRemoveInvalid);
+  pt := ToolbarMenuAnchor(1);
+  FMenu.PopUp(pt.X, pt.Y);
+end;
+
+procedure TPlaylistForm.ShowListMenu;
+var
+  pt: TPoint;
+begin
+  FMenu.Items.Clear;
+  AddMenuItem('定位正在播放(&L)', @OnLocateCurrent);
+  pt := ToolbarMenuAnchor(2);
+  FMenu.PopUp(pt.X, pt.Y);
+end;
+
+procedure TPlaylistForm.ShowSortMenu;
+var
+  pt: TPoint;
+begin
+  FMenu.Items.Clear;
+  AddMenuItem('按文件名排序', @OnSortByName);
+  AddMenuItem('按标题排序', @OnSortByTitle);
+  AddMenuItem('按路径排序', @OnSortByPath);
+  AddMenuItem('-', nil);
+  AddMenuItem('随机排序', @OnSortRandom);
+  AddMenuItem('反转排序', @OnSortReverse);
+  pt := ToolbarMenuAnchor(3);
+  FMenu.PopUp(pt.X, pt.Y);
+end;
+
+procedure TPlaylistForm.ShowFindMenu;
+var
+  s: string;
+begin
+  s := FFilter;
+  if InputQuery('查找', '过滤列表（留空清除）：', s) then
+  begin
+    FFilter := s;
+    RebuildVisible;
+    InvalidateFrame;
+  end;
+end;
+
+procedure TPlaylistForm.ShowEditMenu;
+var
+  pt: TPoint;
+begin
+  FMenu.Items.Clear;
+  AddMenuItem('播放选中(&P)', @OnPlaySelected);
+  AddMenuItem('文件属性(&I)', @OnFileProps);
+  AddMenuItem('-', nil);
+  AddMenuItem('全选(&A)', @OnSelectAll);
+  AddMenuItem('反选(&I)', @OnInvertSel);
+  AddMenuItem('取消选择(&N)', @OnClearSel);
+  AddMenuItem('-', nil);
+  AddMenuItem('上移(&U)', @OnMoveUp);
+  AddMenuItem('下移(&D)', @OnMoveDown);
+  pt := ToolbarMenuAnchor(5);
+  FMenu.PopUp(pt.X, pt.Y);
+end;
+
+procedure TPlaylistForm.ShowModeMenu;
+var
+  pt: TPoint;
+  item: TMenuItem;
+  i: Integer;
+  modes: array[0..3] of record
+    Cap: string;
+    RepeatMode: Integer;
+    Shuffle: Boolean;
+  end;
+begin
+  modes[0].Cap := '顺序播放'; modes[0].RepeatMode := 0; modes[0].Shuffle := False;
+  modes[1].Cap := '单曲循环'; modes[1].RepeatMode := 1; modes[1].Shuffle := False;
+  modes[2].Cap := '列表循环'; modes[2].RepeatMode := 2; modes[2].Shuffle := False;
+  modes[3].Cap := '随机播放'; modes[3].RepeatMode := 2; modes[3].Shuffle := True;
+
+  FMenu.Items.Clear;
+  for i := 0 to 3 do
+  begin
+    item := AddMenuItem(modes[i].Cap, @OnModeClick, i);
+    item.RadioItem := True;
+    item.Checked := (FModel.RepeatMode = modes[i].RepeatMode) and
+                    (FModel.Shuffle = modes[i].Shuffle);
+  end;
+  pt := ToolbarMenuAnchor(6);
+  FMenu.PopUp(pt.X, pt.Y);
+end;
+
+procedure TPlaylistForm.OnAddFiles(Sender: TObject);
+var
+  dlg: TOpenDialog;
+  i: Integer;
+  files: TStringList;
+begin
+  dlg := TOpenDialog.Create(Self);
+  files := TStringList.Create;
+  try
+    dlg.Title := '添加文件';
+    dlg.Options := dlg.Options + [ofAllowMultiSelect, ofFileMustExist, ofEnableSizing];
+    dlg.Filter := '音频文件|*.mp3;*.flac;*.ogg;*.wav;*.aac;*.m4a;*.wma;*.ape|' +
+                  '所有文件|*.*';
+    if not dlg.Execute then Exit;
+    for i := 0 to dlg.Files.Count - 1 do
+      files.Add(dlg.Files[i]);
+    ImportPathList(files);
+  finally
+    files.Free;
+    dlg.Free;
+  end;
+end;
+
+procedure TPlaylistForm.OnAddFolder(Sender: TObject);
+var
+  dir: string;
+  files: TStringList;
+begin
+  dir := '';
+  if not SelectDirectory('添加文件夹', '', dir) then Exit;
+  files := TStringList.Create;
+  try
+    files.Sorted := True;
+    CollectAudioFiles(dir, files);
+    ImportPathList(files);
+  finally
+    files.Free;
+  end;
+end;
+
+procedure TPlaylistForm.OnRemoveSelected(Sender: TObject);
+var
+  i: Integer;
+begin
+  SyncSelectionLength;
+  for i := FModel.Count - 1 downto 0 do
+    if (i < Length(FSelected)) and FSelected[i] then
+      FModel.RemoveIndex(i);
+  SyncSelectionLength;
+  RebuildVisible;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnClearAll(Sender: TObject);
+begin
+  Clear;
+end;
+
+procedure TPlaylistForm.OnRemoveDupes(Sender: TObject);
+var
+  seen: TStringList;
+  i: Integer;
+  key: string;
+begin
+  seen := TStringList.Create;
+  try
+    seen.Sorted := True;
+    seen.Duplicates := dupIgnore;
+    for i := FModel.Count - 1 downto 0 do
+    begin
+      key := UTF8LowerCase(FModel.FileAt(i));
+      if seen.IndexOf(key) >= 0 then
+        FModel.RemoveIndex(i)
+      else
+        seen.Add(key);
+    end;
+  finally
+    seen.Free;
+  end;
+  SyncSelectionLength;
+  RebuildVisible;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnRemoveInvalid(Sender: TObject);
+var
+  i: Integer;
+begin
+  for i := FModel.Count - 1 downto 0 do
+    if not FileExists(FModel.FileAt(i)) then
+      FModel.RemoveIndex(i);
+  SyncSelectionLength;
+  RebuildVisible;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnLocateCurrent(Sender: TObject);
+begin
+  if FModel.CurrentIndex < 0 then Exit;
+  EnsureSourceVisible(FModel.CurrentIndex);
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnSortByName(Sender: TObject);
+var
+  i: Integer;
+  names, paths: TStringList;
+  tmpN, tmpP: string;
+  j: Integer;
+begin
+  names := TStringList.Create;
+  paths := TStringList.Create;
+  try
+    for i := 0 to FModel.Count - 1 do
+    begin
+      paths.Add(FModel.FileAt(i));
+      names.Add(ExtractFileName(FModel.FileAt(i)));
+    end;
+    for i := 0 to names.Count - 2 do
+      for j := i + 1 to names.Count - 1 do
+        if AnsiCompareText(names[i], names[j]) > 0 then
+        begin
+          tmpN := names[i]; names[i] := names[j]; names[j] := tmpN;
+          tmpP := paths[i]; paths[i] := paths[j]; paths[j] := tmpP;
+        end;
+    FModel.Clear;
+    for i := 0 to paths.Count - 1 do
+      FModel.AddFile(paths[i]);
+  finally
+    names.Free;
+    paths.Free;
+  end;
+  SyncSelectionLength;
+  RebuildVisible;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnSortByTitle(Sender: TObject);
+var
+  i, j: Integer;
+  paths, titles: TStringList;
+  tmpP, tmpT: string;
+begin
+  paths := TStringList.Create;
+  titles := TStringList.Create;
+  try
+    for i := 0 to FModel.Count - 1 do
+    begin
+      paths.Add(FModel.FileAt(i));
+      titles.Add(DisplayTitleForEntry(FModel.Entries[i]));
+    end;
+    for i := 0 to titles.Count - 2 do
+      for j := i + 1 to titles.Count - 1 do
+        if AnsiCompareText(titles[i], titles[j]) > 0 then
+        begin
+          tmpT := titles[i]; titles[i] := titles[j]; titles[j] := tmpT;
+          tmpP := paths[i];  paths[i]  := paths[j];  paths[j]  := tmpP;
+        end;
+    FModel.Clear;
+    for i := 0 to paths.Count - 1 do
+      FModel.AddFile(paths[i]);
+  finally
+    titles.Free;
+    paths.Free;
+  end;
+  SyncSelectionLength;
+  RebuildVisible;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnSortByPath(Sender: TObject);
+var
+  i, j: Integer;
+  paths: TStringList;
+  tmpP: string;
+begin
+  paths := TStringList.Create;
+  try
+    for i := 0 to FModel.Count - 1 do
+      paths.Add(FModel.FileAt(i));
+    for i := 0 to paths.Count - 2 do
+      for j := i + 1 to paths.Count - 1 do
+        if AnsiCompareText(paths[i], paths[j]) > 0 then
+        begin
+          tmpP := paths[i]; paths[i] := paths[j]; paths[j] := tmpP;
+        end;
+    FModel.Clear;
+    for i := 0 to paths.Count - 1 do
+      FModel.AddFile(paths[i]);
+  finally
+    paths.Free;
+  end;
+  SyncSelectionLength;
+  RebuildVisible;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnSortRandom(Sender: TObject);
+var
+  i, j: Integer;
+  paths: TStringList;
+  tmp: string;
+begin
+  paths := TStringList.Create;
+  try
+    for i := 0 to FModel.Count - 1 do
+      paths.Add(FModel.FileAt(i));
+    for i := paths.Count - 1 downto 1 do
+    begin
+      j := Random(i + 1);
+      tmp := paths[i];
+      paths[i] := paths[j];
+      paths[j] := tmp;
+    end;
+    FModel.Clear;
+    for i := 0 to paths.Count - 1 do
+      FModel.AddFile(paths[i]);
+  finally
+    paths.Free;
+  end;
+  SyncSelectionLength;
+  RebuildVisible;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnSortReverse(Sender: TObject);
+var
+  i: Integer;
+  paths: TStringList;
+begin
+  paths := TStringList.Create;
+  try
+    for i := FModel.Count - 1 downto 0 do
+      paths.Add(FModel.FileAt(i));
+    FModel.Clear;
+    for i := 0 to paths.Count - 1 do
+      FModel.AddFile(paths[i]);
+  finally
+    paths.Free;
+  end;
+  SyncSelectionLength;
+  RebuildVisible;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnPlaySelected(Sender: TObject);
+var
+  i: Integer;
+begin
+  SyncSelectionLength;
+  for i := 0 to High(FSelected) do
+    if FSelected[i] then
+    begin
+      PlaySource(i);
+      Exit;
+    end;
+  if FModel.CurrentIndex >= 0 then
+    PlaySource(FModel.CurrentIndex);
+end;
+
+procedure TPlaylistForm.OnFileProps(Sender: TObject);
+var
+  i: Integer;
+  e: TPlaylistEntry;
+  dur: string;
+begin
+  SyncSelectionLength;
+  i := -1;
+  if (FSelAnchor >= 0) and (FSelAnchor < FModel.Count) then
+    i := FSelAnchor;
+  if i < 0 then
+    for i := 0 to High(FSelected) do
+      if FSelected[i] then Break;
+  if (i < 0) or (i >= FModel.Count) then Exit;
+  e := FModel.Entries[i];
+  dur := DisplayDurationForEntry(e);
+  if dur = '' then dur := '（未知）';
+  MessageDlg('文件属性',
+    '文件：' + e.FilePath + LineEnding +
+    '标题：' + DisplayTitleForEntry(e) + LineEnding +
+    '时长：' + dur,
+    mtInformation, [mbOK], 0);
+end;
+
+procedure TPlaylistForm.OnSelectAll(Sender: TObject);
+var
+  i: Integer;
+begin
+  SyncSelectionLength;
+  for i := 0 to High(FSelected) do
+    FSelected[i] := True;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnInvertSel(Sender: TObject);
+var
+  i: Integer;
+begin
+  SyncSelectionLength;
+  for i := 0 to High(FSelected) do
+    FSelected[i] := not FSelected[i];
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnClearSel(Sender: TObject);
+var
+  i: Integer;
+begin
+  for i := 0 to High(FSelected) do
+    FSelected[i] := False;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnMoveUp(Sender: TObject);
+var
+  i: Integer;
+begin
+  SyncSelectionLength;
+  for i := 1 to FModel.Count - 1 do
+    if (i < Length(FSelected)) and FSelected[i] then
+    begin
+      FModel.MoveUp(i);
+      FSelected[i] := False;
+      FSelected[i - 1] := True;
+    end;
+  RebuildVisible;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnMoveDown(Sender: TObject);
+var
+  i: Integer;
+begin
+  SyncSelectionLength;
+  for i := FModel.Count - 2 downto 0 do
+    if (i < Length(FSelected)) and FSelected[i] then
+    begin
+      FModel.MoveDown(i);
+      FSelected[i] := False;
+      FSelected[i + 1] := True;
+    end;
+  RebuildVisible;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.OnModeClick(Sender: TObject);
+begin
+  case TMenuItem(Sender).Tag of
+    0: begin FModel.RepeatMode := 0; FModel.Shuffle := False; end;
+    1: begin FModel.RepeatMode := 1; FModel.Shuffle := False; end;
+    2: begin FModel.RepeatMode := 2; FModel.Shuffle := False; end;
+    3: begin FModel.RepeatMode := 2; FModel.Shuffle := True; end;
+  end;
+end;
+
 procedure TPlaylistForm.AddEntry(const FilePath, Title, Artist: string;
   DurationMs: Int64);
+var
+  idx: Integer;
 begin
-  // Phase 3: 添加条目到 TPlaylistModel，重绘列表区
+  FModel.AddFile(FilePath);
+  idx := FModel.Count - 1;
+  if (Title <> '') or (Artist <> '') or (DurationMs > 0) then
+    FModel.SetMetadata(idx, Title, Artist, '', DurationMs);
+  SyncSelectionLength;
+  RebuildVisible;
+  InvalidateFrame;
 end;
 
 procedure TPlaylistForm.Clear;
 begin
-  // Phase 3: 清空 TPlaylistModel，重绘列表区
+  FModel.Clear;
+  SetLength(FSelected, 0);
+  SetLength(FVisible, 0);
+  FScroll := 0;
+  FSelAnchor := -1;
+  InvalidateFrame;
 end;
 
 procedure TPlaylistForm.SetCurrentIndex(Index: Integer);
 begin
-  // Phase 3: 设置当前播放索引，高亮对应行
+  FModel.SetCurrentIndex(Index);
+  EnsureSourceVisible(FModel.CurrentIndex);
+  InvalidateFrame;
+end;
+
+function TPlaylistForm.CurrentFile: string;
+begin
+  Result := FModel.CurrentFile;
 end;
 
 end.

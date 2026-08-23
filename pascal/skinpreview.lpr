@@ -30,6 +30,9 @@ type
     procedure OnSkinSelected(Sender: TObject);
     procedure LoadSkin(const SknPath: string);
     procedure HandleClose(Sender: TObject; var CloseAction: TCloseAction);
+    procedure HandleAuxToggle(Sender: TObject; const AType: string;
+      AToggled: Boolean);
+    procedure SeedDemoPlaylist;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -138,6 +141,7 @@ begin
   if FPlayerForm = nil then
   begin
     FPlayerForm := TPlayerForm.Create(Self, FBackend);
+    FPlayerForm.OnAuxToggle := @HandleAuxToggle;
     FPlayerForm.Left := 20;
     FPlayerForm.Top  := 160;
     FPlayerForm.Show;
@@ -164,6 +168,7 @@ begin
     FPlaylistForm := TPlaylistForm.Create(Self, FBackend);
     FPlaylistForm.Left := 310;
     FPlaylistForm.Top  := 350;
+    SeedDemoPlaylist;
     FPlaylistForm.Show;
   end;
 
@@ -171,7 +176,54 @@ begin
   FEqForm.ApplySkin(FEngine.SkinData);
   FLyricForm.ApplySkin(FEngine.SkinData);
   FPlaylistForm.ApplySkin(FEngine.SkinData);
+  FPlayerForm.SetAuxToggle('lyric', True);
+  FPlayerForm.SetAuxToggle('equalizer', True);
+  FPlayerForm.SetAuxToggle('playlist', True);
   Caption := 'Skin Preview — ' + FEngine.SkinData.Name;
+end;
+
+procedure TPreviewMainForm.HandleAuxToggle(Sender: TObject; const AType: string;
+  AToggled: Boolean);
+begin
+  if SameText(AType, 'lyric') and (FLyricForm <> nil) then
+  begin
+    if AToggled then FLyricForm.Show else FLyricForm.Hide;
+  end
+  else if SameText(AType, 'equalizer') and (FEqForm <> nil) then
+  begin
+    if AToggled then FEqForm.Show else FEqForm.Hide;
+  end
+  else if SameText(AType, 'playlist') and (FPlaylistForm <> nil) then
+  begin
+    if AToggled then FPlaylistForm.Show else FPlaylistForm.Hide;
+  end;
+end;
+
+procedure TPreviewMainForm.SeedDemoPlaylist;
+begin
+  if FPlaylistForm = nil then Exit;
+  FPlaylistForm.Clear;
+  FPlaylistForm.AddEntry('demo/晴天.mp3', '晴天', '周杰伦', 269000);
+  FPlaylistForm.AddEntry('demo/七里香.mp3', '七里香', '周杰伦', 299000);
+  FPlaylistForm.AddEntry('demo/夜曲.mp3', '夜曲', '周杰伦', 226000);
+  FPlaylistForm.AddEntry('demo/稻香.mp3', '稻香', '周杰伦', 223000);
+  FPlaylistForm.AddEntry('demo/告白气球.mp3', '告白气球', '周杰伦', 215000);
+  FPlaylistForm.AddEntry('demo/简单爱.mp3', '简单爱', '周杰伦', 270000);
+  FPlaylistForm.AddEntry('demo/东风破.mp3', '东风破', '周杰伦', 315000);
+  FPlaylistForm.AddEntry('demo/青花瓷.mp3', '青花瓷', '周杰伦', 239000);
+  FPlaylistForm.AddEntry('demo/听妈妈的话.mp3', '听妈妈的话', '周杰伦', 263000);
+  FPlaylistForm.AddEntry('demo/搁浅.mp3', '搁浅', '周杰伦', 240000);
+  FPlaylistForm.AddEntry('demo/轨迹.mp3', '轨迹', '周杰伦', 332000);
+  FPlaylistForm.AddEntry('demo/发如雪.mp3', '发如雪', '周杰伦', 299000);
+  FPlaylistForm.AddEntry('demo/彩虹.mp3', '彩虹', '周杰伦', 263000);
+  FPlaylistForm.AddEntry('demo/菊花台.mp3', '菊花台', '周杰伦', 293000);
+  FPlaylistForm.AddEntry('demo/不能说的秘密.mp3', '不能说的秘密', '周杰伦', 296000);
+  FPlaylistForm.AddEntry('demo/开不了口.mp3', '开不了口', '周杰伦', 284000);
+  FPlaylistForm.AddEntry('demo/龙卷风.mp3', '龙卷风', '周杰伦', 249000);
+  FPlaylistForm.AddEntry('demo/安静.mp3', '安静', '周杰伦', 331000);
+  FPlaylistForm.AddEntry('demo/一路向北.mp3', '一路向北', '周杰伦', 290000);
+  FPlaylistForm.AddEntry('demo/夜的第七章.mp3', '夜的第七章', '周杰伦', 228000);
+  FPlaylistForm.SetCurrentIndex(0);
 end;
 
 procedure TPreviewMainForm.HandleClose(Sender: TObject;

@@ -6,10 +6,12 @@ program tests;
 //   Layer 2 — 渲染快照测试（USkinRender vs Qt golden PNG）
 //   Layer 3 — 解析逻辑 expect 测试（LOGFONT/position/color/bool）
 //   Layer 4 — Metamorphic 测试（滑块数学性质、色键变形、位置解析独立性）
+//   Playlist — TPlaylistModel 索引语义与显示辅助函数
 
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
-  Classes, consoletestrunner, UTestLayer2, UTestLayer3, UTestMetamorphic;
+  Classes, consoletestrunner, UTestLayer2, UTestLayer3, UTestMetamorphic,
+  UTestPlaylistModel;
 
 var
   App: TTestRunner;

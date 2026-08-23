@@ -48,7 +48,7 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="src\skin;src\render;tests"/>
+      <OtherUnitFiles Value="src\skin;src\render;src\playlist;tests"/>
       <UnitOutputDirectory Value="lib\tests\$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <CodeGeneration>
