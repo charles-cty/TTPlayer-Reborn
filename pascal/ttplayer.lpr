@@ -13,7 +13,8 @@ uses
   Classes, SysUtils, Forms,
   LazFileUtils,
   USkinTypes, USkinLoader,
-  UPlayerForm, UEqualizerForm, ULyricForm, UPlaylistForm, UPlayerBackend;
+  UPlayerForm, UEqualizerForm, ULyricForm, UPlaylistForm, UPlayerBackend,
+  UWindowSnapManager, UFormSnap;
 
 // 返回仓库根目录（bin/ -> pascal/ -> repo root）。
 function RepoRoot: string;
@@ -50,8 +51,14 @@ type
     FEq:        TEqualizerForm;
     FLyric:     TLyricForm;
     FPlaylist:  TPlaylistForm;
+    FSnap:      TWindowSnapManager;
+    FPlayerWin, FEqWin, FLyricWin, FPlaylistWin: ISnapWindow;
     procedure HandleAuxToggle(Sender: TObject; const AType: string;
       AToggled: Boolean);
+    procedure HandleLyricResize(Sender: TObject);
+    procedure HandleLyricResizeFinished(Sender: TObject);
+    procedure HandlePlaylistResize(Sender: TObject);
+    procedure HandlePlaylistResizeFinished(Sender: TObject);
   public
     constructor Create;
     destructor Destroy; override;
@@ -62,19 +69,29 @@ constructor TTPlayerApp.Create;
 begin
   FBackend := TStubBackend.Create;
   FEngine  := TSkinEngine.Create;
+  FSnap    := TWindowSnapManager.Create;
   FPlayer  := TPlayerForm.Create(Application, FBackend);
   FEq      := TEqualizerForm.Create(Application, FBackend);
   FLyric   := TLyricForm.Create(Application, FBackend);
   FPlaylist := TPlaylistForm.Create(Application, FBackend);
   FPlayer.OnAuxToggle := @HandleAuxToggle;
+  FLyric.OnResizeInProgress := @HandleLyricResize;
+  FLyric.OnResizeFinished := @HandleLyricResizeFinished;
+  FPlaylist.OnResizeInProgress := @HandlePlaylistResize;
+  FPlaylist.OnResizeFinished := @HandlePlaylistResizeFinished;
 end;
 
 destructor TTPlayerApp.Destroy;
 begin
+  FPlayerWin := nil;
+  FEqWin := nil;
+  FLyricWin := nil;
+  FPlaylistWin := nil;
   FPlayer.Free;
   FEq.Free;
   FLyric.Free;
   FPlaylist.Free;
+  FSnap.Free;
   FEngine.Free;
   FBackend := nil;  // TInterfacedObject，随最后的接口引用释放
   inherited Destroy;
@@ -97,6 +114,34 @@ begin
   end;
 end;
 
+procedure TTPlayerApp.HandleLyricResize(Sender: TObject);
+begin
+  if FLyricWin = nil then Exit;
+  FSnap.OnSubResized(FLyricWin,
+    ResizeEdgesOf(FLyric.ResizeEdgeRight, FLyric.ResizeEdgeBottom));
+end;
+
+procedure TTPlayerApp.HandleLyricResizeFinished(Sender: TObject);
+begin
+  if FLyricWin = nil then Exit;
+  FSnap.OnSubResizeFinished(FLyricWin,
+    ResizeEdgesOf(FLyric.ResizeEdgeRight, FLyric.ResizeEdgeBottom));
+end;
+
+procedure TTPlayerApp.HandlePlaylistResize(Sender: TObject);
+begin
+  if FPlaylistWin = nil then Exit;
+  FSnap.OnSubResized(FPlaylistWin,
+    ResizeEdgesOf(FPlaylist.ResizeEdgeRight, FPlaylist.ResizeEdgeBottom));
+end;
+
+procedure TTPlayerApp.HandlePlaylistResizeFinished(Sender: TObject);
+begin
+  if FPlaylistWin = nil then Exit;
+  FSnap.OnSubResizeFinished(FPlaylistWin,
+    ResizeEdgesOf(FPlaylist.ResizeEdgeRight, FPlaylist.ResizeEdgeBottom));
+end;
+
 procedure TTPlayerApp.Run;
 var
   sknPath: string;
@@ -114,10 +159,25 @@ begin
   FPlayer.SetAuxToggle('equalizer', True);
   FPlayer.SetAuxToggle('playlist', True);
 
+  FPlayer.Left := 40;
+  FPlayer.Top  := 40;
+  FEq.Left := 40;
+  FEq.Top  := 200;
+  FLyric.Left := 40;
+  FLyric.Top  := 360;
+  FPlaylist.Left := 360;
+  FPlaylist.Top  := 40;
+
+  FPlayerWin := HookSnapWindow(FPlayer, FSnap, True);
+  FEqWin := HookSnapWindow(FEq, FSnap, False);
+  FLyricWin := HookSnapWindow(FLyric, FSnap, False);
+  FPlaylistWin := HookSnapWindow(FPlaylist, FSnap, False);
+
   FPlayer.Show;
   FEq.Show;
   FLyric.Show;
   FPlaylist.Show;
+  FSnap.RebuildSnapGraph;
 
   Application.Run;
 end;

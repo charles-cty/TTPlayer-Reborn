@@ -28,6 +28,7 @@ type
     procedure Clear;
     procedure SetCurrentIndex(Index: Integer);
     function CurrentFile: string;
+    procedure SetBounds(ALeft, ATop, AWidth, AHeight: Integer); override;
 
   protected
     procedure Paint; override;
@@ -77,6 +78,9 @@ type
     FSbDragOffset: Integer;
     FSbHoverPart: Integer;    // 0=top 1=bottom 2=thumb -1=none
     FSbPressedPart: Integer;
+
+    FOnResizeInProgress: TNotifyEvent;
+    FOnResizeFinished: TNotifyEvent;
 
     FMenu: TPopupMenu;
 
@@ -178,6 +182,13 @@ type
     procedure OnMoveUp(Sender: TObject);
     procedure OnMoveDown(Sender: TObject);
     procedure OnModeClick(Sender: TObject);
+  public
+    property OnResizeInProgress: TNotifyEvent
+      read FOnResizeInProgress write FOnResizeInProgress;
+    property OnResizeFinished: TNotifyEvent
+      read FOnResizeFinished write FOnResizeFinished;
+    property ResizeEdgeRight: Boolean read FResizeEdgeRight;
+    property ResizeEdgeBottom: Boolean read FResizeEdgeBottom;
   end;
 
 implementation
@@ -279,6 +290,25 @@ begin
   InvalidateFrame;
   if HandleAllocated then
     BuildRegion;
+end;
+
+procedure TPlaylistForm.SetBounds(ALeft, ATop, AWidth, AHeight: Integer);
+var
+  sizeChanged: Boolean;
+begin
+  sizeChanged := (AWidth <> Width) or (AHeight <> Height);
+  inherited SetBounds(ALeft, ATop, AWidth, AHeight);
+  if sizeChanged and (FSkin <> nil) then
+  begin
+    FLogicW := Width;
+    FLogicH := Height;
+    ClampDividerPos;
+    ClampScroll;
+    FreeAndNil(FFrame);
+    if HandleAllocated then
+      BuildRegion;
+    Invalidate;
+  end;
 end;
 
 procedure TPlaylistForm.BuildRegion;
@@ -1319,6 +1349,8 @@ end;
 
 procedure TPlaylistForm.Paint;
 begin
+  if FFrame = nil then
+    RenderFrame;
   if FFrame = nil then Exit;
   FFrame.Draw(Canvas, 0, 0, True);
 end;
@@ -1629,12 +1661,9 @@ begin
       FLogicW := newW;
       FLogicH := newH;
       SetBounds(Left, Top, newW, newH);
-      ClampDividerPos;
-      ClampScroll;
-      FreeAndNil(FFrame);
       RenderFrame;
-      if HandleAllocated then BuildRegion;
-      Invalidate;
+      if Assigned(FOnResizeInProgress) then
+        FOnResizeInProgress(Self);
     end;
   end
   else if FSbDragging then
@@ -1739,6 +1768,8 @@ begin
     begin
       ReleaseCapture;
       FResizing := False;
+      if Assigned(FOnResizeFinished) then
+        FOnResizeFinished(Self);
     end
     else if FPressedToolbar >= 0 then
     begin

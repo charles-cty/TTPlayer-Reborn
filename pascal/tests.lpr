@@ -7,11 +7,12 @@ program tests;
 //   Layer 3 — 解析逻辑 expect 测试（LOGFONT/position/color/bool）
 //   Layer 4 — Metamorphic 测试（滑块数学性质、色键变形、位置解析独立性）
 //   Playlist — TPlaylistModel 索引语义与显示辅助函数
+//   WindowSnap — 窗口吸附几何 + MR-4 对称性
 
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   Classes, consoletestrunner, UTestLayer2, UTestLayer3, UTestMetamorphic,
-  UTestPlaylistModel;
+  UTestPlaylistModel, UTestWindowSnap;
 
 var
   App: TTestRunner;

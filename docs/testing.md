@@ -13,7 +13,7 @@ tools/test-all.ps1
     └── Layer 4  Metamorphic 测试（UTestMetamorphic）
 ```
 
-**当前状态：11/11 通过**
+**当前状态：FPCUnit（含 WindowSnap / MR-4）由 `tools/test-all.ps1` 统一驱动**
 
 ---
 
@@ -142,10 +142,15 @@ pwsh tools/gen-golden.ps1              # 先编译再生成
 
 **变形关系语义**：`position` 坐标来自 XML 文本，不应受图像尺寸影响。
 
+#### MR-4：WindowSnapManager 对称性
+
+**文件**：`pascal/tests/UTestWindowSnap.pas`
+
+A 向 B 吸附后的相对几何 ≡ B 向 A 吸附（角色互换）。覆盖水平相邻、垂直相邻、独立双轴合并。同一文件还包含阈值边界、主窗口联动组、子窗口独立拖动、松手吸附、隐藏窗口、就地重建不移动、缩放吸附。
+
 #### 扩展计划
 
 随后续模块移植，将补充：
-- **MR-4 WindowSnapManager 对称性**：A 向 B 吸附的结果等价于 B 向 A 吸附（录制回放 + 角色互换）
 - **MR-5 EQ 增益中性**：所有频段增益为 0 时，输出与无 EQ 等价
 
 ---

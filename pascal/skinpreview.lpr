@@ -10,7 +10,9 @@ uses
   Interfaces,
   Classes, SysUtils, Forms, Controls, StdCtrls, ExtCtrls, Dialogs,
   LazFileUtils, LazUTF8,
-  USkinTypes, USkinLoader, UPlayerForm, UEqualizerForm, ULyricForm, UVisualWidget, UPlaylistForm, UPlayerBackend;
+  USkinTypes, USkinLoader, UPlayerForm, UEqualizerForm, ULyricForm,
+  UVisualWidget, UPlaylistForm, UPlayerBackend,
+  UWindowSnapManager, UFormSnap;
 
 type
   TPreviewMainForm = class(TForm)
@@ -24,6 +26,8 @@ type
     FEngine: TSkinEngine;
     FBackend: TStubBackend;
     FRepoRoot: string;
+    FSnap: TWindowSnapManager;
+    FPlayerWin, FEqWin, FLyricWin, FPlaylistWin: ISnapWindow;
 
     procedure BuildUI;
     procedure PopulateSkins;
@@ -32,7 +36,12 @@ type
     procedure HandleClose(Sender: TObject; var CloseAction: TCloseAction);
     procedure HandleAuxToggle(Sender: TObject; const AType: string;
       AToggled: Boolean);
+    procedure HandleLyricResize(Sender: TObject);
+    procedure HandleLyricResizeFinished(Sender: TObject);
+    procedure HandlePlaylistResize(Sender: TObject);
+    procedure HandlePlaylistResizeFinished(Sender: TObject);
     procedure SeedDemoPlaylist;
+    procedure EnsureSnapHooked;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -44,6 +53,7 @@ begin
 
   FBackend := TStubBackend.Create;
   FEngine  := TSkinEngine.Create;
+  FSnap    := TWindowSnapManager.Create;
 
   // 仓库根目录 = 本工具所在目录的上两级（pascal/bin/ -> pascal/ -> repo root）
   FRepoRoot := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..' + PathDelim + '..');
@@ -58,9 +68,14 @@ end;
 destructor TPreviewMainForm.Destroy;
 begin
   // 子 Form 均以 Self 为 Owner 创建，LCL 在本对象销毁时自动释放，无需手动 Free。
+  FPlayerWin := nil;
+  FEqWin := nil;
+  FLyricWin := nil;
+  FPlaylistWin := nil;
   FEngine.Free;
   FBackend := nil;  // TInterfacedObject，引用计数归零自动释放，不能手动 Free
-  inherited Destroy;
+  inherited Destroy;  // 子 Form / Adapter 先拆掉，Hide 时 FSnap 仍有效
+  FSnap.Free;
 end;
 
 procedure TPreviewMainForm.BuildUI;
@@ -179,7 +194,54 @@ begin
   FPlayerForm.SetAuxToggle('lyric', True);
   FPlayerForm.SetAuxToggle('equalizer', True);
   FPlayerForm.SetAuxToggle('playlist', True);
+  EnsureSnapHooked;
   Caption := 'Skin Preview — ' + FEngine.SkinData.Name;
+end;
+
+procedure TPreviewMainForm.EnsureSnapHooked;
+begin
+  if FPlayerWin <> nil then
+  begin
+    FSnap.RebuildSnapGraph;
+    Exit;
+  end;
+  FPlayerWin := HookSnapWindow(FPlayerForm, FSnap, True);
+  FEqWin := HookSnapWindow(FEqForm, FSnap, False);
+  FLyricWin := HookSnapWindow(FLyricForm, FSnap, False);
+  FPlaylistWin := HookSnapWindow(FPlaylistForm, FSnap, False);
+  FLyricForm.OnResizeInProgress := @HandleLyricResize;
+  FLyricForm.OnResizeFinished := @HandleLyricResizeFinished;
+  FPlaylistForm.OnResizeInProgress := @HandlePlaylistResize;
+  FPlaylistForm.OnResizeFinished := @HandlePlaylistResizeFinished;
+  FSnap.RebuildSnapGraph;
+end;
+
+procedure TPreviewMainForm.HandleLyricResize(Sender: TObject);
+begin
+  if FLyricWin = nil then Exit;
+  FSnap.OnSubResized(FLyricWin,
+    ResizeEdgesOf(FLyricForm.ResizeEdgeRight, FLyricForm.ResizeEdgeBottom));
+end;
+
+procedure TPreviewMainForm.HandleLyricResizeFinished(Sender: TObject);
+begin
+  if FLyricWin = nil then Exit;
+  FSnap.OnSubResizeFinished(FLyricWin,
+    ResizeEdgesOf(FLyricForm.ResizeEdgeRight, FLyricForm.ResizeEdgeBottom));
+end;
+
+procedure TPreviewMainForm.HandlePlaylistResize(Sender: TObject);
+begin
+  if FPlaylistWin = nil then Exit;
+  FSnap.OnSubResized(FPlaylistWin,
+    ResizeEdgesOf(FPlaylistForm.ResizeEdgeRight, FPlaylistForm.ResizeEdgeBottom));
+end;
+
+procedure TPreviewMainForm.HandlePlaylistResizeFinished(Sender: TObject);
+begin
+  if FPlaylistWin = nil then Exit;
+  FSnap.OnSubResizeFinished(FPlaylistWin,
+    ResizeEdgesOf(FPlaylistForm.ResizeEdgeRight, FPlaylistForm.ResizeEdgeBottom));
 end;
 
 procedure TPreviewMainForm.HandleAuxToggle(Sender: TObject; const AType: string;

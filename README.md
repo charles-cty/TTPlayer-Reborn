@@ -54,11 +54,14 @@ TTPlayer-Reborn/
 │   │   ├── skin/             # USkinTypes、USkinXmlParser、USkinLoader、USkinJsonDump
 │   │   ├── render/           # USkinRender（渲染原语，Qt source-over 精确复刻）
 │   │   ├── backend/          # UPlayerBackend（IPlayerBackend 接口 + TStubBackend 桩）
-│   │   └── ui/               # （预留，下阶段实现窗口）
-│   ├── tests/                # FPCUnit 测试（Layer 2/3/4）
+│   │   ├── playlist/         # UPlaylistModel
+│   │   └── ui/               # Player/Playlist/EQ/Lyric + WindowSnap
+│   ├── tests/                # FPCUnit 测试（Layer 2/3/4 + Playlist + WindowSnap）
 │   │   ├── UTestLayer2.pas   # 渲染快照测试
 │   │   ├── UTestLayer3.pas   # 解析逻辑 expect 测试
-│   │   └── UTestMetamorphic.pas  # Metamorphic 测试（四种变形关系）
+│   │   ├── UTestMetamorphic.pas  # Metamorphic 测试
+│   │   ├── UTestPlaylistModel.pas
+│   │   └── UTestWindowSnap.pas   # 窗口吸附 + MR-4
 │   ├── vendor/bgrabitmap/    # BGRABitmap v11.6.6（git submodule）
 │   ├── ttdump.lpi/.lpr       # Pascal 侧皮肤 JSON dump 工具
 │   └── tests.lpi/.lpr        # FPCUnit 测试可执行文件

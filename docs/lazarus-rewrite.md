@@ -48,7 +48,8 @@ Lazarus 工程（全自绘）
   src/skin/       皮肤引擎（USkinTypes/USkinXmlParser/USkinLoader/USkinJsonDump）
   src/render/     渲染原语（USkinRender，QtPutImage 精确合成）
   src/ui/         PlayerForm/PlaylistForm/EqualizerForm/LyricForm（无边框自绘）
-  src/ui/platform/ Windows/X11 平台特定调用（SetWindowRgn、XShape、EWMH）
+                  UWindowSnapMath / UWindowSnapManager / UFormSnap（窗口吸附）
+  src/ui/platform/ Windows/X11 平台特定调用（SetWindowRgn、XShape、EWMH）——尚未开始
 ```
 
 ### C ABI 边界约定
@@ -89,8 +90,10 @@ Lazarus 工程（全自绘）
 **Step 5（已完成）**：LyricWindow + VisualWidget（频谱动画）
 - 歌词窗口目前是皮肤壳，尚无 LRC 解析/滚动
 
-**Step 6（下一步）**：WindowSnapManager（1.4k 行，Winamp 式窗口吸附）
-- GTK3 CSD 坐标问题在此步验证
+**Step 6（已完成，Windows）**：WindowSnapManager（Winamp 式窗口吸附）
+- 独立双轴吸附、主窗口联动组、子窗口单独拖动、松手吸附、屏幕边缘、缩放吸附
+- 几何与图结构可在 NoLCL FPCUnit 中验证（MR-4）
+- GTK3 CSD 坐标 / `src/ui/platform/` 仍未做
 
 **Step 7（最后）**：ttcore 抽库 + FFI 对接，替换 TStubBackend
 
@@ -114,7 +117,7 @@ Lazarus 工程（全自绘）
 
 ## 当前状态（2026-08-23）
 
-**已完成（Step 0–5 + 测试框架）**。四个皮肤窗口可在 `skinpreview` 中同时显示；音频仍为 `TStubBackend`。
+**已完成（Step 0–6 + 测试框架）**。四个皮肤窗口可在 `skinpreview` 中同时显示，Windows 下支持 Winamp 式吸附；音频仍为 `TStubBackend`。
 
 | 交付物 | 位置 |
 |---|---|
@@ -129,13 +132,14 @@ Lazarus 工程（全自绘）
 | EqualizerForm | `pascal/src/ui/UEqualizerForm`（10 波段 + preamp/balance/surround 滑块） |
 | LyricForm | `pascal/src/ui/ULyricForm`（九宫格、右/下边缘调整大小） |
 | VisualWidget | `pascal/src/ui/UVisualWidget`（柱状频谱 + 模糊示波图动画） |
+| WindowSnap | `pascal/src/ui/UWindowSnapMath` + `UWindowSnapManager` + `UFormSnap` |
 | Pascal 工具集 | `pascal/ttdump.lpi`、`pascal/skinpreview.lpi`、`pascal/ttplayer.lpi`、`pascal/tests.lpi` |
 | Qt SkinDumper | `src/tools/SkinDumper.{h,cpp}` + `--dump-skin` |
 | Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames` |
 | Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
-| 测试（16/16） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + Layer 5 GUI 冒烟） |
+| 测试（35/35） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + WindowSnap/MR-4 + Layer 5 GUI 冒烟） |
 
-**下一步**：Step 6 — WindowSnapManager（窗口吸附）。其后 Step 7 抽 `ttcore` 替换桩后端。GTK3 / `src/ui/platform/` 尚未开始。
+**下一步**：Step 7 — 抽 `ttcore` 替换 `TStubBackend`。GTK3 / `src/ui/platform/` 尚未开始。
 
 ---
 

@@ -22,6 +22,7 @@ type
 
     // 应用皮肤；换肤时调用。
     procedure ApplySkin(const ASkin: TSkinData);
+    procedure SetBounds(ALeft, ATop, AWidth, AHeight: Integer); override;
 
   protected
     procedure Paint; override;
@@ -56,6 +57,9 @@ type
     FResizeStartW: Integer;
     FResizeStartH: Integer;
 
+    FOnResizeInProgress: TNotifyEvent;
+    FOnResizeFinished: TNotifyEvent;
+
     procedure BuildRegion;
     procedure RenderFrame;
 
@@ -68,6 +72,13 @@ type
     function AlignedButtonX(const Elem: TSkinElement): Integer;
 
     procedure FireButtonClick(const AName: string);
+  public
+    property OnResizeInProgress: TNotifyEvent
+      read FOnResizeInProgress write FOnResizeInProgress;
+    property OnResizeFinished: TNotifyEvent
+      read FOnResizeFinished write FOnResizeFinished;
+    property ResizeEdgeRight: Boolean read FResizeEdgeRight;
+    property ResizeEdgeBottom: Boolean read FResizeEdgeBottom;
   end;
 
 implementation
@@ -130,6 +141,24 @@ begin
   FreeAndNil(FFrame);
   RenderFrame;
   Invalidate;
+end;
+
+procedure TLyricForm.SetBounds(ALeft, ATop, AWidth, AHeight: Integer);
+var
+  sizeChanged: Boolean;
+begin
+  sizeChanged := (AWidth <> Width) or (AHeight <> Height);
+  inherited SetBounds(ALeft, ATop, AWidth, AHeight);
+  if sizeChanged and (FSkin <> nil) then
+  begin
+    FLogicW := Width;
+    FLogicH := Height;
+    if HandleAllocated then
+      BuildRegion;
+    FreeAndNil(FFrame);
+    RenderFrame;
+    Invalidate;
+  end;
 end;
 
 // 从背景位图生成异形 HRGN（对应 LyricWindow::updateChromeGeometry → setMask）。
@@ -242,6 +271,8 @@ end;
 
 procedure TLyricForm.Paint;
 begin
+  if FFrame = nil then
+    RenderFrame;
   if FFrame = nil then Exit;
   FFrame.Draw(Canvas, 0, 0, True);
 end;
@@ -368,10 +399,8 @@ begin
       FLogicW := newW;
       FLogicH := newH;
       SetBounds(Left, Top, newW, newH);
-      if HandleAllocated then BuildRegion;
-      FreeAndNil(FFrame);
-      RenderFrame;
-      Invalidate;
+      if Assigned(FOnResizeInProgress) then
+        FOnResizeInProgress(Self);
     end;
   end
   else
@@ -407,6 +436,8 @@ begin
     begin
       ReleaseCapture;
       FResizing := False;
+      if Assigned(FOnResizeFinished) then
+        FOnResizeFinished(Self);
     end
     else
     begin
