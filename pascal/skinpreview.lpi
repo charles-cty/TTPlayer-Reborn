@@ -48,7 +48,7 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="src\skin;src\render;src\backend;src\ui;src\playlist;C:\lazarus\lcl\units\x86_64-win64;C:\lazarus\lcl\units\x86_64-win64\win32"/>
+      <OtherUnitFiles Value="src\skin;src\render;src\backend;src\ui;src\ui\platform;src\playlist;src\lyric;C:\lazarus\lcl\units\x86_64-win64;C:\lazarus\lcl\units\x86_64-win64\win32"/>
       <UnitOutputDirectory Value="lib\skinpreview\$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <CodeGeneration>

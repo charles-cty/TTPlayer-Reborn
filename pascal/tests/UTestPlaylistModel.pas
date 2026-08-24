@@ -15,6 +15,7 @@ type
     procedure TestAddAndCurrentIndex;
     procedure TestRemoveAdjustsCurrent;
     procedure TestMoveUpDown;
+    procedure TestMoveRows;
     procedure TestNextPrevRepeat;
     procedure TestDisplayHelpers;
   end;
@@ -80,6 +81,25 @@ begin
     m.MoveDown(0);
     AssertEquals('b.mp3', m.FileAt(1));
     AssertEquals(1, m.CurrentIndex);
+  finally
+    m.Free;
+  end;
+end;
+
+procedure TPlaylistModelTest.TestMoveRows;
+var
+  m: TPlaylistModel;
+begin
+  m := TPlaylistModel.Create;
+  try
+    m.AddFiles(['a.mp3', 'b.mp3', 'c.mp3', 'd.mp3']);
+    m.SetCurrentIndex(1);
+    m.MoveRows([1, 2], 0);
+    AssertEquals('b.mp3', m.FileAt(0));
+    AssertEquals('c.mp3', m.FileAt(1));
+    AssertEquals('a.mp3', m.FileAt(2));
+    AssertEquals('d.mp3', m.FileAt(3));
+    AssertEquals(0, m.CurrentIndex);
   finally
     m.Free;
   end;

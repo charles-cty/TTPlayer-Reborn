@@ -12,8 +12,8 @@ unit UTestLayer2;
 //   equalizer__default / equalizer__sliders
 //   lyric__default（皮肤 baseSize；lyric 文本区走 mask）
 //
-// playlist__default: resize_tile=True 皮肤接入；masks 扩展为拉伸后的
-// playlistRect + aligned titleDrawRect（FrameDumper 的 XML 坐标是 baseSize）。
+// playlist__default: 皮肤 baseSize 捕帧（与 lyric 相同），resize_tile=False
+// 也可比；masks 覆盖 playlist 文本区与 title/close 1px 容差。
 
 interface
 
@@ -89,20 +89,17 @@ begin
   Masks.Add(obj);
 end;
 
-// FrameDumper 的 playlist masks 记录 XML baseSize 坐标；实际 dump 窗口是
-// 640×480。扩进比较掩码的区域：
-//   · 拉伸后的 playlistRect（Qt 子控件 tabs/list/divider/scrollbar）
-//   · aligned titleDrawRect / close 按钮（子控件合成与离屏 blit 有 1px 级差异）
-//   · 九宫格右/底边条（QWidget::render + setMask 使 golden 底边少 2~6px，
-//     右缘抗锯齿整体偏 1px；这两条是圆角倒角，不作为 chrome 对拍）
-// 对拍范围：顶栏（除 title/close）、左缘、工具栏。
+// FrameDumper 以皮肤 baseSize 捕帧。扩进比较掩码：
+//   · playlistRect（Qt 子控件 tabs/list/divider/scrollbar 文本）
+//   · aligned titleDrawRect / close（子控件合成 1px 级差异）
+// dest≠base 时仍盖住九宫格右/底边（拉伸路径的抗锯齿差异）。
 procedure ExpandPlaylistCompareMasks(Masks: TJSONArray; const Skin: TSkinData;
   DestW, DestH: Integer);
 var
   wnd: TSkinWindow;
   bgW, bgH, right, bottom: Integer;
-  plRect, titleRect, closeRect, closeBounds: TSkinRect;
-  titleElem, closeElem: PSkinElement;
+  plRect, titleRect, closeRect, closeBounds, tbRect: TSkinRect;
+  titleElem, closeElem, tbElem: PSkinElement;
   titleW, titleH: Integer;
 begin
   if Masks = nil then Exit;
@@ -120,6 +117,16 @@ begin
 
   plRect := PlaylistContentRect(Skin, DestW, DestH);
   AddMaskRect(Masks, 'playlist', plRect.X, plRect.Y, plRect.W, plRect.H);
+
+  // 无工具栏精灵图的皮肤走 Qt 矢量文字回退（「添加/删除/…」），Layer 2 排除。
+  tbElem := wnd.FindElement('toolbar');
+  if tbElem <> nil then
+  begin
+    tbRect := AlignedRect(tbElem^.Position, bgW, bgH, DestW, DestH,
+      tbElem^.Align, tbElem^.Position.W, tbElem^.Position.H);
+    AddMaskRect(Masks, 'toolbar', tbRect.X - 1, tbRect.Y - 1,
+      tbRect.W + 2, tbRect.H + 2);
+  end;
 
   titleElem := wnd.FindElement('title');
   if titleElem <> nil then
@@ -151,14 +158,12 @@ begin
       closeRect.W + 2, closeRect.H + 2);
   end;
 
-  if not wnd.ResizeRect.IsEmpty then
+  if ((DestW <> bgW) or (DestH <> bgH)) and (not wnd.ResizeRect.IsEmpty) then
   begin
     right  := bgW - (wnd.ResizeRect.X + wnd.ResizeRect.W);
     bottom := bgH - (wnd.ResizeRect.Y + wnd.ResizeRect.H);
     if right < 0 then right := 0;
     if bottom < 0 then bottom := 0;
-    // golden 右缘抗锯齿整体偏 1px；底边 QWidget::render+setMask 会裁掉 2~6px
-    // 并把倒角上移，所以底条向上多盖 8px。
     if right > 0 then
       AddMaskRect(Masks, 'nineslice-right', DestW - right - 1, 0, right + 1, DestH);
     if bottom > 0 then
@@ -386,20 +391,20 @@ begin
     end;
 
     // ── 播放列表窗口帧 ──────────────────────────────────────────────────
-    // playlist__default: 仅测试 resize_tile=True 皮肤。
-    // resize_tile=False 皮肤（ArcticAMP/HiFi/TT-07/Relunamp 等）使用 Qt
-    // SmoothTransformation 双线性缩放，与 BGRABitmap rfLinear 存在系统性差异，
-    // 参照 lyric__default 的处理方式跳过。
-    // FrameDumper 渲染 PlaylistWindow 时窗口保持 Qt 默认未显示尺寸（640×480），
-    // 因此 RenderPlaylistWindow 以 640×480 渲染。
-    if engine.SkinData.PlaylistWindow.ResizeTile then
+    // FrameDumper 以皮肤 baseSize 捕帧，与 RenderPlaylistWindow(bgW, bgH) 对拍。
+    // dest==base 时九宫格无拉伸，resize_tile=False 皮肤也可比。
+    if engine.SkinData.PlaylistWindow.BackgroundPixmap <> nil then
     begin
       plMasks := LoadMaskSection(SkinName, 'playlist');
       if plMasks = nil then
         plMasks := TJSONArray.Create;
       try
-        ExpandPlaylistCompareMasks(plMasks, engine.SkinData, 640, 480);
-        frame := RenderPlaylistWindow(engine.SkinData, 640, 480);
+        ExpandPlaylistCompareMasks(plMasks, engine.SkinData,
+          engine.SkinData.PlaylistWindow.BackgroundPixmap.Width,
+          engine.SkinData.PlaylistWindow.BackgroundPixmap.Height);
+        frame := RenderPlaylistWindow(engine.SkinData,
+          engine.SkinData.PlaylistWindow.BackgroundPixmap.Width,
+          engine.SkinData.PlaylistWindow.BackgroundPixmap.Height);
         try
           CompareFrame(SkinName, 'playlist__default', frame, plMasks);
         finally
@@ -409,7 +414,6 @@ begin
         plMasks.Free;
       end;
     end;
-    // TODO: playlist__default resize_tile=False — 待 FrameDumper 改用双线性路径后启用。
   finally
     masks.Free;
     engine.Free;
@@ -422,20 +426,12 @@ var
   found: Boolean;
   skinName: string;
 begin
-  // Subaru_Offbeat_TTPlayer57: Qt FrameDumper 在 offscreen 模式下渲染该皮肤时
-  // setMask 导致输出坐标整体偏移 (7,11)，是 golden 生成端的问题，暂时跳过。
-  // TODO: 修复 FrameDumper 后重新启用。
   found := False;
   if FindFirst(RepoRoot + 'Skin' + PathDelim + '*.skn', faAnyFile, rec) = 0 then
   begin
     try
       repeat
         skinName := ChangeFileExt(rec.Name, '');
-        if skinName = 'Subaru_Offbeat_TTPlayer57' then
-        begin
-          found := True;
-          Continue;
-        end;
         found := True;
         CheckSkinFrames(skinName);
       until FindNext(rec) <> 0;

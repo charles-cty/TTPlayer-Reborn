@@ -161,22 +161,22 @@ pwsh tools/test-layer1.ps1
 pwsh tools/gen-golden.ps1 -SkipBuild
 ```
 
-**当前测试状态：11/11 通过**
+**当前测试状态：Layer 1 11/11；FPCUnit 48/48**
 
 | 层级 | 方法 | 覆盖内容 |
 |---|---|---|
 | Layer 1 | Differential | 11 套皮肤解析 JSON 与 Qt 版差分为零 |
-| Layer 2 | Snapshot | 10 套皮肤 player_window 全状态帧像素一致（容差 ±1） |
-| Layer 3 | Expect | 解析逻辑用例（LOGFONT/position/color/bool） |
+| Layer 2 | Snapshot | 11 套皮肤 player/EQ/lyric/playlist 帧像素一致（容差 ±1，文本走 mask） |
+| Layer 3 | Expect | LOGFONT/position/color/bool + LRC + TTBL |
 | Layer 4 | Metamorphic | 滑块数学性质 + 色键变形 + 位置解析独立性 |
+| Layer 5 | GUI 冒烟 | 四窗口渲染、换肤、EQ 开关、窗口吸附 |
 
 ---
 
 ## 已知问题 / 限制
 
 - Qt 版仍有较多 bug，功能不完善。
-- Lazarus 重写版（`pascal/`）初始阶段已完成皮肤引擎，尚无可运行 UI。
-- Layer 2 测试暂排除 Subaru_Offbeat_TTPlayer57（Qt offscreen 渲染坐标偏移问题）。
+- Lazarus 重写版（`pascal/`）四个皮肤窗口 + 吸附已可运行；音频仍为 `TStubBackend`（ttcore 抽库未开始）。
 - Wayland 下窗口 Shape / 吸附功能退化（Qt 版与 Lazarus 版均如此）。
 
 ---

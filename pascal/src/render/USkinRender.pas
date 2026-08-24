@@ -96,7 +96,8 @@ function RenderLyricWindow(const Skin: TSkinData;
   DestW, DestH: Integer): TBGRABitmap;
 
 // 合成整个 playlist_window（对应 PlaylistWindow 的渲染结果）。
-// DestW/DestH 为目标窗口像素尺寸（FrameDumper 固定为 640×480）。
+// DestW/DestH 为目标窗口像素尺寸。Layer 2 使用皮肤背景图尺寸（FrameDumper
+// 以 baseSize 捕帧）；运行时 UPlaylistForm 用当前窗口逻辑尺寸。
 // 渲染内容：
 //   · 九宫格背景（ExclusiveMids，对齐 Qt rebuildBackground）
 //   · title（alignedRect，与 paintEvent 一致）

@@ -170,6 +170,7 @@ type
     PlaylistConfig: TPlaylistConfig;
     VisualConfig: TVisualConfig;
   end;
+  PSkinData = ^TSkinData;
 
 // 按 Qt 版各结构默认值初始化（SkinData.h 中的成员初始化器）。
 procedure InitSkinData(out Skin: TSkinData);

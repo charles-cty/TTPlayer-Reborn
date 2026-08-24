@@ -16,6 +16,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QWidget>
+#include <QRegion>
 
 // 状态矩阵（与 docs/testing.md 保持同步）：
 //   player__default            初始状态
@@ -64,9 +65,17 @@ void appendMaskRects(const SkinWindow& wnd, const QString& windowKey,
 }
 
 bool saveFrame(QWidget* widget, const QString& outDir, const QString& name) {
+    // Offscreen QWidget::render + setMask 会把遮罩原点当成屏幕坐标，
+    // Subaru 等皮肤因此整体偏移 (+7,+11)。捕帧前清掉 mask，画完再还原。
+    const QRegion oldMask = widget->mask();
+    const bool hadMask = !oldMask.isEmpty();
+    if (hadMask)
+        widget->clearMask();
     QImage image(widget->size(), QImage::Format_ARGB32);
     image.fill(Qt::transparent);
     widget->render(&image);
+    if (hadMask)
+        widget->setMask(oldMask);
     const QString path = outDir + QLatin1Char('/') + name + QStringLiteral(".png");
     return image.save(path, "PNG");
 }
@@ -170,9 +179,18 @@ int run(const QString& skinPath, const QString& outDir) {
     }
 
     // ---- playlist_window ----
+    // 与 lyric 相同：offscreen 默认 640×480 会把 chrome 的 alignedRect 拉偏
+    // XML/masks。按皮肤 baseSize 捕帧后，Layer 2 可与
+    // RenderPlaylistWindow(bgW, bgH) 对拍，resize_tile=False 也不再双线性拉伸。
     {
         PlaylistWindow playlist(&audio);
         playlist.applySkin(skin);
+        const QSize playlistSize = skin.playlistWindow.backgroundPixmap.isNull()
+            ? playlist.minimumSize()
+            : skin.playlistWindow.backgroundPixmap.size();
+        if (playlistSize.isValid() && !playlistSize.isEmpty()) {
+            playlist.resize(playlistSize);
+        }
         dump(&playlist, QStringLiteral("playlist__default"));
     }
 

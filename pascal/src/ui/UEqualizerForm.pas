@@ -14,7 +14,7 @@ interface
 uses
   Classes, SysUtils, Forms, Controls, Graphics, LCLIntf, LCLType, LMessages,
   Menus, BGRABitmap, BGRABitmapTypes,
-  USkinTypes, USkinRender, UPlayerBackend;
+  USkinTypes, USkinRender, UPlayerBackend, UPlatformWindow;
 
 type
   // 正在拖动的滑块的完整状态（'' = 无拖动）。
@@ -31,7 +31,7 @@ type
     destructor Destroy; override;
 
     // 应用皮肤；换肤时调用，重建 Region 并刷新。
-    procedure ApplySkin(const ASkin: TSkinData);
+    procedure ApplySkin(ASkin: PSkinData);
 
   protected
     procedure Paint; override;
@@ -46,7 +46,7 @@ type
     procedure WMNCHitTest(var Msg: TLMessage); message LM_NCHITTEST;
 
   private
-    FSkin: ^TSkinData;
+    FSkin: PSkinData;
     FBackend: IPlayerBackend;
     FFrame: TBGRABitmap;
 
@@ -66,6 +66,7 @@ type
     FProfileMenu: TPopupMenu;
 
     procedure BuildRegion;
+    procedure UpdateCaption;
     procedure RenderFrame;
     procedure BuildProfileMenu;
     procedure OnPresetClick(Sender: TObject);
@@ -141,6 +142,7 @@ begin
   FormStyle   := fsNormal;
   Color       := clBlack;
   Caption     := 'Equalizer';
+  UpdateCaption;
 
   FProfileMenu := TPopupMenu.Create(Self);
   BuildProfileMenu;
@@ -154,15 +156,19 @@ begin
   inherited Destroy;
 end;
 
-procedure TEqualizerForm.ApplySkin(const ASkin: TSkinData);
+procedure TEqualizerForm.ApplySkin(ASkin: PSkinData);
 begin
-  FSkin := @ASkin;
+  if ASkin = nil then Exit;
+  FSkin := ASkin;
 
-  if ASkin.EqualizerWindow.BackgroundPixmap <> nil then
+  if HandleAllocated then
+    ClearWindowShape(Handle);
+
+  if ASkin^.EqualizerWindow.BackgroundPixmap <> nil then
   begin
     SetBounds(Left, Top,
-      ASkin.EqualizerWindow.BackgroundPixmap.Width,
-      ASkin.EqualizerWindow.BackgroundPixmap.Height);
+      ASkin^.EqualizerWindow.BackgroundPixmap.Width,
+      ASkin^.EqualizerWindow.BackgroundPixmap.Height);
   end;
 
   if HandleAllocated then
@@ -171,59 +177,26 @@ begin
   FreeAndNil(FFrame);
   RenderFrame;
   Invalidate;
+  if HandleAllocated then
+    Update;
 end;
 
-// 从 EqualizerWindow 背景位图生成异形 HRGN（同 TPlayerForm.BuildRegion）。
+procedure TEqualizerForm.UpdateCaption;
+begin
+  if FEqEnabled then
+    Caption := 'Equalizer ON'
+  else
+    Caption := 'Equalizer';
+end;
+
 procedure TEqualizerForm.BuildRegion;
 var
   bmp: TBGRABitmap;
-  totalRgn, rowRgn, segRgn: HRGN;
-  bx, by, startX, bw, bh: Integer;
-  p: PBGRAPixel;
 begin
-  if FSkin = nil then Exit;
+  if (FSkin = nil) or (not HandleAllocated) then Exit;
   bmp := FSkin^.EqualizerWindow.BackgroundPixmap;
   if bmp = nil then Exit;
-
-  bw := bmp.Width;
-  bh := bmp.Height;
-
-  totalRgn := CreateRectRgn(0, 0, 0, 0);
-
-  for by := 0 to bh - 1 do
-  begin
-    p := bmp.ScanLine[by];
-    startX := -1;
-    for bx := 0 to bw - 1 do
-    begin
-      if p^.alpha > 0 then
-      begin
-        if startX < 0 then startX := bx;
-      end
-      else if startX >= 0 then
-      begin
-        segRgn := CreateRectRgn(startX, by, bx, by + 1);
-        rowRgn := CreateRectRgn(0, 0, 0, 0);
-        CombineRgn(rowRgn, totalRgn, segRgn, RGN_OR);
-        DeleteObject(totalRgn);
-        DeleteObject(segRgn);
-        totalRgn := rowRgn;
-        startX := -1;
-      end;
-      Inc(p);
-    end;
-    if startX >= 0 then
-    begin
-      segRgn := CreateRectRgn(startX, by, bw, by + 1);
-      rowRgn := CreateRectRgn(0, 0, 0, 0);
-      CombineRgn(rowRgn, totalRgn, segRgn, RGN_OR);
-      DeleteObject(totalRgn);
-      DeleteObject(segRgn);
-      totalRgn := rowRgn;
-    end;
-  end;
-
-  SetWindowRgn(Handle, totalRgn, True);
+  ApplyAlphaShape(Handle, bmp);
 end;
 
 procedure TEqualizerForm.RenderFrame;
@@ -438,7 +411,7 @@ begin
   if SameText(AName, 'enabled') then
   begin
     FEqEnabled := not FEqEnabled;
-    // 可在此通知 Backend EQ 开关
+    UpdateCaption;
   end
   else if SameText(AName, 'close') then
     Hide

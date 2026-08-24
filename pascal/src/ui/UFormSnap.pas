@@ -3,16 +3,18 @@ unit UFormSnap;
 {$mode objfpc}{$H+}
 
 // LCL 窗口与 TWindowSnapManager 的桥：
-//   TFormSnapWindow  — ISnapWindow 适配 TForm.Left/Top/Width/Height
-//   TSnapFormAdapter — 截获 WM_ENTERSIZEMOVE / WM_MOVE / WM_EXITSIZEMOVE
-//                      （HTCAPTION 系统拖动），转发给吸附管理器
+//   TFormSnapWindow  — ISnapWindow 适配 TForm；DPI≠100% 时用 GetWindowRect
+//                      换算到 LCL 单位，MoveTo 再用 SetWindowPos 写回物理像素
+//   TSnapFormAdapter — 截获拖动：Windows 上子类化原生 WndProc 收取
+//                      WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE（LCL WindowProc
+//                      收不到跨进程 SendMessage 的这两条）；LM_MOVE 仍走 LCL
 //
 // GTK3 上这些 Windows 消息不会到达，平台层（src/ui/platform）后续再补。
 
 interface
 
 uses
-  Classes, SysUtils, Forms, Controls, LCLType, LMessages,
+  Classes, SysUtils, Forms, Controls, LCLType, LCLIntf, LMessages, Types,
   UWindowSnapMath, UWindowSnapManager;
 
 type
@@ -39,10 +41,17 @@ type
     FPrevShow: TNotifyEvent;
     FPrevHide: TNotifyEvent;
     FLastX, FLastY: Integer;
+    FNativeHooked: Boolean;
+    FHookedWnd: HWND;
+    FOrigWndProc: PtrUInt;
     procedure WndProc(var Msg: TLMessage);
     procedure HandleShow(Sender: TObject);
     procedure HandleHide(Sender: TObject);
     procedure UpdateScreenRect;
+    procedure HandleEnterSizeMove;
+    procedure HandleExitSizeMove;
+    procedure InstallNativeHook;
+    procedure RemoveNativeHook;
   public
     constructor Create(AForm: TForm; AManager: TWindowSnapManager;
       AWin: ISnapWindow; AIsMain: Boolean); reintroduce;
@@ -56,9 +65,20 @@ function ResizeEdgesOf(RightEdge, BottomEdge: Boolean): TSnapEdges;
 
 implementation
 
+{$IFDEF WINDOWS}
+uses
+  Windows;
+{$ENDIF}
+
 const
   WM_ENTERSIZEMOVE = $0231;
   WM_EXITSIZEMOVE  = $0232;
+  SNAP_PROP_NAME   = 'TTPSnapAdpt';
+
+{$IFDEF WINDOWS}
+function SnapNativeWndProc(Wnd: HWND; uMsg: UINT; wParam: WPARAM;
+  lParam: LPARAM): LRESULT; stdcall; forward;
+{$ENDIF}
 
 { TFormSnapWindow }
 
@@ -69,14 +89,48 @@ begin
 end;
 
 function TFormSnapWindow.GetBounds: TSnapRect;
+var
+  wr: TRect;
+  pw, ph: Integer;
 begin
   Result := SnapRectXYWH(FForm.Left, FForm.Top, FForm.Width, FForm.Height);
+  if (FForm = nil) or (not FForm.HandleAllocated) then Exit;
+  wr := Types.Rect(0, 0, 0, 0);
+  if LCLIntf.GetWindowRect(FForm.Handle, wr) = 0 then Exit;
+  pw := wr.Right - wr.Left;
+  ph := wr.Bottom - wr.Top;
+  if (pw <= 0) or (ph <= 0) or (FForm.Width <= 0) or (FForm.Height <= 0) then
+    Exit;
+  // DPI≠100% 时 Win32 矩形是物理像素，LCL Left/Width 是 96dpi。
+  // 用实际窗口位置换算到 LCL 单位，这样外部 SetWindowPos 也能参与吸附。
+  Result.X := Round(wr.Left * FForm.Width / pw);
+  Result.Y := Round(wr.Top * FForm.Height / ph);
+  Result.W := FForm.Width;
+  Result.H := FForm.Height;
 end;
 
 procedure TFormSnapWindow.MoveTo(AX, AY: Integer);
+var
+  wr: TRect;
+  pw, ph, physX, physY: Integer;
 begin
+  if FForm = nil then Exit;
   if (FForm.Left <> AX) or (FForm.Top <> AY) then
     FForm.SetBounds(AX, AY, FForm.Width, FForm.Height);
+  {$IFDEF WINDOWS}
+  if not FForm.HandleAllocated then Exit;
+  wr := Types.Rect(0, 0, 0, 0);
+  if LCLIntf.GetWindowRect(FForm.Handle, wr) = 0 then Exit;
+  pw := wr.Right - wr.Left;
+  ph := wr.Bottom - wr.Top;
+  if (pw <= 0) or (ph <= 0) or (FForm.Width <= 0) or (FForm.Height <= 0) then
+    Exit;
+  physX := Round(AX * pw / FForm.Width);
+  physY := Round(AY * ph / FForm.Height);
+  if (wr.Left <> physX) or (wr.Top <> physY) then
+    Windows.SetWindowPos(FForm.Handle, 0, physX, physY, 0, 0,
+      SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
+  {$ENDIF}
 end;
 
 procedure TFormSnapWindow.ResizeTo(AW, AH: Integer);
@@ -121,10 +175,12 @@ begin
   AForm.OnShow := @HandleShow;
   AForm.OnHide := @HandleHide;
   UpdateScreenRect;
+  InstallNativeHook;
 end;
 
 destructor TSnapFormAdapter.Destroy;
 begin
+  RemoveNativeHook;
   if Assigned(FForm) then
   begin
     if Assigned(FOldProc) then
@@ -151,10 +207,97 @@ begin
     r.Right - r.Left, r.Bottom - r.Top);
 end;
 
+procedure TSnapFormAdapter.HandleEnterSizeMove;
+var
+  b: TSnapRect;
+begin
+  if FManager = nil then Exit;
+  b := FWin.GetBounds;
+  FLastX := b.X;
+  FLastY := b.Y;
+  UpdateScreenRect;
+  FManager.OnDragStarted(FWin);
+end;
+
+procedure TSnapFormAdapter.HandleExitSizeMove;
+var
+  b: TSnapRect;
+begin
+  if FManager = nil then Exit;
+  FManager.OnDragFinished(FWin);
+  b := FWin.GetBounds;
+  FLastX := b.X;
+  FLastY := b.Y;
+end;
+
+procedure TSnapFormAdapter.InstallNativeHook;
+{$IFDEF WINDOWS}
+var
+  wnd: HWND;
+{$ENDIF}
+begin
+  {$IFDEF WINDOWS}
+  if FForm = nil then Exit;
+  if not FForm.HandleAllocated then Exit;
+  wnd := FForm.Handle;
+  if FNativeHooked and (FHookedWnd = wnd) then Exit;
+  if FNativeHooked then
+    RemoveNativeHook;
+  Windows.SetProp(wnd, SNAP_PROP_NAME, THandle(PtrUInt(Self)));
+  FOrigWndProc := PtrUInt(SetWindowLongPtr(wnd, GWL_WNDPROC,
+    LONG_PTR(@SnapNativeWndProc)));
+  FNativeHooked := FOrigWndProc <> 0;
+  if FNativeHooked then
+    FHookedWnd := wnd
+  else
+    Windows.RemoveProp(wnd, SNAP_PROP_NAME);
+  {$ENDIF}
+end;
+
+procedure TSnapFormAdapter.RemoveNativeHook;
+{$IFDEF WINDOWS}
+var
+  wnd: HWND;
+{$ENDIF}
+begin
+  {$IFDEF WINDOWS}
+  if not FNativeHooked then Exit;
+  wnd := FHookedWnd;
+  if (wnd <> 0) and Windows.IsWindow(wnd) then
+  begin
+    SetWindowLongPtr(wnd, GWL_WNDPROC, LONG_PTR(FOrigWndProc));
+    Windows.RemoveProp(wnd, SNAP_PROP_NAME);
+  end;
+  FNativeHooked := False;
+  FHookedWnd := 0;
+  FOrigWndProc := 0;
+  {$ENDIF}
+end;
+
+{$IFDEF WINDOWS}
+function SnapNativeWndProc(Wnd: HWND; uMsg: UINT; wParam: WPARAM;
+  lParam: LPARAM): LRESULT; stdcall;
+var
+  A: TSnapFormAdapter;
+  orig: PtrUInt;
+begin
+  A := TSnapFormAdapter(PtrUInt(Windows.GetProp(Wnd, SNAP_PROP_NAME)));
+  if (A = nil) or (not A.FNativeHooked) then
+    Exit(DefWindowProc(Wnd, uMsg, wParam, lParam));
+  orig := A.FOrigWndProc;
+  if uMsg = WM_ENTERSIZEMOVE then
+    A.HandleEnterSizeMove;
+  Result := CallWindowProc(WNDPROC(orig), Wnd, uMsg, wParam, lParam);
+  if uMsg = WM_EXITSIZEMOVE then
+    A.HandleExitSizeMove;
+end;
+{$ENDIF}
+
 procedure TSnapFormAdapter.HandleShow(Sender: TObject);
 begin
   if Assigned(FPrevShow) then
     FPrevShow(Sender);
+  InstallNativeHook;
   UpdateScreenRect;
   if FManager <> nil then
     FManager.RebuildSnapGraph;
@@ -171,42 +314,30 @@ end;
 procedure TSnapFormAdapter.WndProc(var Msg: TLMessage);
 var
   dx, dy: Integer;
-  isMove, isEnter, isExit: Boolean;
+  b: TSnapRect;
 begin
-  isEnter := Msg.Msg = WM_ENTERSIZEMOVE;
-  isExit  := Msg.Msg = WM_EXITSIZEMOVE;
-  isMove  := Msg.Msg = LM_MOVE;
-
-  if isEnter then
-  begin
-    FLastX := FForm.Left;
-    FLastY := FForm.Top;
-    UpdateScreenRect;
-    FManager.OnDragStarted(FWin);
-  end;
+  if Msg.Msg = WM_ENTERSIZEMOVE then
+    HandleEnterSizeMove;
 
   FOldProc(Msg);
 
-  if isMove then
+  if Msg.Msg = LM_MOVE then
   begin
-    dx := FForm.Left - FLastX;
-    dy := FForm.Top - FLastY;
+    b := FWin.GetBounds;
+    dx := b.X - FLastX;
+    dy := b.Y - FLastY;
     if (dx <> 0) or (dy <> 0) then
     begin
-      FLastX := FForm.Left;
-      FLastY := FForm.Top;
+      FLastX := b.X;
+      FLastY := b.Y;
       if FIsMain then
         FManager.OnMainMoved(dx, dy)
       else
         FManager.OnSubMoved(FWin, dx, dy);
     end;
   end
-  else if isExit then
-  begin
-    FManager.OnDragFinished(FWin);
-    FLastX := FForm.Left;
-    FLastY := FForm.Top;
-  end;
+  else if Msg.Msg = WM_EXITSIZEMOVE then
+    HandleExitSizeMove;
 end;
 
 function HookSnapWindow(AForm: TForm; AManager: TWindowSnapManager;

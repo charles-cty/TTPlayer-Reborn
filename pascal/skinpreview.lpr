@@ -42,6 +42,7 @@ type
     procedure HandlePlaylistResizeFinished(Sender: TObject);
     procedure SeedDemoPlaylist;
     procedure EnsureSnapHooked;
+    procedure HandlePlayFile(Sender: TObject; const FilePath: string);
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -105,21 +106,32 @@ procedure TPreviewMainForm.PopulateSkins;
 var
   skinDir: string;
   sr: TSearchRec;
+  names: TStringList;
 begin
   skinDir := FRepoRoot + 'Skin' + PathDelim;
+  FCombo.OnChange := nil;
   FCombo.Items.Clear;
 
-  if FindFirst(skinDir + '*.skn', faAnyFile, sr) = 0 then
-  begin
-    try
-      repeat
-    FCombo.Items.Add(ChangeFileExt(sr.Name, ''));
-      until FindNext(sr) <> 0;
-    finally
-      FindClose(sr);
+  names := TStringList.Create;
+  try
+    names.Sorted := True;
+    names.Duplicates := dupIgnore;
+    if FindFirst(skinDir + '*.skn', faAnyFile, sr) = 0 then
+    begin
+      try
+        repeat
+          names.Add(ChangeFileExt(sr.Name, ''));
+        until FindNext(sr) <> 0;
+      finally
+        FindClose(sr);
+      end;
     end;
+    FCombo.Items.Assign(names);
+  finally
+    names.Free;
   end;
 
+  FCombo.OnChange := @OnSkinSelected;
   if FCombo.Items.Count > 0 then
   begin
     FCombo.ItemIndex := 0;
@@ -153,13 +165,13 @@ begin
 
   // 首次加载时创建各子窗口，错开初始位置避免堆叠。
   // 预览工具显示全部四个窗口，便于 Layer 5 冒烟核对。
+  // 先 ApplySkin 再 Show，避免首帧空白 / 默认尺寸被 Region 锁住。
   if FPlayerForm = nil then
   begin
     FPlayerForm := TPlayerForm.Create(Self, FBackend);
     FPlayerForm.OnAuxToggle := @HandleAuxToggle;
     FPlayerForm.Left := 20;
     FPlayerForm.Top  := 160;
-    FPlayerForm.Show;
   end;
 
   if FEqForm = nil then
@@ -167,7 +179,6 @@ begin
     FEqForm := TEqualizerForm.Create(Self, FBackend);
     FEqForm.Left := 310;
     FEqForm.Top  := 160;
-    FEqForm.Show;
   end;
 
   if FLyricForm = nil then
@@ -175,27 +186,32 @@ begin
     FLyricForm := TLyricForm.Create(Self, FBackend);
     FLyricForm.Left := 20;
     FLyricForm.Top  := 360;
-    FLyricForm.Show;
   end;
 
   if FPlaylistForm = nil then
   begin
     FPlaylistForm := TPlaylistForm.Create(Self, FBackend);
+    FPlaylistForm.OnPlayFile := @HandlePlayFile;
     FPlaylistForm.Left := 310;
     FPlaylistForm.Top  := 350;
     SeedDemoPlaylist;
-    FPlaylistForm.Show;
   end;
 
-  FPlayerForm.ApplySkin(FEngine.SkinData);
-  FEqForm.ApplySkin(FEngine.SkinData);
-  FLyricForm.ApplySkin(FEngine.SkinData);
-  FPlaylistForm.ApplySkin(FEngine.SkinData);
+  FPlayerForm.ApplySkin(FEngine.SkinPtr);
+  FEqForm.ApplySkin(FEngine.SkinPtr);
+  FLyricForm.ApplySkin(FEngine.SkinPtr);
+  FPlaylistForm.ApplySkin(FEngine.SkinPtr);
   FPlayerForm.SetAuxToggle('lyric', True);
   FPlayerForm.SetAuxToggle('equalizer', True);
   FPlayerForm.SetAuxToggle('playlist', True);
   EnsureSnapHooked;
   Caption := 'Skin Preview — ' + FEngine.SkinData.Name;
+
+  if not FPlayerForm.Visible then FPlayerForm.Show;
+  if not FEqForm.Visible then FEqForm.Show;
+  if not FLyricForm.Visible then FLyricForm.Show;
+  if not FPlaylistForm.Visible then FPlaylistForm.Show;
+  Application.ProcessMessages;
 end;
 
 procedure TPreviewMainForm.EnsureSnapHooked;
@@ -259,6 +275,21 @@ begin
   begin
     if AToggled then FPlaylistForm.Show else FPlaylistForm.Hide;
   end;
+end;
+
+procedure TPreviewMainForm.HandlePlayFile(Sender: TObject; const FilePath: string);
+var
+  lrc: string;
+begin
+  if Sender = nil then ;
+  if FLyricForm = nil then Exit;
+  lrc := ChangeFileExt(FilePath, '.lrc');
+  if FileExists(lrc) then
+    FLyricForm.LoadLrc(lrc)
+  else
+    FLyricForm.ClearLrc;
+  if FBackend <> nil then
+    FLyricForm.SetTrackInfo(FBackend.GetTitle, FBackend.GetArtist);
 end;
 
 procedure TPreviewMainForm.SeedDemoPlaylist;

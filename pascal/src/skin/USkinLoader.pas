@@ -27,6 +27,9 @@ type
     function LoadFromDirectory(const DirPath: string): Boolean;
     // 加载侧车布局 XML（Default.xml / <皮肤>.skn.xml）。
     function LoadSkinConfigXml(const XmlPath: string): Boolean;
+    // 指向内部 TSkinData：窗体须持有此指针，不能对 SkinData 属性取址
+    //（属性返回副本，ApplySkin(const TSkinData) 的 @ASkin 会悬空）。
+    function SkinPtr: PSkinData;
 
     property SkinData: TSkinData read FSkin;
     property Loaded: Boolean read FLoaded;
@@ -518,6 +521,11 @@ destructor TSkinEngine.Destroy;
 begin
   FreeSkinData(FSkin);
   inherited Destroy;
+end;
+
+function TSkinEngine.SkinPtr: PSkinData;
+begin
+  Result := @FSkin;
 end;
 
 // 不区分大小写查找目录中的文件（对应 findSkinFileCaseInsensitive）。

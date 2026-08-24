@@ -5,9 +5,9 @@
 .PARAMETER Project
     只构建指定工程（如 ttdump）；缺省全部构建。
 
-.PARAMETER Debug
+.PARAMETER HeapTrace
     调试构建：为每个工程额外传入 -gh（堆追踪）和 -gl（行号信息），
-    输出到 bin\*_dbg.exe（通过临时 .lpr wrapper 实现）。
+    输出到 bin\*_dbg.exe。不叫 -Debug，以免与 CmdletBinding 的公共参数冲突。
     运行调试版时打开控制台窗口可见崩溃堆栈：
         skinpreview_dbg.exe 2>crash.txt
     -gh 在程序退出时打印未释放内存和 Invalid pointer 的分配点（含文件名+行号）。
@@ -16,7 +16,7 @@
 [CmdletBinding()]
 param(
     [string]$Project = '',
-    [switch]$Debug
+    [switch]$HeapTrace
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,7 +49,7 @@ foreach ($proj in $Projects) {
     $lpi = Join-Path $PascalDir "$proj.lpi"
     if (-not (Test-Path $lpi)) { throw "找不到工程：$lpi" }
 
-    if ($Debug) {
+    if ($HeapTrace) {
         # 调试构建：通过 --compiler-options 注入 -gh -gl，输出到 bin\<proj>_dbg.exe。
         # GraphicApplication 保持工程原设置——如需控制台窗口看 stderr，手动加 -WC。
         Write-Host "[build-pascal] 调试构建工程：$proj" -ForegroundColor Yellow

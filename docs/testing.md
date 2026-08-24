@@ -61,7 +61,7 @@ pwsh tools/test-layer1.ps1 -Skin Classic  # 测试单个皮肤
 | `player__pressed-play` | play 按钮按下态 |
 | `player__toggled-mute` | mute 按钮切换态 |
 
-`equalizer__default` / `equalizer__sliders` / `lyric__default`（皮肤 `baseSize`）/ `playlist__default`（`resize_tile=True`）已接入 Layer 2。`playlist__default` 的 `resize_tile=False` 皮肤仍跳过。
+`equalizer__default` / `equalizer__sliders` / `lyric__default` / `playlist__default` 均以皮肤 `baseSize` 捕帧并接入 Layer 2（含 `resize_tile=False` 与 Subaru）。播放列表工具栏矢量文字、列表文本走 mask。
 
 #### 掩码机制
 
@@ -80,17 +80,16 @@ pwsh tools/test-layer1.ps1 -Skin Classic  # 测试单个皮肤
 
 #### 已知跳过
 
-`Subaru_Offbeat_TTPlayer57`：Qt offscreen 模式下 `setMask` 导致渲染输出整体偏移 (+7, +11)，是 golden 生成端的问题，暂时跳过。修复 FrameDumper 渲染原点后重新启用。
+无。Subaru offscreen `setMask` 偏移已通过捕帧前 `clearMask` 修复；playlist 改为 `baseSize` 捕帧后 `resize_tile=False` 也可比。
 
-`playlist__default` 且 `resize_tile=False`：Qt `SmoothTransformation` 双线性缩放与 BGRABitmap `rfLinear` 有系统性差异。FrameDumper 改为皮肤 `baseSize` 捕帧（无拉伸）后可重新启用。
-
-#### GUI 测试补齐（音频 / ttcore 推迟期间的优先项）
+#### GUI 测试补齐（音频 / ttcore 推迟期间）
 
 - [x] 接入 `lyric__default`（FrameDumper 以 `baseSize` 捕帧）
-- 接入 `playlist__default` 的 `resize_tile=False` 皮肤
-- 重新启用 Subaru Layer 2
-- Layer 5 冒烟：EQ 开关、窗口吸附、换肤
-- LRC 解析 Layer 3（歌词滚动接入后）
+- [x] 接入 `playlist__default` 的 `resize_tile=False` 皮肤
+- [x] 重新启用 Subaru Layer 2
+- [x] Layer 5 冒烟：EQ 开关、窗口吸附、换肤
+- [x] LRC 解析 Layer 3 + 歌词滚动（`TStubBackend` 假进度）
+- [x] TTBL / 多标签 / 列表内 DnD / 搜索对话框
 
 #### Golden 生成
 
@@ -119,6 +118,9 @@ pwsh tools/gen-golden.ps1              # 先编译再生成
 | `TestParseColor` | `#rrggbb`、大写、`#rgb` 缩写、无效输入 |
 | `TestParseLogFont` | 负/正高度、粗体（weight≥700）、字段不足 |
 | `TestParseBool` | `1/true/yes/YES/0/no/空` |
+| `TLrcParserTest` | LRC 时间戳 / 元数据 / offset / 多时间戳 / GBK 回退 / 当前行索引 |
+| `TTtblTest` | TTBL v3 往返、v5 头部跳过、CUE marker=7、多标签页目录读写 |
+| `TPlaylistModelTest.TestMoveRows` | 列表内拖放重排 |
 
 ---
 
@@ -176,6 +178,9 @@ pwsh tools/test-all.ps1
 可选参数：
 - `-SkipLayer1`：跳过 Layer 1
 - `-SkipFPCUnit`：跳过 Layer 2/3/4
+- `-SkipSmoke`：跳过 Layer 5 GUI 冒烟（无桌面会话时使用）
+
+Layer 5（`tools/smoke_skinpreview.py`）在四个窗口渲染之外，还会：点 EQ `enabled` 断言标题变为 `Equalizer ON`、换到 Subaru/HiFi 等尺寸差明显的皮肤并断言窗口尺寸或像素变化、把 Player 放到 EQ 旁发 `WM_ENTERSIZEMOVE`/`SetWindowPos`/`WM_EXITSIZEMOVE` 断言吸附间隙 ~0（LCL 逻辑像素；原生 WndProc 子类化才能收到跨进程的这两条消息）。
 
 ### 仅 FPCUnit
 

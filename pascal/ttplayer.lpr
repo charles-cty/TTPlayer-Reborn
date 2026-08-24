@@ -59,6 +59,7 @@ type
     procedure HandleLyricResizeFinished(Sender: TObject);
     procedure HandlePlaylistResize(Sender: TObject);
     procedure HandlePlaylistResizeFinished(Sender: TObject);
+    procedure HandlePlayFile(Sender: TObject; const FilePath: string);
   public
     constructor Create;
     destructor Destroy; override;
@@ -74,6 +75,7 @@ begin
   FEq      := TEqualizerForm.Create(Application, FBackend);
   FLyric   := TLyricForm.Create(Application, FBackend);
   FPlaylist := TPlaylistForm.Create(Application, FBackend);
+  FPlaylist.OnPlayFile := @HandlePlayFile;
   FPlayer.OnAuxToggle := @HandleAuxToggle;
   FLyric.OnResizeInProgress := @HandleLyricResize;
   FLyric.OnResizeFinished := @HandleLyricResizeFinished;
@@ -142,6 +144,19 @@ begin
     ResizeEdgesOf(FPlaylist.ResizeEdgeRight, FPlaylist.ResizeEdgeBottom));
 end;
 
+procedure TTPlayerApp.HandlePlayFile(Sender: TObject; const FilePath: string);
+var
+  lrc: string;
+begin
+  if Sender = nil then ;
+  lrc := ChangeFileExt(FilePath, '.lrc');
+  if FileExists(lrc) then
+    FLyric.LoadLrc(lrc)
+  else
+    FLyric.ClearLrc;
+  FLyric.SetTrackInfo(FBackend.GetTitle, FBackend.GetArtist);
+end;
+
 procedure TTPlayerApp.Run;
 var
   sknPath: string;
@@ -149,15 +164,20 @@ begin
   sknPath := FindFirstSkin;
   if (sknPath <> '') and FEngine.LoadFromFile(sknPath) then
   begin
-    FPlayer.ApplySkin(FEngine.SkinData);
-    FEq.ApplySkin(FEngine.SkinData);
-    FLyric.ApplySkin(FEngine.SkinData);
-    FPlaylist.ApplySkin(FEngine.SkinData);
+    FPlayer.ApplySkin(FEngine.SkinPtr);
+    FEq.ApplySkin(FEngine.SkinPtr);
+    FLyric.ApplySkin(FEngine.SkinPtr);
+    FPlaylist.ApplySkin(FEngine.SkinPtr);
   end;
 
   FPlayer.SetAuxToggle('lyric', True);
   FPlayer.SetAuxToggle('equalizer', True);
   FPlayer.SetAuxToggle('playlist', True);
+
+  if DirectoryExists(RepoRoot + 'PlayList') then
+    FPlaylist.LoadFromTtblDir(RepoRoot + 'PlayList', 4, 0)
+  else if DirectoryExists(RepoRoot + 'build-mingw64' + PathDelim + 'PlayList') then
+    FPlaylist.LoadFromTtblDir(RepoRoot + 'build-mingw64' + PathDelim + 'PlayList', 4, 0);
 
   FPlayer.Left := 40;
   FPlayer.Top  := 40;

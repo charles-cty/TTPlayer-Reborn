@@ -10,9 +10,10 @@ unit ULyricForm;
 interface
 
 uses
-  Classes, SysUtils, Forms, Controls, Graphics, LCLIntf, LCLType, LMessages,
+  Classes, SysUtils, Forms, Controls, Graphics, ExtCtrls,
+  LCLIntf, LCLType, LMessages,
   BGRABitmap, BGRABitmapTypes,
-  USkinTypes, USkinRender, UPlayerBackend;
+  USkinTypes, USkinRender, UPlayerBackend, ULrcParser, UPlatformWindow;
 
 type
   TLyricForm = class(TForm)
@@ -21,8 +22,11 @@ type
     destructor Destroy; override;
 
     // 应用皮肤；换肤时调用。
-    procedure ApplySkin(const ASkin: TSkinData);
+    procedure ApplySkin(ASkin: PSkinData);
     procedure SetBounds(ALeft, ATop, AWidth, AHeight: Integer); override;
+    procedure LoadLrc(const APath: string);
+    procedure ClearLrc;
+    procedure SetTrackInfo(const ATitle, AArtist: string);
 
   protected
     procedure Paint; override;
@@ -36,7 +40,7 @@ type
     procedure WMNCHitTest(var Msg: TLMessage); message LM_NCHITTEST;
 
   private
-    FSkin: ^TSkinData;
+    FSkin: PSkinData;
     FBackend: IPlayerBackend;
     FFrame: TBGRABitmap;
 
@@ -60,8 +64,16 @@ type
     FOnResizeInProgress: TNotifyEvent;
     FOnResizeFinished: TNotifyEvent;
 
+    FLrc: TLrcData;
+    FTrackTitle: string;
+    FTrackArtist: string;
+    FTimer: TTimer;
+
     procedure BuildRegion;
     procedure RenderFrame;
+    procedure OnLyricTick(Sender: TObject);
+    function LyricArea: TSkinRect;
+    procedure DrawLyrics;
 
     // 命中测试：返回按钮名或 ''
     function HitButton(PX, PY: Integer): string;
@@ -102,6 +114,8 @@ begin
   FLogicW  := 268;
   FLogicH  := 60;
   FAlwaysOnTop := False;
+  FTrackTitle := '';
+  FTrackArtist := '';
 
   FHoveredType := '';
   FPressedType := '';
@@ -112,22 +126,100 @@ begin
   Color       := clBlack;
   Caption     := 'Lyric';
 
+  FTimer := TTimer.Create(Self);
+  FTimer.Interval := 100;
+  FTimer.OnTimer := @OnLyricTick;
+  FTimer.Enabled := True;
+
   MouseLeave;
 end;
 
 destructor TLyricForm.Destroy;
 begin
+  FTimer.Enabled := False;
   FFrame.Free;
   inherited Destroy;
 end;
 
-procedure TLyricForm.ApplySkin(const ASkin: TSkinData);
+procedure TLyricForm.OnLyricTick(Sender: TObject);
+begin
+  if Sender = nil then ;
+  if not Visible then Exit;
+  if Length(FLrc.Lines) = 0 then Exit;
+  RenderFrame;
+  Invalidate;
+end;
+
+procedure TLyricForm.LoadLrc(const APath: string);
+begin
+  FLrc := ParseLrcFile(APath);
+  RenderFrame;
+  Invalidate;
+end;
+
+procedure TLyricForm.ClearLrc;
+begin
+  FLrc.Title := '';
+  FLrc.Artist := '';
+  FLrc.Album := '';
+  FLrc.Offset := 0;
+  SetLength(FLrc.Lines, 0);
+  RenderFrame;
+  Invalidate;
+end;
+
+procedure TLyricForm.SetTrackInfo(const ATitle, AArtist: string);
+begin
+  FTrackTitle := ATitle;
+  FTrackArtist := AArtist;
+  if Length(FLrc.Lines) = 0 then
+  begin
+    RenderFrame;
+    Invalidate;
+  end;
+end;
+
+function TLyricForm.LyricArea: TSkinRect;
+var
+  elem: PSkinElement;
+  bgW, bgH, rightM, bottomM: Integer;
+begin
+  Result.X := 8;
+  Result.Y := 24;
+  Result.W := Max(1, FLogicW - 16);
+  Result.H := Max(1, FLogicH - 32);
+  if FSkin = nil then Exit;
+  elem := FSkin^.LyricWindow.FindElement('lyric');
+  if (elem = nil) or elem^.Position.IsEmpty then Exit;
+  if FSkin^.LyricWindow.BackgroundPixmap <> nil then
+  begin
+    bgW := FSkin^.LyricWindow.BackgroundPixmap.Width;
+    bgH := FSkin^.LyricWindow.BackgroundPixmap.Height;
+  end
+  else
+  begin
+    bgW := FLogicW;
+    bgH := FLogicH;
+  end;
+  rightM := bgW - (elem^.Position.X + elem^.Position.W);
+  bottomM := bgH - (elem^.Position.Y + elem^.Position.H);
+  Result.X := elem^.Position.X;
+  Result.Y := elem^.Position.Y;
+  Result.W := Max(1, FLogicW - elem^.Position.X - rightM);
+  Result.H := Max(1, FLogicH - elem^.Position.Y - bottomM);
+end;
+
+procedure TLyricForm.ApplySkin(ASkin: PSkinData);
 var
   bg: TBGRABitmap;
 begin
-  FSkin := @ASkin;
+  if ASkin = nil then Exit;
+  FSkin := ASkin;
 
-  bg := ASkin.LyricWindow.BackgroundPixmap;
+  if HandleAllocated then
+    ClearWindowShape(Handle);
+
+  bg := ASkin^.LyricWindow.BackgroundPixmap;
   if bg <> nil then
   begin
     FLogicW := bg.Width;
@@ -141,6 +233,8 @@ begin
   FreeAndNil(FFrame);
   RenderFrame;
   Invalidate;
+  if HandleAllocated then
+    Update;
 end;
 
 procedure TLyricForm.SetBounds(ALeft, ATop, AWidth, AHeight: Integer);
@@ -161,54 +255,29 @@ begin
   end;
 end;
 
-// 从背景位图生成异形 HRGN（对应 LyricWindow::updateChromeGeometry → setMask）。
 procedure TLyricForm.BuildRegion;
 var
-  bmp: TBGRABitmap;
-  totalRgn, rowRgn, segRgn: HRGN;
-  bx, by, startX, bw, bh: Integer;
-  p: PBGRAPixel;
+  src, bmp: TBGRABitmap;
+  own: Boolean;
 begin
-  if FSkin = nil then Exit;
-  bmp := FSkin^.LyricWindow.BackgroundPixmap;
-  if bmp = nil then Exit;
-
-  bw := bmp.Width;
-  bh := bmp.Height;
-  totalRgn := CreateRectRgn(0, 0, 0, 0);
-
-  for by := 0 to bh - 1 do
+  if (FSkin = nil) or (not HandleAllocated) then Exit;
+  src := FSkin^.LyricWindow.BackgroundPixmap;
+  if src = nil then Exit;
+  own := False;
+  if (src.Width = FLogicW) and (src.Height = FLogicH) then
+    bmp := src
+  else
   begin
-    p := bmp.ScanLine[by];
-    startX := -1;
-    for bx := 0 to bw - 1 do
-    begin
-      if p^.alpha > 0 then
-      begin
-        if startX < 0 then startX := bx;
-      end
-      else if startX >= 0 then
-      begin
-        segRgn := CreateRectRgn(startX, by, bx, by + 1);
-        rowRgn := CreateRectRgn(0, 0, 0, 0);
-        CombineRgn(rowRgn, totalRgn, segRgn, RGN_OR);
-        DeleteObject(totalRgn); DeleteObject(segRgn);
-        totalRgn := rowRgn;
-        startX := -1;
-      end;
-      Inc(p);
-    end;
-    if startX >= 0 then
-    begin
-      segRgn := CreateRectRgn(startX, by, bw, by + 1);
-      rowRgn := CreateRectRgn(0, 0, 0, 0);
-      CombineRgn(rowRgn, totalRgn, segRgn, RGN_OR);
-      DeleteObject(totalRgn); DeleteObject(segRgn);
-      totalRgn := rowRgn;
-    end;
+    bmp := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);
+    own := True;
+    DrawNinePatch(bmp, src, FSkin^.LyricWindow.ResizeRect,
+      FSkin^.LyricWindow.ResizeTile, FLogicW, FLogicH, True);
   end;
-
-  SetWindowRgn(Handle, totalRgn, True);
+  try
+    ApplyAlphaShape(Handle, bmp);
+  finally
+    if own then bmp.Free;
+  end;
 end;
 
 procedure TLyricForm.RenderFrame;
@@ -267,6 +336,91 @@ begin
     else
       DrawButton(FFrame, elem^, bounds, bvsNormal);
   end;
+
+  DrawLyrics;
+end;
+
+procedure TLyricForm.DrawLyrics;
+var
+  area: TSkinRect;
+  f: TSkinFont;
+  st: TFontStyles;
+  textC, hiC: TBGRAPixel;
+  info: string;
+  lineH, visibleLines, startLine, endLine, i, y, tw: Integer;
+  posMs: Int64;
+  cur: Integer;
+begin
+  if FFrame = nil then Exit;
+  area := LyricArea;
+  if (area.W <= 0) or (area.H <= 0) then Exit;
+
+  if FSkin <> nil then
+  begin
+    f := FSkin^.LyricConfig.Font;
+    if f.Family <> '' then FFrame.FontName := f.Family else FFrame.FontName := 'SimSun';
+    if f.PixelSize > 0 then FFrame.FontHeight := f.PixelSize else FFrame.FontHeight := 12;
+    st := [];
+    if f.Bold then Include(st, fsBold);
+    if f.Italic then Include(st, fsItalic);
+    FFrame.FontStyle := st;
+    if FSkin^.LyricConfig.TextColor.Valid then
+      textC := FSkin^.LyricConfig.TextColor.ToBGRA
+    else
+      textC := BGRA($00, $80, $C0);
+    if FSkin^.LyricConfig.HilightColor.Valid then
+      hiC := FSkin^.LyricConfig.HilightColor.ToBGRA
+    else
+      hiC := BGRA($00, $FF, $00);
+  end
+  else
+  begin
+    FFrame.FontName := 'SimSun';
+    FFrame.FontHeight := 12;
+    textC := BGRA($00, $80, $C0);
+    hiC := BGRA($00, $FF, $00);
+  end;
+  FFrame.FontAntialias := True;
+  FFrame.ClipRect := Classes.Rect(area.X, area.Y, area.X + area.W, area.Y + area.H);
+
+  if Length(FLrc.Lines) = 0 then
+  begin
+    if FTrackTitle <> '' then
+    begin
+      if FTrackArtist <> '' then
+        info := FTrackArtist + ' - ' + FTrackTitle
+      else
+        info := FTrackTitle;
+    end
+    else
+      info := '暂无歌词';
+    tw := FFrame.TextSize(info).cx;
+    FFrame.TextOut(area.X + (area.W - tw) div 2,
+      area.Y + (area.H - FFrame.TextSize(info).cy) div 2, info, textC);
+    FFrame.NoClip;
+    Exit;
+  end;
+
+  lineH := FFrame.TextSize('Ag').cy + 4;
+  if lineH < 14 then lineH := 14;
+  posMs := 0;
+  if FBackend <> nil then
+    posMs := FBackend.GetPositionMs;
+  cur := CurrentLyricIndex(FLrc, posMs);
+  visibleLines := Max(1, area.H div lineH);
+  startLine := cur - visibleLines div 2;
+  endLine := startLine + visibleLines;
+  for i := startLine to endLine do
+  begin
+    if (i < 0) or (i > High(FLrc.Lines)) then Continue;
+    y := area.Y + (i - startLine) * lineH;
+    tw := FFrame.TextSize(FLrc.Lines[i].Text).cx;
+    if i = cur then
+      FFrame.TextOut(area.X + (area.W - tw) div 2, y, FLrc.Lines[i].Text, hiC)
+    else
+      FFrame.TextOut(area.X + (area.W - tw) div 2, y, FLrc.Lines[i].Text, textC);
+  end;
+  FFrame.NoClip;
 end;
 
 procedure TLyricForm.Paint;
@@ -344,7 +498,7 @@ begin
   else if SameText(AName, 'ontop') then
   begin
     FAlwaysOnTop := not FAlwaysOnTop;
-    // 实际置顶由 ULyricForm 外部处理（与 TPlayerForm.SetAuxToggle 模式一致）
+    SetWindowAlwaysOnTop(Self, FAlwaysOnTop);
   end;
 
   RenderFrame;

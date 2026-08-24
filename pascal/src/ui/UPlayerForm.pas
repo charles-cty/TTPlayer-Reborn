@@ -12,7 +12,7 @@ interface
 uses
   Classes, SysUtils, Forms, Controls, Graphics, LCLIntf, LCLType, LMessages,
   BGRABitmap, BGRABitmapTypes,
-  USkinTypes, USkinRender, UPlayerBackend, UVisualWidget;
+  USkinTypes, USkinRender, UPlayerBackend, UVisualWidget, UPlatformWindow;
 
 type
   TAuxToggleEvent = procedure(Sender: TObject; const AType: string;
@@ -24,7 +24,8 @@ type
     destructor Destroy; override;
 
     // 应用皮肤数据；换肤时调用，重建 Region 并刷新。
-    procedure ApplySkin(const ASkin: TSkinData);
+    // ASkin 必须指向引擎持有的 TSkinData（TSkinEngine.SkinPtr），不能是副本。
+    procedure ApplySkin(ASkin: PSkinData);
 
     // 切换辅助窗口按钮的切换状态（lyric/equalizer/playlist）。
     procedure SetAuxToggle(const AType: string; AToggled: Boolean);
@@ -42,7 +43,7 @@ type
     procedure WMNCHitTest(var Msg: TLMessage); message LM_NCHITTEST;
 
   private
-    FSkin: ^TSkinData;         // 指向外部持有的皮肤数据
+    FSkin: PSkinData;          // 指向引擎持有的皮肤数据
     FBackend: IPlayerBackend;
     FFrame: TBGRABitmap;       // 离屏合成缓冲
     FVisual: TVisualWidget;    // 频谱/示波图子控件
@@ -104,17 +105,22 @@ begin
   inherited Destroy;
 end;
 
-procedure TPlayerForm.ApplySkin(const ASkin: TSkinData);
+procedure TPlayerForm.ApplySkin(ASkin: PSkinData);
 var
   visualElem: PSkinElement;
 begin
-  FSkin := @ASkin;
+  if ASkin = nil then Exit;
+  FSkin := ASkin;
 
-  if (ASkin.PlayerWindow.BackgroundPixmap <> nil) then
+  // 先清 Region，否则 SetWindowRgn 会卡住后续 SetBounds。
+  if HandleAllocated then
+    ClearWindowShape(Handle);
+
+  if (ASkin^.PlayerWindow.BackgroundPixmap <> nil) then
   begin
     SetBounds(Left, Top,
-      ASkin.PlayerWindow.BackgroundPixmap.Width,
-      ASkin.PlayerWindow.BackgroundPixmap.Height);
+      ASkin^.PlayerWindow.BackgroundPixmap.Width,
+      ASkin^.PlayerWindow.BackgroundPixmap.Height);
   end;
 
   // 重建异形 Region
@@ -126,11 +132,11 @@ begin
   RenderFrame;
 
   // 定位频谱子控件到 visual 元素区域
-  visualElem := ASkin.PlayerWindow.FindElement('visual');
+  visualElem := ASkin^.PlayerWindow.FindElement('visual');
   if (visualElem <> nil) and (not visualElem^.Position.IsEmpty) then
   begin
     FVisual.SetVisualRect(visualElem^.Position);
-    FVisual.ApplyConfig(ASkin.VisualConfig);
+    FVisual.ApplyConfig(ASkin^.VisualConfig);
     FVisual.Visible := True;
     FVisual.Mode    := vmSpectrum;
   end
@@ -138,65 +144,18 @@ begin
     FVisual.Visible := False;
 
   Invalidate;
+  if HandleAllocated then
+    Update;
 end;
 
-// 从背景位图的透明色（已被 LoadAndProcess 替换为 alpha=0）生成 HRGN。
-// 用 run-length 行区段合并成矩形列表，再用 CombineRgn(RGN_OR) 合并。
 procedure TPlayerForm.BuildRegion;
 var
   bmp: TBGRABitmap;
-  totalRgn, rowRgn, segRgn: HRGN;
-  x, y, startX, w, h: Integer;
-  p: PBGRAPixel;
 begin
-  if FSkin = nil then Exit;
+  if (FSkin = nil) or (not HandleAllocated) then Exit;
   bmp := FSkin^.PlayerWindow.BackgroundPixmap;
   if bmp = nil then Exit;
-
-  w := bmp.Width;
-  h := bmp.Height;
-
-  totalRgn := CreateRectRgn(0, 0, 0, 0);  // 空 region 作初始累加器
-
-  for y := 0 to h - 1 do
-  begin
-    p := bmp.ScanLine[y];
-    startX := -1;
-    for x := 0 to w - 1 do
-    begin
-      if p^.alpha > 0 then
-      begin
-        if startX < 0 then startX := x;
-      end
-      else
-      begin
-        if startX >= 0 then
-        begin
-          segRgn := CreateRectRgn(startX, y, x, y + 1);
-          rowRgn := CreateRectRgn(0, 0, 0, 0);
-          CombineRgn(rowRgn, totalRgn, segRgn, RGN_OR);
-          DeleteObject(totalRgn);
-          DeleteObject(segRgn);
-          totalRgn := rowRgn;
-          startX := -1;
-        end;
-      end;
-      Inc(p);
-    end;
-    // 行末未关闭的区段
-    if startX >= 0 then
-    begin
-      segRgn := CreateRectRgn(startX, y, w, y + 1);
-      rowRgn := CreateRectRgn(0, 0, 0, 0);
-      CombineRgn(rowRgn, totalRgn, segRgn, RGN_OR);
-      DeleteObject(totalRgn);
-      DeleteObject(segRgn);
-      totalRgn := rowRgn;
-    end;
-  end;
-
-  // SetWindowRgn 之后 hRgn 的所有权归系统，无需自行释放
-  SetWindowRgn(Handle, totalRgn, True);
+  ApplyAlphaShape(Handle, bmp);
 end;
 
 // 离屏合成当前帧到 FFrame。
@@ -312,6 +271,8 @@ begin
        (SameText(AType, 'lyric') or SameText(AType, 'equalizer') or
         SameText(AType, 'playlist')) then
       FOnAuxToggle(Self, AType, GetToggled(AType));
+    if SameText(AType, 'ontop') then
+      SetWindowAlwaysOnTop(Self, GetToggled(AType));
   end;
 
   // 特殊操作（后续接入 Backend）

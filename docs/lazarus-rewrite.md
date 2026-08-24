@@ -49,7 +49,7 @@ Lazarus 工程（全自绘）
   src/render/     渲染原语（USkinRender，QtPutImage 精确合成）
   src/ui/         PlayerForm/PlaylistForm/EqualizerForm/LyricForm（无边框自绘）
                   UWindowSnapMath / UWindowSnapManager / UFormSnap（窗口吸附）
-  src/ui/platform/ Windows/X11 平台特定调用（SetWindowRgn、XShape、EWMH）——尚未开始
+  src/ui/platform/ Windows/X11 平台特定调用（SetWindowRgn、XShape、EWMH）
 ```
 
 ### C ABI 边界约定
@@ -76,24 +76,26 @@ Lazarus 工程（全自绘）
 
 **Step 2（已完成，Windows）**：PlayerForm
 - `bsNone` 无边框窗口
-- 色键生成 Shape 区域（换肤时 run-length 建 `HRGN`/`XRectangle[]`）
+- 色键生成 Shape 区域（`UPlatformWindow.ApplyAlphaShape`：Win `SetWindowRgn` / X11 `XShapeCombineRectangles`）
 - 按钮命中测试、悬停/按下视觉状态
 - 窗口拖动
-- GTK3 验证仍未做
+- GTK3：平台原语已隔离；真机验证仍待 Linux 桌面会话
 
 **Step 3（已完成）**：PlaylistWindow
 - 虚拟列表、7 组工具栏菜单、皮肤滚动条、文件拖放、双击 OpenFile
-- 未移植：TTBL、元数据加载器、列表内 DnD、完整搜索对话框、多播放列表标签页
+- TTBL v3/v5 读写、列表内拖放重排、搜索对话框、多播放列表标签页
+- 未移植：元数据加载器（等 ttcore / TagLib）
 
 **Step 4（已完成）**：EqualizerWindow
 
 **Step 5（已完成）**：LyricWindow + VisualWidget（频谱动画）
-- 歌词窗口目前是皮肤壳，尚无 LRC 解析/滚动
+- LRC 解析 + 按 `TStubBackend` 假进度滚动高亮
 
 **Step 6（已完成，Windows）**：WindowSnapManager（Winamp 式窗口吸附）
 - 独立双轴吸附、主窗口联动组、子窗口单独拖动、松手吸附、屏幕边缘、缩放吸附
 - 几何与图结构可在 NoLCL FPCUnit 中验证（MR-4）
-- GTK3 CSD 坐标 / `src/ui/platform/` 仍未做
+- Windows：`TSnapFormAdapter` 子类化原生 WndProc 收取 `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE`（LCL `WindowProc` 收不到跨进程 `SendMessage`）；DPI≠100% 时 `GetBounds`/`MoveTo` 在 LCL 逻辑像素与 `GetWindowRect` 物理像素之间换算
+- `src/ui/platform/` 已提供 Shape / 置顶 / EWMH；GTK3 CSD 坐标仍待 Linux 真机验证
 
 **Step 7（推迟）**：ttcore 抽库 + FFI 对接，替换 TStubBackend。音频核与 GUI 解耦，可等 GUI 与测试补齐后再做。
 
@@ -115,9 +117,9 @@ Lazarus 工程（全自绘）
 
 ---
 
-## 当前状态（2026-08-23）
+## 当前状态（2026-08-24）
 
-**已完成（Step 0–6 + 测试框架）**。四个皮肤窗口可在 `skinpreview` 中同时显示，Windows 下支持 Winamp 式吸附；音频仍为 `TStubBackend`。
+**已完成（Step 0–6 + GUI/测试补齐）**。四个皮肤窗口可在 `skinpreview` 中同时显示，Windows 下支持 Winamp 式吸附；音频仍为 `TStubBackend`。
 
 | 交付物 | 位置 |
 |---|---|
@@ -126,30 +128,22 @@ Lazarus 工程（全自绘）
 | 皮肤引擎 | `pascal/src/skin/`（USkinTypes/USkinXmlParser/USkinLoader/USkinJsonDump） |
 | 渲染原语 | `pascal/src/render/USkinRender`（QtPutImage 精确合成、九宫格、LED） |
 | 后端接口+桩 | `pascal/src/backend/UPlayerBackend`（IPlayerBackend + TStubBackend） |
-| 播放列表模型 | `pascal/src/playlist/UPlaylistModel` |
+| 播放列表模型 | `pascal/src/playlist/UPlaylistModel` + `UTtbl` + `UPlaylistBook` |
+| LRC 解析 | `pascal/src/lyric/ULrcParser` |
 | PlayerForm | `pascal/src/ui/UPlayerForm`（无边框、Region、按钮交互、拖动、OnAuxToggle） |
-| PlaylistForm | `pascal/src/ui/UPlaylistForm`（虚拟列表、工具栏菜单、滚动条、拖放） |
+| PlaylistForm | `pascal/src/ui/UPlaylistForm`（虚拟列表、工具栏、滚动条、拖放、TTBL、多标签、搜索、列表内 DnD） |
 | EqualizerForm | `pascal/src/ui/UEqualizerForm`（10 波段 + preamp/balance/surround 滑块） |
-| LyricForm | `pascal/src/ui/ULyricForm`（九宫格、右/下边缘调整大小） |
+| LyricForm | `pascal/src/ui/ULyricForm`（九宫格、LRC 滚动高亮、右/下边缘调整大小） |
 | VisualWidget | `pascal/src/ui/UVisualWidget`（柱状频谱 + 模糊示波图动画） |
 | WindowSnap | `pascal/src/ui/UWindowSnapMath` + `UWindowSnapManager` + `UFormSnap` |
+| 平台窗口 | `pascal/src/ui/platform/UPlatformWindow`（Win `SetWindowRgn` / X11 Shape + EWMH 置顶） |
 | Pascal 工具集 | `pascal/ttdump.lpi`、`pascal/skinpreview.lpi`、`pascal/ttplayer.lpi`、`pascal/tests.lpi` |
 | Qt SkinDumper | `src/tools/SkinDumper.{h,cpp}` + `--dump-skin` |
-| Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames` |
+| Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames`（捕帧前 `clearMask`，playlist/lyric 按 `baseSize`） |
 | Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
-| 测试（35/35） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + WindowSnap/MR-4 + Layer 5 GUI 冒烟） |
+| 测试（48/48 FPCUnit） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5 GUI 冒烟） |
 
-**下一步（GUI + 自动化测试，音频推迟）**：
-
-1. **Layer 2 歌词帧（已完成）**：FrameDumper 按皮肤 `baseSize` 捕帧，接入 `lyric__default`（九宫格 + chrome；歌词文本走 mask）
-2. **Layer 2 播放列表**：`resize_tile=False` 皮肤；必要时固定 FrameDumper 窗口尺寸
-3. **Subaru_Offbeat**：修复 FrameDumper offscreen `setMask` 偏移后重新启用
-4. **歌词内容**：LRC 解析 + 滚动（`TStubBackend` 假进度即可，无需 ttcore）
-5. **播放列表深化**：TTBL、列表内 DnD、搜索对话框、多标签
-6. **Layer 5 冒烟扩展**：EQ 开关、吸附、换肤
-7. **GTK3 / `src/ui/platform/`**：Linux 窗口，不阻塞 Windows GUI/测试
-
-Step 7（ttcore）仍排在上述 GUI/测试之后。
+**下一步**：Step 7（ttcore 抽库 + FFI 对接，替换 `TStubBackend`）。元数据加载器随 TagLib/ttcore 一起做。GTK3 真机验证不阻塞 Windows。
 
 ---
 
