@@ -67,8 +67,6 @@ end;
 
 {$IFDEF WINDOWS}
 
-function PlatformWindowScale(AHandle: HWND; LogicalW, LogicalH: Integer): Double; forward;
-
 function QueryPlatformWindowBackend: TPlatformWindowBackend;
 begin
   Result := pwbWin32;
@@ -133,7 +131,7 @@ end;
 
 function PlatformGetWindowRect(AHandle: HWND; out R: TRect): Boolean;
 begin
-  R := Rect(0, 0, 0, 0);
+  R := Types.Rect(0, 0, 0, 0);
   Result := (AHandle <> 0) and (LCLIntf.GetWindowRect(AHandle, R) <> 0);
 end;
 
@@ -190,7 +188,7 @@ var
   wr: TRect;
 begin
   Result := 1.0;
-  wr := Rect(0, 0, 0, 0);
+  wr := Types.Rect(0, 0, 0, 0);
   if not PlatformGetWindowRect(AHandle, wr) then Exit;
   Result := WindowScaleFromSizes(LogicalW, LogicalH,
     wr.Right - wr.Left, wr.Bottom - wr.Top);

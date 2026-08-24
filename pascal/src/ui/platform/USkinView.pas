@@ -43,7 +43,7 @@ var
   s: string;
 begin
   Result := 1;
-  s := GetEnvironmentVariable('GDK_SCALE');
+  s := SysUtils.GetEnvironmentVariable('GDK_SCALE');
   if s <> '' then
     Result := StrToIntDef(s, 1);
   if Result < 1 then
@@ -175,7 +175,7 @@ end;
 function NcHitToSkin(AForm: TCustomForm; const Msg: TLMessage;
   SkinW, SkinH: Integer): TPoint;
 begin
-  Result := Point(
+  Result := Types.Point(
     SmallInt(Msg.LParam and $FFFF),
     SmallInt((Msg.LParam shr 16) and $FFFF));
   if AForm <> nil then
