@@ -66,8 +66,8 @@ function HookSnapWindow(AForm: TForm; AManager: TWindowSnapManager;
 
 function ResizeEdgesOf(RightEdge, BottomEdge: Boolean): TSnapEdges;
 
-// GTK3：WMNCHitTest 的 HTCAPTION 不会启动系统拖动。皮肤窗在 MouseDown
-// 里调用本函数，命中标题区则走与 Windows 相同的 OnDragStarted/Finished。
+// GTK3：无 HTCAPTION 系统拖动。皮肤窗 MouseDown 调本函数；TForm 已
+// csCaptureMouse，按光标位移 MoveTo（WSLg 上不要混用 GDK origin 与 LCL Left）。
 procedure TryBeginCaptionDrag(AForm: TForm; ClientX, ClientY: Integer);
 
 implementation
@@ -321,17 +321,18 @@ end;
 
 procedure TSnapFormAdapter.BeginCaptionDrag;
 var
-  b: TSnapRect;
+  cur: TPoint;
 begin
   {$IFDEF WINDOWS}
   Exit;
   {$ENDIF}
   if FCaptionDragging or (FForm = nil) or (FWin = nil) then Exit;
-  b := FWin.GetBounds;
-  FGrabOffX := Mouse.CursorPos.X - b.X;
-  FGrabOffY := Mouse.CursorPos.Y - b.Y;
+  // 用光标位移而不是 CursorPos-Left：WSLg 上 GDK origin 与 LCL Left 不是同一原点。
+  cur := Mouse.CursorPos;
+  FGrabOffX := cur.X;
+  FGrabOffY := cur.Y;
   FCaptionDragging := True;
-  if FForm.HandleAllocated then
+  if FForm.HandleAllocated and (GetCapture <> FForm.Handle) then
     SetCapture(FForm.Handle);
   HandleEnterSizeMove;
 end;
@@ -340,8 +341,6 @@ procedure TSnapFormAdapter.EndCaptionDrag;
 begin
   if not FCaptionDragging then Exit;
   FCaptionDragging := False;
-  if FForm.HandleAllocated and (GetCapture = FForm.Handle) then
-    ReleaseCapture;
   HandleExitSizeMove;
 end;
 
@@ -368,9 +367,14 @@ procedure TSnapFormAdapter.WndProc(var Msg: TLMessage);
 var
   dx, dy: Integer;
   b: TSnapRect;
+  cur: TPoint;
 begin
   if Msg.Msg = WM_ENTERSIZEMOVE then
     HandleEnterSizeMove;
+
+  // 松手先结束拖动，再让 LCL 因 csCaptureMouse 释放捕获。
+  if FCaptionDragging and (Msg.Msg = LM_LBUTTONUP) then
+    EndCaptionDrag;
 
   FOldProc(Msg);
 
@@ -378,9 +382,17 @@ begin
   begin
     if Msg.Msg = LM_MOUSEMOVE then
     begin
-      FWin.MoveTo(Mouse.CursorPos.X - FGrabOffX, Mouse.CursorPos.Y - FGrabOffY);
+      cur := Mouse.CursorPos;
+      dx := cur.X - FGrabOffX;
+      dy := cur.Y - FGrabOffY;
+      if (dx <> 0) or (dy <> 0) then
+      begin
+        FGrabOffX := cur.X;
+        FGrabOffY := cur.Y;
+        FWin.MoveTo(FForm.Left + dx, FForm.Top + dy);
+      end;
     end
-    else if (Msg.Msg = LM_LBUTTONUP) or (Msg.Msg = LM_CAPTURECHANGED) then
+    else if (Msg.Msg = LM_CAPTURECHANGED) and (GetCapture <> FForm.Handle) then
       EndCaptionDrag;
   end;
 
@@ -426,7 +438,8 @@ begin
   Exit;
 {$ELSE}
   if AForm = nil then Exit;
-  if GetCapture <> 0 then Exit;
+  // TForm 带 csCaptureMouse，WMLButtonDown 已经 SetCapture。不能见捕获就退出。
+  if (GetCapture <> 0) and (GetCapture <> AForm.Handle) then Exit;
   pt := AForm.ClientToScreen(Point(ClientX, ClientY));
   lp := LPARAM(Word(SmallInt(pt.X))) or (LPARAM(Word(SmallInt(pt.Y))) shl 16);
   if AForm.Perform(LM_NCHITTEST, 0, lp) <> HTCAPTION then Exit;
