@@ -4,11 +4,12 @@ unit UFormSnap;
 
 // LCL 窗口与 TWindowSnapManager 的桥：
 //   TFormSnapWindow  — ISnapWindow 适配 TForm。吸附在逻辑像素里算。
-//                      DPI/GDK_SCALE>1 时用 UDpiScale 把 native 坐标换回逻辑；
-//                      1× 或 WSLg 原点对不齐时用 LCL Left/Top（不要把 CSD
-//                      尺寸比当成 DPI）。
+//                      Windows DPI≠100% 时用 UDpiScale 把 native 坐标换回逻辑。
+//                      GTK3/WSLg：始终用 LCL Left/Top（GDK origin 与 LCL 不是
+//                      同一原点；不要把 CSD 尺寸比当成 DPI）。
 //   TSnapFormAdapter — Windows：子类化原生 WndProc 收 WM_ENTER/EXITSIZEMOVE
-//                      GTK3/X11：TryBeginCaptionDrag 模拟 HTCAPTION 拖动，
+//                      GTK3/X11：TryBeginCaptionDrag 模拟 HTCAPTION 拖动
+//                      （gdk_seat_grab 指针抓取 + gtk_window_move），
 //                      松手走 OnDragFinished（与 Windows 吸附同一套）
 // Linux 只支持 X11（见 UGdkX11Backend）。探测：tools/test-gtk3-wayland.sh。
 
@@ -16,7 +17,11 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, LCLType, LCLIntf, LMessages, Types,
-  UWindowSnapMath, UWindowSnapManager, UPlatformWindow, UDpiScale, USkinView;
+  UWindowSnapMath, UWindowSnapManager, UPlatformWindow, USkinView
+{$IFDEF WINDOWS}
+  , UDpiScale
+{$ENDIF}
+  ;
 
 type
   TFormSnapWindow = class(TInterfacedObject, ISnapWindow)
@@ -48,6 +53,7 @@ type
     FOrigWndProc: PtrUInt;
     FCaptionDragging: Boolean;
     FGrabOffX, FGrabOffY: Integer;
+    FDragOriginX, FDragOriginY: Integer;
     FLastViewScale: Double;
     FSyncingView: Boolean;
     procedure WndProc(var Msg: TLMessage);
@@ -59,6 +65,7 @@ type
     procedure HandleExitSizeMove;
     procedure InstallNativeHook;
     procedure RemoveNativeHook;
+    procedure ReadPointerRoot(out X, Y: Integer);
   public
     constructor Create(AForm: TForm; AManager: TWindowSnapManager;
       AWin: ISnapWindow; AIsMain: Boolean); reintroduce;
@@ -73,7 +80,8 @@ function HookSnapWindow(AForm: TForm; AManager: TWindowSnapManager;
 function ResizeEdgesOf(RightEdge, BottomEdge: Boolean): TSnapEdges;
 
 // GTK3：无 HTCAPTION 系统拖动。皮肤窗 MouseDown 调本函数；TForm 已
-// csCaptureMouse，按光标位移 MoveTo（WSLg 上不要混用 GDK origin 与 LCL Left）。
+// csCaptureMouse。X 指针抓取后按「起点 Left + 根坐标位移」MoveTo
+// （WSLg 上不要混用 GDK origin 与 LCL Left，也不要只靠 gtk_grab_add）。
 procedure TryBeginCaptionDrag(AForm: TForm; ClientX, ClientY: Integer);
 
 implementation
@@ -103,13 +111,16 @@ begin
 end;
 
 function TFormSnapWindow.GetBounds: TSnapRect;
+{$IFDEF WINDOWS}
 var
   wr: TRect;
   pw, ph, lx, ly: Integer;
+{$ENDIF}
 begin
   Result := SnapRectXYWH(0, 0, 0, 0);
   if FForm = nil then Exit;
   Result := SnapRectXYWH(FForm.Left, FForm.Top, FForm.Width, FForm.Height);
+{$IFDEF WINDOWS}
   if not FForm.HandleAllocated then Exit;
   wr := Types.Rect(0, 0, 0, 0);
   if not PlatformGetWindowRect(FForm.Handle, wr) then Exit;
@@ -117,17 +128,16 @@ begin
   ph := wr.Bottom - wr.Top;
   if (pw <= 0) or (ph <= 0) or (FForm.Width <= 0) or (FForm.Height <= 0) then
     Exit;
-  // 仅在宽高均匀缩放到常见 DPI 档时换算。CSD 或 WSLg 原点错位走 LCL。
+  // 仅在宽高均匀缩放到常见 DPI 档时换算。
   if WindowScaleFromSizes(FForm.Width, FForm.Height, pw, ph) <= 1.0001 then
     Exit;
   lx := LogicalFromNative(wr.Left, FForm.Width, pw);
   ly := LogicalFromNative(wr.Top, FForm.Height, ph);
-  if (Abs(lx - FForm.Left) > 64) or (Abs(ly - FForm.Top) > 64) then
-    Exit;
   Result.X := lx;
   Result.Y := ly;
   Result.W := FForm.Width;
   Result.H := FForm.Height;
+{$ENDIF}
 end;
 
 procedure TFormSnapWindow.MoveTo(AX, AY: Integer);
@@ -144,9 +154,14 @@ begin
     Exit;
   if (FForm.Left <> AX) or (FForm.Top <> AY) then
     FForm.SetBounds(AX, AY, FForm.Width, FForm.Height);
+{$IFNDEF WINDOWS}
+  // GTK3 TGtk3Window.SetBounds 会 size_allocate+resize+move；再 gtk_window_move
+  // 一次，避免只改 LCL Left 而 X 窗口停在原地（WSLg 上很常见）。
+  if FForm.HandleAllocated then
+    PlatformMoveWindow(FForm.Handle, AX, AY);
+{$ENDIF}
 {$IFDEF WINDOWS}
-  // Win32 SetWindowPos 是物理像素。GTK3 gtk_window_move 是逻辑像素，
-  // SetBounds 已够；再乘 native/LCL 会和 CSD 一起把坐标撑爆。
+  // Win32 SetWindowPos 是物理像素。GTK3 gtk_window_move 是逻辑像素。
   if not FForm.HandleAllocated then Exit;
   wr := Types.Rect(0, 0, 0, 0);
   if not PlatformGetWindowRect(FForm.Handle, wr) then Exit;
@@ -215,6 +230,8 @@ begin
   FCaptionDragging := False;
   FGrabOffX := 0;
   FGrabOffY := 0;
+  FDragOriginX := 0;
+  FDragOriginY := 0;
   FLastViewScale := FormViewScale(AForm);
   FSyncingView := False;
   FOldProc := AForm.WindowProc;
@@ -232,6 +249,7 @@ begin
   if FCaptionDragging then
   begin
     FCaptionDragging := False;
+    PlatformUngrabPointer;
     if Assigned(FForm) and FForm.HandleAllocated and
        (GetCapture = FForm.Handle) then
       ReleaseCapture;
@@ -384,19 +402,30 @@ begin
 end;
 {$ENDIF}
 
-procedure TSnapFormAdapter.BeginCaptionDrag;
+procedure TSnapFormAdapter.ReadPointerRoot(out X, Y: Integer);
 var
   cur: TPoint;
+begin
+  if PlatformGetPointerRoot(X, Y) then Exit;
+  cur := Mouse.CursorPos;
+  X := cur.X;
+  Y := cur.Y;
+end;
+
+procedure TSnapFormAdapter.BeginCaptionDrag;
 begin
   {$IFDEF WINDOWS}
   Exit;
   {$ENDIF}
   if FCaptionDragging or (FForm = nil) or (FWin = nil) then Exit;
-  // 用光标位移而不是 CursorPos-Left：WSLg 上 GDK origin 与 LCL Left 不是同一原点。
-  cur := Mouse.CursorPos;
-  FGrabOffX := cur.X;
-  FGrabOffY := cur.Y;
+  // 起点用 LCL Left + 指针根坐标的累计位移。不要 CursorPos-Left：
+  // WSLg 上 GDK origin 与 LCL Left 不是同一原点，相减会瞬移。
+  ReadPointerRoot(FGrabOffX, FGrabOffY);
+  FDragOriginX := FForm.Left;
+  FDragOriginY := FForm.Top;
   FCaptionDragging := True;
+  if FForm.HandleAllocated then
+    PlatformGrabPointer(FForm.Handle);
   if FForm.HandleAllocated and (GetCapture <> FForm.Handle) then
     SetCapture(FForm.Handle);
   HandleEnterSizeMove;
@@ -406,6 +435,7 @@ procedure TSnapFormAdapter.EndCaptionDrag;
 begin
   if not FCaptionDragging then Exit;
   FCaptionDragging := False;
+  PlatformUngrabPointer;
   HandleExitSizeMove;
 end;
 
@@ -460,17 +490,16 @@ begin
   begin
     if Msg.Msg = LM_MOUSEMOVE then
     begin
-      cur := Mouse.CursorPos;
+      ReadPointerRoot(cur.X, cur.Y);
       dx := cur.X - FGrabOffX;
       dy := cur.Y - FGrabOffY;
       if (dx <> 0) or (dy <> 0) then
-      begin
-        FGrabOffX := cur.X;
-        FGrabOffY := cur.Y;
-        FWin.MoveTo(FForm.Left + dx, FForm.Top + dy);
-      end;
+        FWin.MoveTo(FDragOriginX + dx, FDragOriginY + dy);
     end
-    else if (Msg.Msg = LM_CAPTURECHANGED) and (GetCapture <> FForm.Handle) then
+    else if (Msg.Msg = LM_CAPTURECHANGED) and (GetCapture <> FForm.Handle) and
+            ((GetKeyState(VK_LBUTTON) and $8000) = 0) then
+      // GTK3 GetCapture 常指向 container 而非 TForm.Handle；左键仍按下时
+      // 不要结束。真正的 X 抓取由 PlatformUngrabPointer 在 MouseUp 释放。
       EndCaptionDrag;
   end;
 

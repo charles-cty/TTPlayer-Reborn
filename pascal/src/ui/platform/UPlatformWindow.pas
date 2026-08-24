@@ -37,6 +37,10 @@ procedure SetWindowAlwaysOnTop(AForm: TCustomForm; Enable: Boolean);
 procedure ConfigurePlatformWindow(AForm: TCustomForm);
 function PlatformGetWindowRect(AHandle: HWND; out R: TRect): Boolean;
 procedure PlatformMoveWindow(AHandle: HWND; AX, AY: Integer);
+// GTK3：X 指针抓取（异形窗外仍能收到运动/松开）。Win32 无需，HTCAPTION 已抓鼠标。
+function PlatformGrabPointer(AHandle: HWND): Boolean;
+procedure PlatformUngrabPointer;
+function PlatformGetPointerRoot(out X, Y: Integer): Boolean;
 function PlatformWindowIsDecorated(AHandle: HWND): Boolean;
 function PlatformWindowHasTitlebar(AHandle: HWND): Boolean;
 function PlatformWindowIsAbove(AHandle: HWND): Boolean;
@@ -140,6 +144,23 @@ begin
   if AHandle = 0 then Exit;
   Windows.SetWindowPos(AHandle, 0, AX, AY, 0, 0,
     SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
+end;
+
+function PlatformGrabPointer(AHandle: HWND): Boolean;
+begin
+  Result := False;
+  if AHandle = 0 then ;
+end;
+
+procedure PlatformUngrabPointer;
+begin
+end;
+
+function PlatformGetPointerRoot(out X, Y: Integer): Boolean;
+begin
+  Result := False;
+  X := 0;
+  Y := 0;
 end;
 
 procedure SetWindowAlwaysOnTop(AForm: TCustomForm; Enable: Boolean);
@@ -246,6 +267,19 @@ type
   TGtkWindowMove = procedure(Window: Pointer; X, Y: LongInt); cdecl;
   TGtkWindowResize = procedure(Window: Pointer; Width, Height: LongInt); cdecl;
   TGtkWindowSetKeepAbove = procedure(Window: Pointer; Setting: LongInt); cdecl;
+  TGtkGetCurrentEvent = function: Pointer; cdecl;
+  TGtkGetCurrentEventTime = function: LongWord; cdecl;
+  TGdkEventFree = procedure(Event: Pointer); cdecl;
+  TGdkEventGetRootCoords = function(Event: Pointer; var X, Y: Double): LongInt; cdecl;
+  TGdkDisplayGetDefaultSeat = function(Display: TGdkDisplay): Pointer; cdecl;
+  TGdkSeatGrab = function(Seat: Pointer; Window: TGdkWindow; Capabilities: Integer;
+    OwnerEvents: LongInt; Cursor: Pointer; Event: Pointer; Prepare: Pointer;
+    PrepareData: Pointer): Integer; cdecl;
+  TGdkSeatUngrab = procedure(Seat: Pointer); cdecl;
+  TGdkPointerGrab = function(Window: TGdkWindow; OwnerEvents: LongInt;
+    EventMask: LongInt; ConfineTo: TGdkWindow; Cursor: Pointer;
+    Time: LongWord): Integer; cdecl;
+  TGdkPointerUngrab = procedure(Time: LongWord); cdecl;
   TGdkWindowSetDecorations = procedure(Window: TGdkWindow; Decorations: LongWord); cdecl;
   TGdkWindowGetOrigin = function(Window: TGdkWindow; out X, Y: LongInt): Integer; cdecl;
   TGdkWindowGetWidth = function(Window: TGdkWindow): Integer; cdecl;
@@ -288,6 +322,15 @@ var
   GtkWindowMove: TGtkWindowMove;
   GtkWindowResize: TGtkWindowResize;
   GtkWindowSetKeepAbove: TGtkWindowSetKeepAbove;
+  GtkGetCurrentEventFn: TGtkGetCurrentEvent;
+  GtkGetCurrentEventTimeFn: TGtkGetCurrentEventTime;
+  GdkEventFreeFn: TGdkEventFree;
+  GdkEventGetRootCoordsFn: TGdkEventGetRootCoords;
+  GdkDisplayGetDefaultSeatFn: TGdkDisplayGetDefaultSeat;
+  GdkSeatGrabFn: TGdkSeatGrab;
+  GdkSeatUngrabFn: TGdkSeatUngrab;
+  GdkPointerGrabFn: TGdkPointerGrab;
+  GdkPointerUngrabFn: TGdkPointerUngrab;
   GdkWindowSetDecorations: TGdkWindowSetDecorations;
   GdkWindowGetOrigin: TGdkWindowGetOrigin;
   GdkWindowGetWidth: TGdkWindowGetWidth;
@@ -318,6 +361,8 @@ var
   BackendQueried: Boolean = False;
   CachedBackend: TPlatformWindowBackend = pwbUnknown;
   CachedGdkName: string = '';
+  PointerGrabbed: Boolean = False;
+  GrabbedSeat: Pointer = nil;
 
 function EnsureGdk: Boolean;
 begin
@@ -336,6 +381,15 @@ begin
   Pointer(GtkWindowMove) := GetProcedureAddress(GtkLib, 'gtk_window_move');
   Pointer(GtkWindowResize) := GetProcedureAddress(GtkLib, 'gtk_window_resize');
   Pointer(GtkWindowSetKeepAbove) := GetProcedureAddress(GtkLib, 'gtk_window_set_keep_above');
+  Pointer(GtkGetCurrentEventFn) := GetProcedureAddress(GtkLib, 'gtk_get_current_event');
+  Pointer(GtkGetCurrentEventTimeFn) := GetProcedureAddress(GtkLib, 'gtk_get_current_event_time');
+  Pointer(GdkEventFreeFn) := GetProcedureAddress(GdkLib, 'gdk_event_free');
+  Pointer(GdkEventGetRootCoordsFn) := GetProcedureAddress(GdkLib, 'gdk_event_get_root_coords');
+  Pointer(GdkDisplayGetDefaultSeatFn) := GetProcedureAddress(GdkLib, 'gdk_display_get_default_seat');
+  Pointer(GdkSeatGrabFn) := GetProcedureAddress(GdkLib, 'gdk_seat_grab');
+  Pointer(GdkSeatUngrabFn) := GetProcedureAddress(GdkLib, 'gdk_seat_ungrab');
+  Pointer(GdkPointerGrabFn) := GetProcedureAddress(GdkLib, 'gdk_pointer_grab');
+  Pointer(GdkPointerUngrabFn) := GetProcedureAddress(GdkLib, 'gdk_pointer_ungrab');
   Pointer(GdkWindowSetDecorations) := GetProcedureAddress(GdkLib, 'gdk_window_set_decorations');
   Pointer(GdkWindowGetOrigin) := GetProcedureAddress(GdkLib, 'gdk_window_get_origin');
   Pointer(GdkWindowGetWidth) := GetProcedureAddress(GdkLib, 'gdk_window_get_width');
@@ -728,6 +782,13 @@ begin
   if (Widget <> nil) and Assigned(GtkWindowMove) then
   begin
     GtkWindowMove(Widget, AX, AY);
+    // WSLg XWayland 上不 flush 的 move 会积在 GDK 队列里，拖动看起来“粘”。
+    if EnsureX11 and Assigned(XFlushFn) then
+    begin
+      win := XidFromHandle(AHandle, dpy);
+      if (dpy <> nil) then
+        XFlushFn(dpy);
+    end;
     Exit;
   end;
   if QueryPlatformWindowBackend <> pwbX11 then Exit;
@@ -736,6 +797,112 @@ begin
   XMoveWindowFn(dpy, win, AX, AY);
   if Assigned(XFlushFn) then
     XFlushFn(dpy);
+end;
+
+function CurrentEventTime: LongWord;
+begin
+  Result := 0;
+  if Assigned(GtkGetCurrentEventTimeFn) then
+    Result := GtkGetCurrentEventTimeFn();
+end;
+
+procedure PlatformUngrabPointer;
+begin
+  if not PointerGrabbed then Exit;
+  if (GrabbedSeat <> nil) and Assigned(GdkSeatUngrabFn) then
+    GdkSeatUngrabFn(GrabbedSeat)
+  else if Assigned(GdkPointerUngrabFn) then
+    GdkPointerUngrabFn(CurrentEventTime);
+  GrabbedSeat := nil;
+  PointerGrabbed := False;
+end;
+
+function PlatformGrabPointer(AHandle: HWND): Boolean;
+const
+  GDK_SEAT_CAPABILITY_ALL_POINTING = 7;
+  GDK_GRAB_SUCCESS = 0;
+  GDK_POINTER_MOTION_MASK = 1 shl 2;
+  GDK_BUTTON_MOTION_MASK = 1 shl 4;
+  GDK_BUTTON1_MOTION_MASK = 1 shl 5;
+  GDK_BUTTON_PRESS_MASK = 1 shl 8;
+  GDK_BUTTON_RELEASE_MASK = 1 shl 9;
+  PointerEventMask = GDK_POINTER_MOTION_MASK or GDK_BUTTON_MOTION_MASK or
+    GDK_BUTTON1_MOTION_MASK or GDK_BUTTON_PRESS_MASK or GDK_BUTTON_RELEASE_MASK;
+var
+  gw: TGdkWindow;
+  gd: TGdkDisplay;
+  seat, ev: Pointer;
+  st: Integer;
+begin
+  Result := False;
+  PlatformUngrabPointer;
+  if AHandle = 0 then Exit;
+  if not EnsureGdk then Exit;
+  gw := GdkWindowFromLCLHandle(AHandle);
+  if gw = nil then Exit;
+  ev := nil;
+  if Assigned(GtkGetCurrentEventFn) then
+    ev := GtkGetCurrentEventFn();
+  try
+    seat := nil;
+    gd := nil;
+    if Assigned(GdkDisplayGetDefaultFn) then
+      gd := GdkDisplayGetDefaultFn();
+    if Assigned(GdkDisplayGetDefaultSeatFn) and (gd <> nil) then
+      seat := GdkDisplayGetDefaultSeatFn(gd);
+    if (seat <> nil) and Assigned(GdkSeatGrabFn) then
+    begin
+      st := GdkSeatGrabFn(seat, gw, GDK_SEAT_CAPABILITY_ALL_POINTING,
+        0, nil, ev, nil, nil);
+      if st = GDK_GRAB_SUCCESS then
+      begin
+        GrabbedSeat := seat;
+        PointerGrabbed := True;
+        Exit(True);
+      end;
+    end;
+    if Assigned(GdkPointerGrabFn) then
+    begin
+      st := GdkPointerGrabFn(gw, 0, PointerEventMask, nil, nil, CurrentEventTime);
+      if st = GDK_GRAB_SUCCESS then
+      begin
+        GrabbedSeat := nil;
+        PointerGrabbed := True;
+        Exit(True);
+      end;
+    end;
+  finally
+    if (ev <> nil) and Assigned(GdkEventFreeFn) then
+      GdkEventFreeFn(ev);
+  end;
+end;
+
+function PlatformGetPointerRoot(out X, Y: Integer): Boolean;
+var
+  ev: Pointer;
+  rx, ry: Double;
+begin
+  Result := False;
+  X := 0;
+  Y := 0;
+  if not EnsureGdk then Exit;
+  if not Assigned(GtkGetCurrentEventFn) or not Assigned(GdkEventGetRootCoordsFn) then
+    Exit;
+  ev := GtkGetCurrentEventFn();
+  if ev = nil then Exit;
+  try
+    rx := 0;
+    ry := 0;
+    if GdkEventGetRootCoordsFn(ev, rx, ry) <> 0 then
+    begin
+      X := Round(rx);
+      Y := Round(ry);
+      Result := True;
+    end;
+  finally
+    if Assigned(GdkEventFreeFn) then
+      GdkEventFreeFn(ev);
+  end;
 end;
 
 function PlatformGdkScaleFactor(AHandle: HWND): Integer;
