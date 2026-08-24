@@ -79,7 +79,7 @@ TTPlayer-Reborn/
 │   ├── gen-golden.ps1        # 从 Qt 版生成 golden 基准数据
 │   ├── build-pascal.ps1      # lazbuild 构建全部 Lazarus 工程（Windows）
 │   ├── build-pascal-linux.sh # 用户目录 FPC + Lazarus GTK3 构建
-│   └── test-gtk3-wayland.sh  # Linux FPCUnit + skinpreview --probe
+│   └── test-gtk3-wayland.sh  # Linux FPCUnit + XWayland/X11 --probe
 │
 └── docs/
     ├── testing.md            # 测试体系详细文档
@@ -148,7 +148,7 @@ git submodule update --init
 pwsh tools/build-pascal.ps1
 ```
 
-**Linux（GTK3，用户目录 FPC/Lazarus）**
+**Linux（GTK3 + XWayland，用户目录 FPC/Lazarus）**
 
 ```bash
 bash tools/build-pascal-linux.sh
@@ -188,7 +188,7 @@ pwsh tools/gen-golden.ps1 -SkipBuild
 
 - Qt 版仍有较多 bug，功能不完善。
 - Lazarus 重写版（`pascal/`）四个皮肤窗口 + Windows 吸附已可运行；音频仍为 `TStubBackend`（ttcore 抽库未开始）。
-- Wayland 下窗口 Shape / 吸附功能退化（Qt 版与 Lazarus 版均如此）：无 XShape，合成器常报窗口原点 0,0。
+- Lazarus Linux 只支持 X11（XWayland / Xorg，`GDK_BACKEND=x11`），不支持 Wayland 客户端。
 - LCL GTK3 的 `Handle` 是 `TGtk3Widget` 对象，不是 `GtkWidget*`；已在 `UPlatformWindow` 中转换，避免 `gtk_widget_get_window` Access violation。
 
 ---

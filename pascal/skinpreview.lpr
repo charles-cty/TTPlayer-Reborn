@@ -7,6 +7,7 @@ program skinpreview;
 
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
+  UGdkX11Backend,
   Interfaces,
   Classes, SysUtils, Forms, Controls, StdCtrls, ExtCtrls, Dialogs, Types,
   LazFileUtils, LazUTF8, LCLIntf,
@@ -465,8 +466,10 @@ begin
     sl.Add('    "gap_after": ' + IntToStr(gapAfter) + ',');
     sl.Add('    "snapped": ' + JsonBool(snapped));
     sl.Add('  },');
+    sl.Add('  "policy": "xwayland-only",');
     sl.Add('  "notes": [');
-    sl.Add('    "shape and EWMH only on X11 GdkDisplay",');
+    sl.Add('    "Linux target is X11/XWayland only (GDK_BACKEND=x11, GTK_CSD=0)",');
+    sl.Add('    "native Wayland is out of scope",');
     sl.Add('    "HTCAPTION drag and WM_ENTER/EXITSIZEMOVE are Windows-only",');
     sl.Add('    "snap here is programmatic OnDragFinished, not mouse drag"');
     sl.Add('  ]');

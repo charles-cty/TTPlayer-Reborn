@@ -160,6 +160,7 @@ procedure TEqualizerForm.ApplySkin(ASkin: PSkinData);
 begin
   if ASkin = nil then Exit;
   FSkin := ASkin;
+  ConfigurePlatformWindow(Self);
 
   if HandleAllocated then
     ClearWindowShape(Handle);

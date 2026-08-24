@@ -23,7 +23,7 @@ TTPlayer Reborn 的 UI 本来就是**全自绘**（无边框 + `setMask` + 位�
 | 音频核心 | C++ → C ABI DLL/so | 现有代码编成 `ttcore.dll/libttcore.so`，Pascal 侧 FFI；不重写 |
 | 绘图 | BGRABitmap | Lazarus 生态事实标准软渲染库；32-bit alpha、抗锯齿文本、渐变；跨平台渲染结果完全一致，解决 GTK/GDI 文本差异 |
 | 异形窗口 | 区域裁剪 | Windows `SetWindowRgn` / Linux X11 Shape；从皮肤色键生成；与老 TTPlayer 原版行为一致 |
-| Linux widgetset | GTK3 | 依赖更现代；Shape/置顶/EWMH 直接调 X11 绕开 LCL（GTK3 后端 bsNone 相关 bug 较多） |
+| Linux widgetset | GTK3 + X11 | 只做 XWayland/Xorg（`GDK_BACKEND=x11`）。不支持 Wayland 客户端。Shape/置顶走 X11，绕开 LCL |
 
 ### GTK3 风险与绕行
 
@@ -32,7 +32,7 @@ LCL GTK3 后端在以下方面已知不稳定：
 - CSD（客户端装饰）可能引入隐性坐标 margin，影响窗口吸附计算
 - **HWND 不是 `GtkWidget*`**：GTK2 的 `Handle` 是控件指针；GTK3 的 `Handle` 是 `TGtk3Widget` 对象。对 Handle 直接调用 `gtk_widget_get_window` 会 `GTK_IS_WIDGET` 失败，严重时 Access violation（`G_DEBUG=fatal-criticals` 下为 SIGTRAP）
 
-绕行方案：Shape/置顶/EWMH 直接调 X11 API，绕开 LCL；UNIX 侧先用 `g_type_name` 判断 `GdkX11Display` / `GdkWaylandDisplay`，只在 X11 上调 `gdk_x11_window_get_xid`。句柄转换见 `GdkWindowFromLCLHandle`（`TGtk3Widget.Widget` / `GetWindow`）。平台代码隔离在 `src/ui/platform`（`{$IFDEF}`），必要时可退回 GTK2 或 Qt6 widgetset。
+绕行方案：`UGdkX11Backend` 在 `Interfaces` 之前强制 `GDK_BACKEND=x11` 和 `GTK_CSD=0`（关掉客户区装饰）。Shape/置顶/EWMH 直接调 X11；句柄转换见 `GdkWindowFromLCLHandle`（`TGtk3Widget.Widget` / `GetWindow`）。平台代码隔离在 `src/ui/platform`。原生 Wayland 不在支持范围。
 
 ---
 
@@ -50,7 +50,7 @@ Lazarus 工程（全自绘）
   src/render/     渲染原语（USkinRender，QtPutImage 精确合成）
   src/ui/         PlayerForm/PlaylistForm/EqualizerForm/LyricForm（无边框自绘）
                   UWindowSnapMath / UWindowSnapManager / UFormSnap（窗口吸附）
-  src/ui/platform/ Windows/X11/Wayland 平台特定调用（SetWindowRgn、XShape、EWMH；Wayland 无 Shape）
+  src/ui/platform/ Windows/X11 平台特定调用（SetWindowRgn、XShape、EWMH；Linux 仅 XWayland/Xorg）
 ```
 
 ### C ABI 边界约定
@@ -96,7 +96,7 @@ Lazarus 工程（全自绘）
 - 独立双轴吸附、主窗口联动组、子窗口单独拖动、松手吸附、屏幕边缘、缩放吸附
 - 几何与图结构可在 NoLCL FPCUnit 中验证（MR-4）
 - Windows：`TSnapFormAdapter` 子类化原生 WndProc 收取 `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE`（LCL `WindowProc` 收不到跨进程 `SendMessage`）；DPI≠100% 时 `GetBounds`/`MoveTo` 在 LCL 逻辑像素与 `GetWindowRect` 物理像素之间换算
-- `src/ui/platform/`：Win `SetWindowRgn`；X11 Shape + EWMH；Wayland 跳过 X11 API。GTK3 无 `WM_ENTER/EXITSIZEMOVE` / `HTCAPTION`，程序化 `OnDragFinished` 仍可用；WSLg Wayland 窗口原点常为 0,0，X11 路径有 CSD 尺寸偏差
+- `src/ui/platform/`：Win `SetWindowRgn`；Linux 仅 X11 Shape + EWMH（`UGdkX11Backend` 强制 XWayland）。GTK3 无 `WM_ENTER/EXITSIZEMOVE` / `HTCAPTION`，程序化 `OnDragFinished` 仍可用
 
 **Step 7（推迟）**：ttcore 抽库 + FFI 对接，替换 TStubBackend。音频核与 GUI 解耦，可等 GUI 与测试补齐后再做。
 
@@ -137,7 +137,7 @@ Lazarus 工程（全自绘）
 | LyricForm | `pascal/src/ui/ULyricForm`（九宫格、LRC 滚动高亮、右/下边缘调整大小） |
 | VisualWidget | `pascal/src/ui/UVisualWidget`（柱状频谱 + 模糊示波图动画） |
 | WindowSnap | `pascal/src/ui/UWindowSnapMath` + `UWindowSnapManager` + `UFormSnap` |
-| 平台窗口 | `pascal/src/ui/platform/UPlatformWindow` + `UAlphaShape`（Win `SetWindowRgn` / X11 Shape + EWMH；GTK3 Handle→`TGtk3Widget`） |
+| 平台窗口 | `pascal/src/ui/platform/UPlatformWindow` + `UAlphaShape` + `UGdkX11Backend`（Win `SetWindowRgn` / X11 Shape + EWMH；GTK3 Handle→`TGtk3Widget`；强制 XWayland） |
 | Pascal 工具集 | `pascal/ttdump.lpi`、`pascal/skinpreview.lpi`、`pascal/ttplayer.lpi`、`pascal/tests.lpi` |
 | Linux GTK3 构建 | `tools/build-pascal-linux.sh`（用户目录 FPC 3.2.2 + Lazarus 4.8，`--ws=gtk3`） |
 | GTK3 探测 | `skinpreview --probe` + `tools/test-gtk3-wayland.sh` + `tools/smoke_gtk3_wayland.py` |
@@ -146,18 +146,17 @@ Lazarus 工程（全自绘）
 | Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
 | 测试（Windows 48/48；Linux FPCUnit 53/53，含 AlphaShape） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5）；Linux：`tools/test-gtk3-wayland.sh` |
 
-**GTK3 + Wayland（WSL2/WSLg，2026-08-24）**
+**GTK3 + XWayland（WSL2/WSLg，2026-08-24）**
 
-环境：Ubuntu 24.04 用户目录 FPC 3.2.2 + Lazarus 4.8（apt 无 `lcl-gtk3`，未用 sudo）。默认 `WAYLAND_DISPLAY=wayland-0`，`GDK_BACKEND=x11` 走 Xwayland。
+环境：Ubuntu 24.04 用户目录 FPC 3.2.2 + Lazarus 4.8。Linux **只做 X11**（`UGdkX11Backend` 在 `Interfaces` 之前写 `GDK_BACKEND=x11`、`GTK_CSD=0`）。WSLg 上即 XWayland（`DISPLAY=:0`）。原生 Wayland 客户端不支持。
 
 | 探测 | 结果 |
 |---|---|
-| `GDK_BACKEND=wayland` `--probe` | `backend=wayland`，`shape_supported=false`，四窗口 LCL 尺寸正确；原生原点常为 0,0；程序化吸附几何不可用 |
-| `GDK_BACKEND=x11` `--probe` | `backend=x11`，`shape_supported=true`；CSD 使 native 尺寸大于 LCL（ArcticAMP 275×116 → ~351×213） |
+| `skinpreview --probe` | `backend=x11`，`shape_supported=true`；四窗口须在 |
 | 句柄 AV | 已修：LCL GTK3 `Handle` 是 `TGtk3Widget`，不能当 `GtkWidget*` 传给 `gtk_widget_get_window` |
-| 仍有的 LCL 噪音 | `gdk_pixbuf_get_from_surface` 0 尺寸 CRITICAL（未映射/`bsNone` 绘制）；ComboBox 内部 `GtkCssCustomGadget` 的 `set_has_window`（非本仓库代码） |
+| 仍有的 LCL 噪音 | `gdk_pixbuf_get_from_surface` 0 尺寸 CRITICAL；ComboBox `GtkCssCustomGadget` 的 `set_has_window` |
 
-未做：GTK3 标题栏拖动（`gtk_window_begin_move_drag`）、鼠标拖动吸附、Wayland 置顶、非 WSLg 的实体 Linux 桌面。
+未做：GTK3 标题栏拖动（`gtk_window_begin_move_drag`）、鼠标拖动吸附、非 WSLg 的实体 Linux 桌面。
 
 **下一步**：Step 7（ttcore 抽库 + FFI 对接，替换 `TStubBackend`）。元数据加载器随 TagLib/ttcore 一起做。
 

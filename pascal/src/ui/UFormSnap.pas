@@ -9,9 +9,9 @@ unit UFormSnap;
 //                      WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE（LCL WindowProc
 //                      收不到跨进程 SendMessage 的这两条）；LM_MOVE 仍走 LCL
 //
-// GTK3 上 WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE 不会到达；HTCAPTION 拖动也
-// 不会走 Win32 系统移动。程序化 OnDragStarted/MoveTo/OnDragFinished 仍可用。
-// 真机探测见 skinpreview --probe 与 tools/test-gtk3-wayland.sh。
+// GTK3/XWayland 上 WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE 不会到达；HTCAPTION
+// 拖动也不走 Win32 系统移动。程序化 OnDragStarted/MoveTo/OnDragFinished 仍可用。
+// Linux 只支持 X11（见 UGdkX11Backend）。探测：tools/test-gtk3-wayland.sh。
 
 interface
 

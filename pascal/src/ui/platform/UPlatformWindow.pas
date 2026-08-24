@@ -8,8 +8,9 @@ unit UPlatformWindow;
 //   QueryPlatformWindowBackend — win32 / x11 / wayland / other
 //
 // Windows：SetWindowRgn + SetWindowPos。
-// UNIX：dynload libX11/libXext/libgdk-3。XShape / EWMH 仅在 GdkX11Display 上调用；
-// Wayland GdkWindow 上调用 gdk_x11_window_get_xid 会触发 GLib-CRITICAL。
+// UNIX：只支持 X11（XWayland / Xorg）。UGdkX11Backend 在 Interfaces 之前
+// 强制 GDK_BACKEND=x11、GTK_CSD=0。不支持 Wayland 客户端。
+// dynload libX11/libXext/libgdk-3；XShape / EWMH 仅在 GdkX11Display 上调用。
 //
 // LCL GTK3 的 HWND 是 TGtk3Widget 对象，不是 GtkWidget*（GTK2 才是）。
 // 对 Handle 直接 gtk_widget_get_window 会 GTK_IS_WIDGET 失败，严重时 Access violation。
@@ -32,6 +33,7 @@ function PlatformAlwaysOnTopNative: Boolean;
 procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);
 procedure ClearWindowShape(AHandle: HWND);
 procedure SetWindowAlwaysOnTop(AForm: TCustomForm; Enable: Boolean);
+procedure ConfigurePlatformWindow(AForm: TCustomForm);
 
 implementation
 
@@ -108,6 +110,11 @@ begin
     SetWindowRgn(AHandle, 0, True);
 end;
 
+procedure ConfigurePlatformWindow(AForm: TCustomForm);
+begin
+  if AForm = nil then Exit;
+end;
+
 procedure SetWindowAlwaysOnTop(AForm: TCustomForm; Enable: Boolean);
 begin
   if AForm = nil then Exit;
@@ -142,6 +149,8 @@ type
 
   TGtkWidgetGetWindow = function(Widget: Pointer): TGdkWindow; cdecl;
   TGtkWidgetRealize = procedure(Widget: Pointer); cdecl;
+  TGtkWindowSetDecorated = procedure(Window: Pointer; Decorated: LongInt); cdecl;
+  TGtkWindowSetTitlebar = procedure(Window: Pointer; Titlebar: Pointer); cdecl;
   TGdkX11WindowGetXid = function(Window: TGdkWindow): TXID; cdecl;
   TGdkWindowGetDisplay = function(Window: TGdkWindow): TGdkDisplay; cdecl;
   TGdkX11DisplayGetXdisplay = function(Display: TGdkDisplay): PDisplay; cdecl;
@@ -172,6 +181,8 @@ var
   GtkLib, GdkLib, GObjLib, X11Lib, XextLib: TLibHandle;
   GtkWidgetGetWindow: TGtkWidgetGetWindow;
   GtkWidgetRealize: TGtkWidgetRealize;
+  GtkWindowSetDecorated: TGtkWindowSetDecorated;
+  GtkWindowSetTitlebar: TGtkWindowSetTitlebar;
   GdkX11WindowGetXid: TGdkX11WindowGetXid;
   GdkWindowGetDisplay: TGdkWindowGetDisplay;
   GdkX11DisplayGetXdisplay: TGdkX11DisplayGetXdisplay;
@@ -202,6 +213,8 @@ begin
     Exit(False);
   Pointer(GtkWidgetGetWindow) := GetProcedureAddress(GtkLib, 'gtk_widget_get_window');
   Pointer(GtkWidgetRealize) := GetProcedureAddress(GtkLib, 'gtk_widget_realize');
+  Pointer(GtkWindowSetDecorated) := GetProcedureAddress(GtkLib, 'gtk_window_set_decorated');
+  Pointer(GtkWindowSetTitlebar) := GetProcedureAddress(GtkLib, 'gtk_window_set_titlebar');
   Pointer(GdkWindowGetDisplay) := GetProcedureAddress(GdkLib, 'gdk_window_get_display');
   Pointer(GdkDisplayGetDefaultFn) := GetProcedureAddress(GdkLib, 'gdk_display_get_default');
   Pointer(GdkDisplayGetNameFn) := GetProcedureAddress(GdkLib, 'gdk_display_get_name');
@@ -397,6 +410,27 @@ begin
   Result := GdkX11WindowGetXid(gw);
   if gd <> nil then
     Dpy := GdkX11DisplayGetXdisplay(gd);
+end;
+
+procedure ConfigurePlatformWindow(AForm: TCustomForm);
+var
+  Widget: Pointer;
+begin
+  if AForm = nil then Exit;
+  if AForm.BorderStyle <> bsNone then Exit;
+  if not AForm.HandleAllocated then Exit;
+  if not EnsureGdk then Exit;
+{$IFDEF LCLGTK3}
+  if not TGtk3Widget(AForm.Handle).IsValidHandle then Exit;
+  Widget := Pointer(TGtk3Widget(AForm.Handle).Widget);
+{$ELSE}
+  Widget := Pointer(AForm.Handle);
+{$ENDIF}
+  if Widget = nil then Exit;
+  if Assigned(GtkWindowSetDecorated) then
+    GtkWindowSetDecorated(Widget, 0);
+  if Assigned(GtkWindowSetTitlebar) then
+    GtkWindowSetTitlebar(Widget, nil);
 end;
 
 procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);

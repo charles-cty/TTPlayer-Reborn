@@ -9,6 +9,7 @@ program ttplayer;
 
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
+  UGdkX11Backend,
   Interfaces,
   Classes, SysUtils, Forms,
   LazFileUtils,

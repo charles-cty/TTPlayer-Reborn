@@ -111,6 +111,7 @@ var
 begin
   if ASkin = nil then Exit;
   FSkin := ASkin;
+  ConfigurePlatformWindow(Self);
 
   // 先清 Region，否则 SetWindowRgn 会卡住后续 SetBounds。
   if HandleAllocated then

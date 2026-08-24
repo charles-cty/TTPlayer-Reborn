@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parse skinpreview --probe JSON and assert GTK3 / Wayland or X11 smoke."""
+"""Parse skinpreview --probe JSON and assert GTK3 XWayland/X11 smoke."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def load_probe(path: str | None) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("probe_file", nargs="?", help="JSON from skinpreview --probe")
-    ap.add_argument("--expect-backend", required=True, choices=("wayland", "x11", "win32"))
+    ap.add_argument("--expect-backend", default="x11", choices=("x11", "win32"))
     ap.add_argument("--expect-widgetset", default="gtk3")
     ap.add_argument("--strict-snap", action="store_true")
     args = ap.parse_args()
@@ -65,7 +65,14 @@ def main() -> int:
         if lw <= 0 or lh <= 0:
             errors.append(f"{name}: lcl size {lw}x{lh}")
         if nw <= 0 or nh <= 0:
-            notes.append(f"{name}: native size {nw}x{nh} (Wayland may hide origin)")
+            errors.append(f"{name}: native size {nw}x{nh}")
+        elif abs(nw - lw) > 24 or abs(nh - lh) > 24:
+            notes.append(
+                f"{name}: native {nw}x{nh} vs LCL {lw}x{lh} (CSD/frame extents)"
+            )
+
+    if data.get("backend") == "wayland":
+        errors.append("backend=wayland; Linux target is XWayland/X11 only")
 
     snap = data.get("snap") or {}
     gap_after = snap.get("gap_after")
@@ -77,10 +84,6 @@ def main() -> int:
                 errors.append(msg)
             else:
                 notes.append(msg)
-    else:
-        notes.append(
-            f"wayland snap not required (gap_after={gap_after}, snapped={snapped})"
-        )
 
     print(
         "probe",
