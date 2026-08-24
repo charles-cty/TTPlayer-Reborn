@@ -154,9 +154,18 @@ int run(const QString& skinPath, const QString& outDir) {
     }
 
     // ---- lyric_window ----
+    // applySkin 不 resize（避开 X11 WM 异步改尺寸）。offscreen 默认是
+    // 640×480，chrome 的 alignedRect 会偏离 XML/masks。按皮肤 baseSize
+    // 捕帧后，Layer 2 可与 Pascal RenderLyricWindow(bgW, bgH) 对拍。
     {
         LyricWindow lyric(&audio);
         lyric.applySkin(skin);
+        const QSize lyricSize = skin.lyricWindow.backgroundPixmap.isNull()
+            ? lyric.minimumSize()
+            : skin.lyricWindow.backgroundPixmap.size();
+        if (lyricSize.isValid() && !lyricSize.isEmpty()) {
+            lyric.resize(lyricSize);
+        }
         dump(&lyric, QStringLiteral("lyric__default"));
     }
 

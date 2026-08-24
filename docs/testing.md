@@ -61,7 +61,7 @@ pwsh tools/test-layer1.ps1 -Skin Classic  # 测试单个皮肤
 | `player__pressed-play` | play 按钮按下态 |
 | `player__toggled-mute` | mute 按钮切换态 |
 
-`equalizer__default` / `equalizer__sliders` / `lyric__default` / `playlist__default` 帧已生成，随后续窗口移植逐步接入测试。
+`equalizer__default` / `equalizer__sliders` / `lyric__default`（皮肤 `baseSize`）/ `playlist__default`（`resize_tile=True`）已接入 Layer 2。`playlist__default` 的 `resize_tile=False` 皮肤仍跳过。
 
 #### 掩码机制
 
@@ -81,6 +81,16 @@ pwsh tools/test-layer1.ps1 -Skin Classic  # 测试单个皮肤
 #### 已知跳过
 
 `Subaru_Offbeat_TTPlayer57`：Qt offscreen 模式下 `setMask` 导致渲染输出整体偏移 (+7, +11)，是 golden 生成端的问题，暂时跳过。修复 FrameDumper 渲染原点后重新启用。
+
+`playlist__default` 且 `resize_tile=False`：Qt `SmoothTransformation` 双线性缩放与 BGRABitmap `rfLinear` 有系统性差异。FrameDumper 改为皮肤 `baseSize` 捕帧（无拉伸）后可重新启用。
+
+#### GUI 测试补齐（音频 / ttcore 推迟期间的优先项）
+
+- [x] 接入 `lyric__default`（FrameDumper 以 `baseSize` 捕帧）
+- 接入 `playlist__default` 的 `resize_tile=False` 皮肤
+- 重新启用 Subaru Layer 2
+- Layer 5 冒烟：EQ 开关、窗口吸附、换肤
+- LRC 解析 Layer 3（歌词滚动接入后）
 
 #### Golden 生成
 

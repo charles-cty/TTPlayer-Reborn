@@ -10,8 +10,8 @@ unit UTestLayer2;
 //   player__default / player__progress37 / player__hover-play /
 //   player__pressed-play / player__toggled-mute
 //   equalizer__default / equalizer__sliders
+//   lyric__default（皮肤 baseSize；lyric 文本区走 mask）
 //
-// lyric__default: 暂跳过（Qt 运行时窗口宽度不固定导致 chrome 元素位置未知）。
 // playlist__default: resize_tile=True 皮肤接入；masks 扩展为拉伸后的
 // playlistRect + aligned titleDrawRect（FrameDumper 的 XML 坐标是 baseSize）。
 
@@ -365,14 +365,25 @@ begin
     end;
 
     // ── 歌词窗口帧 ─────────────────────────────────────────────────────
-    // lyric__default: 暂跳过——Qt FrameDumper 的 LyricWindow 渲染行为存在多处
-    // 与 DestW=640 假设不符的情况：
-    //   1. Qt 运行时窗口宽度不一定为 640（Chrome 元素居中/右对齐坐标因此偏移）
-    //   2. 部分皮肤 resize_tile=False 使用 SmoothTransformation 双线性缩放，
-    //      与 BGRABitmap rfLinear 存在系统性 ±5..40 差异
-    //   3. Chrome 元素（title/close/ontop）绘制位置与 masks.json 的 position rect 不重合
-    // TODO: 在 FrameDumper 中记录实际窗口尺寸，或改为以 baseSize 渲染，再补全此测试。
-    { if engine.SkinData.LyricWindow.ResizeTile then ... }
+    // FrameDumper 以皮肤 baseSize 捕帧，与 RenderLyricWindow(bgW, bgH) 对拍。
+    // dest==base 时九宫格无拉伸，resize_tile=False 皮肤也可比。
+    // lyric 文本（「暂无歌词」）由 masks.json 排除；title/close/ontop 逐像素比。
+    lyricMasks := LoadMaskSection(SkinName, 'lyric');
+    try
+      if engine.SkinData.LyricWindow.BackgroundPixmap <> nil then
+      begin
+        frame := RenderLyricWindow(engine.SkinData,
+          engine.SkinData.LyricWindow.BackgroundPixmap.Width,
+          engine.SkinData.LyricWindow.BackgroundPixmap.Height);
+        try
+          CompareFrame(SkinName, 'lyric__default', frame, lyricMasks);
+        finally
+          frame.Free;
+        end;
+      end;
+    finally
+      lyricMasks.Free;
+    end;
 
     // ── 播放列表窗口帧 ──────────────────────────────────────────────────
     // playlist__default: 仅测试 resize_tile=True 皮肤。

@@ -58,9 +58,9 @@ function EqFactorRect(const Elem: TSkinElement; Band, EqInterval: Integer): TSki
 // 九宫格背景绘制（公开供 ULyricForm 等使用）。
 // Tile=True: 各边/中心平铺；Tile=False: 双线性缩放。
 // 绘制范围为 DestW × DestH（已在 Dest 上直接合成）。
-// ExclusiveMids=True：边/中心不伸进四角（与 Qt PlaylistWindow::rebuildBackground
-// 的 width()-left-right 矩形一致）。False：topMid/bottomMid 先铺到 DestW，
-// 再由角片覆盖，透明角会透出中段瓦片（Lyric 路径沿用此行为）。
+// ExclusiveMids=True：边/中心不伸进四角（与 Qt PlaylistWindow / LyricWindow
+// rebuildBackground 的 width()-left-right 矩形一致）。False：topMid/bottomMid
+// 先铺到 DestW，再由角片覆盖，透明角会透出中段瓦片。
 procedure DrawNinePatch(Dest: TBGRABitmap;
   Base: TBGRABitmap; const RR: TSkinRect; Tile: Boolean;
   DestW, DestH: Integer; ExclusiveMids: Boolean = False);
@@ -87,7 +87,8 @@ function RenderEqualizerWindow(const Skin: TSkinData;
   const OverrideType: string; OverrideState: TButtonVisualState): TBGRABitmap;
 
 // 合成整个 lyric_window（对应 LyricWindow 的渲染结果）。
-// DestW/DestH 为目标窗口像素尺寸（FrameDumper 固定为 640×480）。
+// DestW/DestH 为目标窗口像素尺寸。Layer 2 使用皮肤背景图尺寸（FrameDumper
+// 以 baseSize 捕帧）；运行时 ULyricForm 用当前窗口逻辑尺寸。
 // 九宫格背景：resizeRect 定义可拉伸中心区；ResizeTile=True 时平铺，否则缩放。
 // 渲染内容：background、title、close、ontop 按钮。
 // 歌词文本区（lyric 元素）在 masks.json 中被排除，不渲染。
@@ -847,6 +848,18 @@ var
   cx, cy, cdw, cdh: Integer;
   slice, resampled: TBGRABitmap;
   dstRect: TRect;
+
+  procedure PutScaled(DestX, DestY: Integer; Src: TBGRABitmap; OutW, OutH: Integer);
+  begin
+    if (OutW = Src.Width) and (OutH = Src.Height) then
+      QtPutImage(Dest, DestX, DestY, Src)
+    else
+    begin
+      resampled := Src.Resample(OutW, OutH, rmFineResample) as TBGRABitmap;
+      try QtPutImage(Dest, DestX, DestY, resampled); finally resampled.Free; end;
+    end;
+  end;
+
 begin
   if Base = nil then Exit;
   bgW := Base.Width;
@@ -901,12 +914,7 @@ begin
       else
         dstRect := Classes.Rect(cx, 0, DestW, top);
       if Tile then TileSlice(Dest, dstRect, slice)
-      else
-      begin
-        resampled := slice.Resample(dstRect.Right - dstRect.Left, top,
-          rmFineResample) as TBGRABitmap;
-        try QtPutImage(Dest, cx, 0, resampled); finally resampled.Free; end;
-      end;
+      else PutScaled(cx, 0, slice, dstRect.Right - dstRect.Left, top);
     finally slice.Free; end;
   end;
   if bottom > 0 then
@@ -918,12 +926,7 @@ begin
       else
         dstRect := Classes.Rect(cx, DestH - bottom, DestW, DestH);
       if Tile then TileSlice(Dest, dstRect, slice)
-      else
-      begin
-        resampled := slice.Resample(dstRect.Right - dstRect.Left, bottom,
-          rmFineResample) as TBGRABitmap;
-        try QtPutImage(Dest, cx, DestH - bottom, resampled); finally resampled.Free; end;
-      end;
+      else PutScaled(cx, DestH - bottom, slice, dstRect.Right - dstRect.Left, bottom);
     finally slice.Free; end;
   end;
 
@@ -934,11 +937,7 @@ begin
     try
       dstRect := Classes.Rect(0, cy, left, DestH - bottom);
       if Tile then TileSlice(Dest, dstRect, slice)
-      else
-      begin
-        resampled := slice.Resample(left, cdh, rmFineResample) as TBGRABitmap;
-        try QtPutImage(Dest, 0, cy, resampled); finally resampled.Free; end;
-      end;
+      else PutScaled(0, cy, slice, left, cdh);
     finally slice.Free; end;
   end;
   if right > 0 then
@@ -947,11 +946,7 @@ begin
     try
       dstRect := Classes.Rect(DestW - right, cy, DestW, DestH - bottom);
       if Tile then TileSlice(Dest, dstRect, slice)
-      else
-      begin
-        resampled := slice.Resample(right, cdh, rmFineResample) as TBGRABitmap;
-        try QtPutImage(Dest, DestW - right, cy, resampled); finally resampled.Free; end;
-      end;
+      else PutScaled(DestW - right, cy, slice, right, cdh);
     finally slice.Free; end;
   end;
 
@@ -966,10 +961,7 @@ begin
         TileSlice(Dest, dstRect, slice);
       end
       else
-      begin
-        resampled := slice.Resample(cdw, cdh, rmFineResample) as TBGRABitmap;
-        try QtPutImage(Dest, cx, cy, resampled); finally resampled.Free; end;
-      end;
+        PutScaled(cx, cy, slice, cdw, cdh);
     finally slice.Free; end;
   end;
 
@@ -1010,29 +1002,55 @@ function RenderLyricWindow(const Skin: TSkinData;
   DestW, DestH: Integer): TBGRABitmap;
 var
   wnd: TSkinWindow;
-  bgH: Integer;
+  bgW, bgH: Integer;
+  elem: PSkinElement;
+  bounds, drawRect: TSkinRect;
+  titleW, titleH: Integer;
 begin
   wnd := Skin.LyricWindow;
   Result := TBGRABitmap.Create(DestW, DestH, BGRAPixelTransparent);
 
   if wnd.BackgroundPixmap = nil then Exit;
 
-  // Qt LyricWindow::applySkin 不调用 resize()，窗口保持 offscreen 默认宽度（640）
-  // 但最小高度被 setMinimumSize(baseSize_) 限制为背景图高度。
-  // FrameDumper 捕帧时窗口高度 = bg.height（不是 DestH=480）。
-  // 因此九宫格只渲染 DestW × bgH，下方区域保持透明。
+  bgW := wnd.BackgroundPixmap.Width;
   bgH := wnd.BackgroundPixmap.Height;
 
-  // ── 九宫格背景（宽=DestW，高=bgH）──────────────────────────────────
+  // 九宫格铺满 DestW×DestH（与 LyricWindow::rebuildBackground 一致）。
+  // Layer 2 传入 baseSize，无拉伸；运行时 ULyricForm 传入当前逻辑尺寸。
+  // ExclusiveMids=True：与 LyricWindow::rebuildBackground 的
+  // QRect(left, 0, width()-left-right, top) 一致。
   DrawNinePatch(Result, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
-    DestW, bgH);
+    DestW, DestH, True);
 
-  // ── chrome 元素（title/close/ontop）不绘制 ───────────────────────────
-  // 原因：Qt FrameDumper 在渲染歌词窗口时，这些子控件的实际绘制坐标与
-  // masks.json 中记录的 position rect 不一致（Qt alignedRect 使用运行时窗口
-  // 宽度计算居中/右对齐位置），导致无法通过现有 mask 排除。
-  // 不绘制这些元素，Layer 2 仅测试九宫格背景的像素精确性。
-  // 实际 ULyricForm 会正确绘制这些控件。
+  // title：paintEvent 按 titleDrawRect（alignedRect + pixmap 尺寸）贴图。
+  elem := wnd.FindElement('title');
+  if (elem <> nil) and (elem^.StatePixmaps[0] <> nil) then
+  begin
+    titleW := elem^.StatePixmaps[0].Width;
+    titleH := elem^.StatePixmaps[0].Height;
+    drawRect := AlignedRect(elem^.Position, bgW, bgH, DestW, DestH,
+      elem^.Align, titleW, titleH);
+    QtPutImage(Result, drawRect.X, drawRect.Y, elem^.StatePixmaps[0]);
+  end;
+
+  // close / ontop：子控件 SkinButton，位置 = alignedRect(..., button.size())。
+  elem := wnd.FindElement('close');
+  if elem <> nil then
+  begin
+    bounds := ButtonBounds(elem^);
+    drawRect := AlignedRect(elem^.Position, bgW, bgH, DestW, DestH,
+      elem^.Align, bounds.W, bounds.H);
+    DrawButton(Result, elem^, drawRect, bvsNormal);
+  end;
+
+  elem := wnd.FindElement('ontop');
+  if elem <> nil then
+  begin
+    bounds := ButtonBounds(elem^);
+    drawRect := AlignedRect(elem^.Position, bgW, bgH, DestW, DestH,
+      elem^.Align, bounds.W, bounds.H);
+    DrawButton(Result, elem^, drawRect, bvsNormal);
+  end;
 end;
 
 // kToolbarGroupCount 与 Qt PlaylistWindow::kToolbarGroupCount 一致。

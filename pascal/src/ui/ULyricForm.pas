@@ -230,7 +230,7 @@ begin
   begin
     FFrame := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);
     DrawNinePatch(FFrame, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
-      FLogicW, FLogicH);
+      FLogicW, FLogicH, True);
   end
   else
     FFrame := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);

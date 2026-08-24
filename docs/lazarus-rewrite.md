@@ -95,7 +95,7 @@ Lazarus 工程（全自绘）
 - 几何与图结构可在 NoLCL FPCUnit 中验证（MR-4）
 - GTK3 CSD 坐标 / `src/ui/platform/` 仍未做
 
-**Step 7（最后）**：ttcore 抽库 + FFI 对接，替换 TStubBackend
+**Step 7（推迟）**：ttcore 抽库 + FFI 对接，替换 TStubBackend。音频核与 GUI 解耦，可等 GUI 与测试补齐后再做。
 
 ---
 
@@ -139,7 +139,17 @@ Lazarus 工程（全自绘）
 | Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
 | 测试（35/35） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + WindowSnap/MR-4 + Layer 5 GUI 冒烟） |
 
-**下一步**：Step 7 — 抽 `ttcore` 替换 `TStubBackend`。GTK3 / `src/ui/platform/` 尚未开始。
+**下一步（GUI + 自动化测试，音频推迟）**：
+
+1. **Layer 2 歌词帧（已完成）**：FrameDumper 按皮肤 `baseSize` 捕帧，接入 `lyric__default`（九宫格 + chrome；歌词文本走 mask）
+2. **Layer 2 播放列表**：`resize_tile=False` 皮肤；必要时固定 FrameDumper 窗口尺寸
+3. **Subaru_Offbeat**：修复 FrameDumper offscreen `setMask` 偏移后重新启用
+4. **歌词内容**：LRC 解析 + 滚动（`TStubBackend` 假进度即可，无需 ttcore）
+5. **播放列表深化**：TTBL、列表内 DnD、搜索对话框、多标签
+6. **Layer 5 冒烟扩展**：EQ 开关、吸附、换肤
+7. **GTK3 / `src/ui/platform/`**：Linux 窗口，不阻塞 Windows GUI/测试
+
+Step 7（ttcore）仍排在上述 GUI/测试之后。
 
 ---
 
