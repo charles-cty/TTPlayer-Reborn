@@ -14,12 +14,13 @@ unit UPlatformWindow;
 //
 // LCL GTK3 的 HWND 是 TGtk3Widget 对象，不是 GtkWidget*（GTK2 才是）。
 // 对 Handle 直接 gtk_widget_get_window 会 GTK_IS_WIDGET 失败，严重时 Access violation。
+// DPI：UDpiScale 把均匀 UI 缩放与 CSD 撑大区分开；ApplyAlphaShape 按 native/逻辑尺寸比缩放 Region。
 
 interface
 
 uses
   Classes, SysUtils, Types, Forms, Controls, LCLType,
-  BGRABitmap, BGRABitmapTypes, UAlphaShape;
+  BGRABitmap, BGRABitmapTypes, UAlphaShape, UDpiScale;
 
 type
   TPlatformWindowBackend = (pwbUnknown, pwbWin32, pwbX11, pwbWayland, pwbOther);
@@ -39,6 +40,10 @@ procedure PlatformMoveWindow(AHandle: HWND; AX, AY: Integer);
 function PlatformWindowIsDecorated(AHandle: HWND): Boolean;
 function PlatformWindowHasTitlebar(AHandle: HWND): Boolean;
 function PlatformWindowIsAbove(AHandle: HWND): Boolean;
+function PlatformGdkScaleFactor(AHandle: HWND): Integer;
+function PlatformWindowScale(AHandle: HWND; LogicalW, LogicalH: Integer): Double;
+function PlatformPixelsPerInch: Integer;
+function PlatformXWindowSize(AHandle: HWND; out W, H: Integer): Boolean;
 
 implementation
 
@@ -61,6 +66,8 @@ begin
 end;
 
 {$IFDEF WINDOWS}
+
+function PlatformWindowScale(AHandle: HWND; LogicalW, LogicalH: Integer): Double; forward;
 
 function QueryPlatformWindowBackend: TPlatformWindowBackend;
 begin
@@ -92,9 +99,13 @@ var
   rects: TShapeRectArray;
   totalRgn, rowRgn, segRgn: HRGN;
   i: Integer;
+  scale: Double;
 begin
   if (AHandle = 0) or (Bitmap = nil) then Exit;
   rects := AlphaRunRects(Bitmap);
+  scale := PlatformWindowScale(AHandle, Bitmap.Width, Bitmap.Height);
+  if scale > 1.0001 then
+    rects := ScaleShapeRects(rects, scale, scale);
   totalRgn := CreateRectRgn(0, 0, 0, 0);
   for i := 0 to High(rects) do
   begin
@@ -168,6 +179,53 @@ begin
     ((GetWindowLong(AHandle, GWL_EXSTYLE) and WS_EX_TOPMOST) <> 0);
 end;
 
+function PlatformGdkScaleFactor(AHandle: HWND): Integer;
+begin
+  Result := 1;
+  if AHandle = 0 then ;
+end;
+
+function PlatformWindowScale(AHandle: HWND; LogicalW, LogicalH: Integer): Double;
+var
+  wr: TRect;
+begin
+  Result := 1.0;
+  wr := Rect(0, 0, 0, 0);
+  if not PlatformGetWindowRect(AHandle, wr) then Exit;
+  Result := WindowScaleFromSizes(LogicalW, LogicalH,
+    wr.Right - wr.Left, wr.Bottom - wr.Top);
+end;
+
+function PlatformPixelsPerInch: Integer;
+var
+  dc: HDC;
+begin
+  Result := 96;
+  dc := GetDC(0);
+  if dc <> 0 then
+  begin
+    Result := GetDeviceCaps(dc, LOGPIXELSX);
+    ReleaseDC(0, dc);
+    if Result <= 0 then
+      Result := 96;
+  end;
+end;
+
+function PlatformXWindowSize(AHandle: HWND; out W, H: Integer): Boolean;
+var
+  wr: TRect;
+begin
+  W := 0;
+  H := 0;
+  Result := PlatformGetWindowRect(AHandle, wr);
+  if Result then
+  begin
+    W := wr.Right - wr.Left;
+    H := wr.Bottom - wr.Top;
+    Result := (W > 0) and (H > 0);
+  end;
+end;
+
 {$ELSE}
 
 type
@@ -195,6 +253,10 @@ type
   TGdkWindowGetWidth = function(Window: TGdkWindow): Integer; cdecl;
   TGdkWindowGetHeight = function(Window: TGdkWindow): Integer; cdecl;
   TGdkWindowGetState = function(Window: TGdkWindow): LongWord; cdecl;
+  TGdkWindowGetScaleFactor = function(Window: TGdkWindow): Integer; cdecl;
+  TGtkWidgetGetScaleFactor = function(Widget: Pointer): Integer; cdecl;
+  TGdkScreenGetDefault = function: Pointer; cdecl;
+  TGdkScreenGetResolution = function(Screen: Pointer): Double; cdecl;
   TGdkX11WindowGetXid = function(Window: TGdkWindow): TXID; cdecl;
   TGdkWindowGetDisplay = function(Window: TGdkWindow): TGdkDisplay; cdecl;
   TGdkX11DisplayGetXdisplay = function(Display: TGdkDisplay): PDisplay; cdecl;
@@ -213,6 +275,8 @@ type
     ActualType: PPtrUInt; ActualFormat: PInteger;
     NItems, BytesAfter: PPtrUInt; PropReturn: PPointer): Integer; cdecl;
   TXFree = function(Data: Pointer): Integer; cdecl;
+  TXGetGeometry = function(Display: PDisplay; D: TXID; out Root: TXID;
+    out X, Y: Integer; out Width, Height, BorderWidth, Depth: Cardinal): Integer; cdecl;
   TXShapeCombineRectangles = procedure(Display: PDisplay; Dest: TXID;
     DestKind, XOff, YOff: Integer; Rects: PXRectangle; NRects, Op, Ordering: Integer); cdecl;
 
@@ -231,6 +295,10 @@ var
   GdkWindowGetWidth: TGdkWindowGetWidth;
   GdkWindowGetHeight: TGdkWindowGetHeight;
   GdkWindowGetState: TGdkWindowGetState;
+  GdkWindowGetScaleFactorFn: TGdkWindowGetScaleFactor;
+  GtkWidgetGetScaleFactorFn: TGtkWidgetGetScaleFactor;
+  GdkScreenGetDefaultFn: TGdkScreenGetDefault;
+  GdkScreenGetResolutionFn: TGdkScreenGetResolution;
   GdkX11WindowGetXid: TGdkX11WindowGetXid;
   GdkWindowGetDisplay: TGdkWindowGetDisplay;
   GdkX11DisplayGetXdisplay: TGdkX11DisplayGetXdisplay;
@@ -243,6 +311,7 @@ var
   XChangePropertyFn: TXChangeProperty;
   XGetWindowPropertyFn: TXGetWindowProperty;
   XFreeFn: TXFree;
+  XGetGeometryFn: TXGetGeometry;
   XShapeCombineRectanglesFn: TXShapeCombineRectangles;
   GdkTried: Boolean = False;
   GdkReady: Boolean = False;
@@ -274,6 +343,10 @@ begin
   Pointer(GdkWindowGetWidth) := GetProcedureAddress(GdkLib, 'gdk_window_get_width');
   Pointer(GdkWindowGetHeight) := GetProcedureAddress(GdkLib, 'gdk_window_get_height');
   Pointer(GdkWindowGetState) := GetProcedureAddress(GdkLib, 'gdk_window_get_state');
+  Pointer(GdkWindowGetScaleFactorFn) := GetProcedureAddress(GdkLib, 'gdk_window_get_scale_factor');
+  Pointer(GtkWidgetGetScaleFactorFn) := GetProcedureAddress(GtkLib, 'gtk_widget_get_scale_factor');
+  Pointer(GdkScreenGetDefaultFn) := GetProcedureAddress(GdkLib, 'gdk_screen_get_default');
+  Pointer(GdkScreenGetResolutionFn) := GetProcedureAddress(GdkLib, 'gdk_screen_get_resolution');
   Pointer(GdkWindowGetDisplay) := GetProcedureAddress(GdkLib, 'gdk_window_get_display');
   Pointer(GdkDisplayGetDefaultFn) := GetProcedureAddress(GdkLib, 'gdk_display_get_default');
   Pointer(GdkDisplayGetNameFn) := GetProcedureAddress(GdkLib, 'gdk_display_get_name');
@@ -301,6 +374,7 @@ begin
   Pointer(XChangePropertyFn) := GetProcedureAddress(X11Lib, 'XChangeProperty');
   Pointer(XGetWindowPropertyFn) := GetProcedureAddress(X11Lib, 'XGetWindowProperty');
   Pointer(XFreeFn) := GetProcedureAddress(X11Lib, 'XFree');
+  Pointer(XGetGeometryFn) := GetProcedureAddress(X11Lib, 'XGetGeometry');
   if XextLib <> 0 then
     Pointer(XShapeCombineRectanglesFn) :=
       GetProcedureAddress(XextLib, 'XShapeCombineRectangles');
@@ -666,6 +740,116 @@ begin
     XFlushFn(dpy);
 end;
 
+function PlatformGdkScaleFactor(AHandle: HWND): Integer;
+var
+  gw: TGdkWindow;
+  Widget: Pointer;
+  envS: string;
+  envN, code: Integer;
+begin
+  Result := 1;
+  if not EnsureGdk then Exit;
+  gw := GdkWindowFromLCLHandle(AHandle);
+  if (gw <> nil) and Assigned(GdkWindowGetScaleFactorFn) then
+  begin
+    Result := GdkWindowGetScaleFactorFn(gw);
+    if Result < 1 then Result := 1;
+    Exit;
+  end;
+  Widget := GtkWidgetFromLCLHandle(AHandle);
+  if (Widget <> nil) and Assigned(GtkWidgetGetScaleFactorFn) then
+  begin
+    Result := GtkWidgetGetScaleFactorFn(Widget);
+    if Result < 1 then Result := 1;
+    Exit;
+  end;
+  envS := GetEnvironmentVariable('GDK_SCALE');
+  if envS <> '' then
+  begin
+    Val(envS, envN, code);
+    if (code = 0) and (envN >= 1) then
+      Result := envN;
+  end;
+end;
+
+function PlatformXWindowSize(AHandle: HWND; out W, H: Integer): Boolean;
+var
+  dpy: PDisplay;
+  win, root: TXID;
+  x, y: Integer;
+  width, height, bw, depth: Cardinal;
+begin
+  Result := False;
+  W := 0;
+  H := 0;
+  if not EnsureX11 or not Assigned(XGetGeometryFn) then Exit;
+  win := XidFromHandle(AHandle, dpy);
+  if (win = 0) or (dpy = nil) then Exit;
+  root := 0;
+  x := 0;
+  y := 0;
+  width := 0;
+  height := 0;
+  bw := 0;
+  depth := 0;
+  if XGetGeometryFn(dpy, win, root, x, y, width, height, bw, depth) = 0 then
+    Exit;
+  W := Integer(width);
+  H := Integer(height);
+  Result := (W > 0) and (H > 0);
+end;
+
+function PlatformWindowScale(AHandle: HWND; LogicalW, LogicalH: Integer): Double;
+var
+  wr: TRect;
+  sizeScale: Double;
+  gdk: Integer;
+  nw, nh, xw, xh: Integer;
+begin
+  Result := 1.0;
+  nw := 0;
+  nh := 0;
+  // X 窗口像素才是 Shape 坐标系；GDK get_width 在 GDK_SCALE>1 时可能仍是逻辑尺寸。
+  if PlatformXWindowSize(AHandle, xw, xh) then
+  begin
+    sizeScale := WindowScaleFromSizes(LogicalW, LogicalH, xw, xh);
+    if sizeScale > 1.0001 then
+      Exit(sizeScale);
+    nw := xw;
+    nh := xh;
+  end;
+  wr := Rect(0, 0, 0, 0);
+  if PlatformGetWindowRect(AHandle, wr) then
+  begin
+    nw := wr.Right - wr.Left;
+    nh := wr.Bottom - wr.Top;
+    sizeScale := WindowScaleFromSizes(LogicalW, LogicalH, nw, nh);
+    if sizeScale > 1.0001 then
+      Exit(sizeScale);
+  end;
+  gdk := PlatformGdkScaleFactor(AHandle);
+  if gdk <= 1 then Exit;
+  if (nw > 0) and (nh > 0) then
+    Exit(1.0);
+  Result := gdk;
+end;
+
+function PlatformPixelsPerInch: Integer;
+var
+  scr: Pointer;
+  res: Double;
+begin
+  Result := 96;
+  if not EnsureGdk then Exit;
+  if not Assigned(GdkScreenGetDefaultFn) or not Assigned(GdkScreenGetResolutionFn) then
+    Exit;
+  scr := GdkScreenGetDefaultFn();
+  if scr = nil then Exit;
+  res := GdkScreenGetResolutionFn(scr);
+  if res >= 48 then
+    Result := Round(res);
+end;
+
 procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);
 const
   ShapeBounding = 0;
@@ -677,11 +861,15 @@ var
   i, n: Integer;
   dpy: PDisplay;
   win: TXID;
+  scale: Double;
 begin
   if not PlatformShapeSupported then Exit;
   win := XidFromHandle(AHandle, dpy);
   if (win = 0) or (dpy = nil) or (Bitmap = nil) then Exit;
   rects := AlphaRunRects(Bitmap);
+  scale := PlatformWindowScale(AHandle, Bitmap.Width, Bitmap.Height);
+  if scale > 1.0001 then
+    rects := ScaleShapeRects(rects, scale, scale);
   n := Length(rects);
   SetLength(xrects, n);
   for i := 0 to n - 1 do

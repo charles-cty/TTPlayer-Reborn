@@ -95,8 +95,8 @@ Lazarus 工程（全自绘）
 **Step 6（已完成，Windows）**：WindowSnapManager（Winamp 式窗口吸附）
 - 独立双轴吸附、主窗口联动组、子窗口单独拖动、松手吸附、屏幕边缘、缩放吸附
 - 几何与图结构可在 NoLCL FPCUnit 中验证（MR-4）
-- Windows：`TSnapFormAdapter` 子类化原生 WndProc 收取 `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE`（LCL `WindowProc` 收不到跨进程 `SendMessage`）；DPI≠100% 时 `GetBounds`/`MoveTo` 在 LCL 逻辑像素与 `GetWindowRect` 物理像素之间换算
-- `src/ui/platform/`：Win `SetWindowRgn`；Linux 仅 X11 Shape + EWMH（`UGdkX11Backend` 强制 XWayland）。GTK3 用 `TryBeginCaptionDrag`（LCL capture）对齐 Windows 的 HTCAPTION + `OnDragStarted/Finished`；`PlatformGetWindowRect` 用 GDK client 几何，避开 CSD frame_extents
+- Windows：`TSnapFormAdapter` 子类化原生 WndProc 收取 `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE`（LCL `WindowProc` 收不到跨进程 `SendMessage`）；DPI≠100% 时 `GetBounds`/`MoveTo` 在 LCL 逻辑像素与 `GetWindowRect` 物理像素之间换算（`UDpiScale`）
+- `src/ui/platform/`：Win `SetWindowRgn`；Linux 仅 X11 Shape + EWMH（`UGdkX11Backend` 强制 XWayland）。GTK3 用 `TryBeginCaptionDrag`（LCL capture）对齐 Windows 的 HTCAPTION + `OnDragStarted/Finished`；`PlatformGetWindowRect` 用 GDK client 几何，避开 CSD frame_extents。DPI/GDK_SCALE：皮肤与吸附在逻辑像素；`ApplyAlphaShape` 在 native 尺寸是均匀 UI 缩放时放大 Region/XShape。禁止把 CSD 宽高比当 DPI。
 
 **Step 7（推迟）**：ttcore 抽库 + FFI 对接，替换 TStubBackend。音频核与 GUI 解耦，可等 GUI 与测试补齐后再做。
 
@@ -137,14 +137,14 @@ Lazarus 工程（全自绘）
 | LyricForm | `pascal/src/ui/ULyricForm`（九宫格、LRC 滚动高亮、右/下边缘调整大小） |
 | VisualWidget | `pascal/src/ui/UVisualWidget`（柱状频谱 + 模糊示波图动画） |
 | WindowSnap | `pascal/src/ui/UWindowSnapMath` + `UWindowSnapManager` + `UFormSnap` |
-| 平台窗口 | `pascal/src/ui/platform/UPlatformWindow` + `UAlphaShape` + `UGdkX11Backend`（Win `SetWindowRgn` / X11 Shape + EWMH；GTK3 Handle→`TGtk3Widget`；强制 XWayland） |
+| 平台窗口 | `pascal/src/ui/platform/UPlatformWindow` + `UAlphaShape` + `UDpiScale` + `UGdkX11Backend`（Win `SetWindowRgn` / X11 Shape + EWMH；GTK3 Handle→`TGtk3Widget`；强制 XWayland；DPI/GDK_SCALE） |
 | Pascal 工具集 | `pascal/ttdump.lpi`、`pascal/skinpreview.lpi`、`pascal/ttplayer.lpi`、`pascal/tests.lpi` |
 | Linux GTK3 构建 | `tools/build-pascal-linux.sh`（用户目录 FPC 3.2.2 + Lazarus 4.8，`--ws=gtk3`） |
 | GTK3 探测 | `skinpreview --probe` + `tools/test-gtk3-wayland.sh` + `tools/smoke_gtk3_wayland.py` |
 | Qt SkinDumper | `src/tools/SkinDumper.{h,cpp}` + `--dump-skin` |
 | Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames`（捕帧前 `clearMask`，playlist/lyric 按 `baseSize`） |
 | Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
-| 测试（Windows 48/48；Linux FPCUnit 53/53，含 AlphaShape） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5）；Linux：`tools/test-gtk3-wayland.sh` |
+| 测试（Windows 48/48；Linux FPCUnit 65/65，含 AlphaShape + DpiScale） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5）；Linux：`tools/test-gtk3-wayland.sh` |
 
 **GTK3 + XWayland（WSL2/WSLg，2026-08-24）**
 
@@ -155,6 +155,7 @@ Lazarus 工程（全自绘）
 | `skinpreview --probe` | `backend=x11`，`shape_supported=true`；四窗口须在；程序化吸附须合缝 |
 | 无边框 | `CreateWnd`/`DoShow` 调 `ConfigurePlatformWindow`：`gtk_window_set_decorated(0)` + Motif 去装饰。禁止 `gtk_window_set_titlebar(nil)`（会恢复 CSD） |
 | 拖动 / 吸附 | `TryBeginCaptionDrag` 按 `WMNCHitTest=HTCAPTION` 捕获鼠标，走同一套 `OnDragStarted/Move/Finished` |
+| DPI | `UDpiScale`：宽高均匀缩放到 125/150/200% 才换算，CSD 比不当 DPI。Shape 按 `XGetGeometry`（GDK_SCALE=2 时 X 窗口 2×，`gdk_window_get_width` 仍是逻辑尺寸）。吸附在逻辑像素；WSLg 原点对不齐时用 LCL 坐标 |
 | 置顶 | `gtk_window_set_keep_above`（GDK 发 EWMH）。WSLg Weston 可能忽略 `_NET_WM_STATE_ABOVE` |
 | 句柄 AV | 已修：LCL GTK3 `Handle` 是 `TGtk3Widget` |
 | 仍有的 LCL 噪音 | `gdk_pixbuf_get_from_surface` 0 尺寸 CRITICAL；ComboBox `GtkCssCustomGadget` 的 `set_has_window` |

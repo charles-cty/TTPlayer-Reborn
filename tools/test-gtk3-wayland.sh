@@ -51,5 +51,16 @@ fi
 
 python3 "$ROOT/tools/smoke_gtk3_wayland.py" --expect-backend x11 "$json"
 
+scale2="$OUTDIR/probe-x11-scale2.json"
+echo "[test-gtk3] skinpreview --probe (GDK_SCALE=2)"
+if ! timeout 60 env GDK_SCALE=2 GDK_DPI_SCALE=1 "$PREVIEW" --probe --probe-out "$scale2" \
+    >"$OUTDIR/probe-x11-scale2.stdout" \
+    2>"$OUTDIR/probe-x11-scale2.stderr"; then
+  echo "GDK_SCALE=2 probe 退出码非零或超时" >&2
+  tail -n 40 "$OUTDIR/probe-x11-scale2.stderr" >&2 || true
+  exit 1
+fi
+python3 "$ROOT/tools/smoke_gtk3_wayland.py" --expect-backend x11 "$scale2"
+
 echo "[test-gtk3] 全部通过"
 echo "产物：$OUTDIR"

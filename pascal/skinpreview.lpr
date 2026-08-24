@@ -340,6 +340,15 @@ begin
   if B then Result := 'true' else Result := 'false';
 end;
 
+function JsonNumber(D: Double): string;
+var
+  fs: TFormatSettings;
+begin
+  fs := DefaultFormatSettings;
+  fs.DecimalSeparator := '.';
+  Result := FormatFloat('0.###', D, fs);
+end;
+
 function WidgetSetName: string;
 begin
   Result := 'unknown';
@@ -353,8 +362,9 @@ end;
 function FormBoundsJson(AForm: TForm): string;
 var
   wr: TRect;
-  nl, nt, nw, nh: Integer;
+  nl, nt, nw, nh, gdkScale, xw, xh: Integer;
   decorated, hasTitle, above: Boolean;
+  scale: Double;
 begin
   if AForm = nil then
     Exit('{"present":false}');
@@ -362,9 +372,13 @@ begin
   nt := 0;
   nw := 0;
   nh := 0;
+  xw := 0;
+  xh := 0;
   decorated := False;
   hasTitle := False;
   above := False;
+  scale := 1.0;
+  gdkScale := 1;
   if AForm.HandleAllocated then
   begin
     wr := Types.Rect(0, 0, 0, 0);
@@ -375,18 +389,28 @@ begin
       nw := wr.Right - wr.Left;
       nh := wr.Bottom - wr.Top;
     end;
+    if not PlatformXWindowSize(AForm.Handle, xw, xh) then
+    begin
+      xw := nw;
+      xh := nh;
+    end;
     decorated := PlatformWindowIsDecorated(AForm.Handle);
     hasTitle := PlatformWindowHasTitlebar(AForm.Handle);
     above := PlatformWindowIsAbove(AForm.Handle);
+    scale := PlatformWindowScale(AForm.Handle, AForm.Width, AForm.Height);
+    gdkScale := PlatformGdkScaleFactor(AForm.Handle);
   end;
   Result := Format(
     '{"present":true,"visible":%s,"caption":"%s",' +
     '"lcl_left":%d,"lcl_top":%d,"lcl_width":%d,"lcl_height":%d,' +
     '"native_left":%d,"native_top":%d,"native_width":%d,"native_height":%d,' +
+    '"x11_width":%d,"x11_height":%d,' +
+    '"scale":%s,"gdk_scale_factor":%d,' +
     '"decorated":%s,"has_titlebar":%s,"ewmh_above":%s}',
     [JsonBool(AForm.Visible), JsonEscape(AForm.Caption),
      AForm.Left, AForm.Top, AForm.Width, AForm.Height,
-     nl, nt, nw, nh,
+     nl, nt, nw, nh, xw, xh,
+     JsonNumber(scale), gdkScale,
      JsonBool(decorated), JsonBool(hasTitle), JsonBool(above)]);
 end;
 
@@ -413,10 +437,11 @@ end;
 procedure TPreviewMainForm.RunProbe(const OutPath: string);
 var
   pr, er: TSnapRect;
-  gapBefore, gapAfter, i: Integer;
+  gapBefore, gapAfter, i, gdkScale, ppi: Integer;
   sl: TStringList;
   skinName, json: string;
   snapped: Boolean;
+  uiScale: Double;
 begin
   for i := 1 to 30 do
   begin
@@ -454,6 +479,21 @@ begin
     snapped := FSnap.IsSnapped(FEqWin);
   end;
 
+  uiScale := 1.0;
+  gdkScale := 1;
+  ppi := Screen.PixelsPerInch;
+  if ppi <= 0 then
+    ppi := PlatformPixelsPerInch;
+  if FPlayerForm <> nil then
+  begin
+    if FPlayerForm.HandleAllocated then
+    begin
+      uiScale := PlatformWindowScale(FPlayerForm.Handle,
+        FPlayerForm.Width, FPlayerForm.Height);
+      gdkScale := PlatformGdkScaleFactor(FPlayerForm.Handle);
+    end;
+  end;
+
   sl := TStringList.Create;
   try
     sl.Add('{');
@@ -468,6 +508,11 @@ begin
     sl.Add('  "shape_supported": ' + JsonBool(PlatformShapeSupported) + ',');
     sl.Add('  "always_on_top_native": ' +
       JsonBool(PlatformAlwaysOnTopNative) + ',');
+    sl.Add('  "dpi": {');
+    sl.Add('    "scale": ' + JsonNumber(uiScale) + ',');
+    sl.Add('    "gdk_scale_factor": ' + IntToStr(gdkScale) + ',');
+    sl.Add('    "pixels_per_inch": ' + IntToStr(ppi));
+    sl.Add('  },');
     sl.Add('  "skin": "' + JsonEscape(skinName) + '",');
     sl.Add('  "windows": {');
     sl.Add('    "player": ' + FormBoundsJson(FPlayerForm) + ',');
@@ -486,7 +531,8 @@ begin
     sl.Add('    "Linux target is X11/XWayland only (GDK_BACKEND=x11, GTK_CSD=0)",');
     sl.Add('    "native Wayland is out of scope",');
     sl.Add('    "GTK3 caption drag is LCL capture + OnDragStarted/Finished",');
-    sl.Add('    "snap here is programmatic OnDragFinished (same manager as mouse drag)"');
+    sl.Add('    "snap here is programmatic OnDragFinished (same manager as mouse drag)",');
+    sl.Add('    "DPI: snap in logical pixels; Shape scaled when native size is a uniform UI scale"');
     sl.Add('  ]');
     sl.Add('}');
     json := sl.Text;

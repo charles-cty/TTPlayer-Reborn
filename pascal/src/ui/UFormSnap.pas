@@ -3,8 +3,10 @@ unit UFormSnap;
 {$mode objfpc}{$H+}
 
 // LCL 窗口与 TWindowSnapManager 的桥：
-//   TFormSnapWindow  — ISnapWindow 适配 TForm；Windows 用 GetWindowRect
-//                      做 DPI 换算，GTK3/X11 直接用 LCL 坐标（同一像素空间）
+//   TFormSnapWindow  — ISnapWindow 适配 TForm。吸附在逻辑像素里算。
+//                      DPI/GDK_SCALE>1 时用 UDpiScale 把 native 坐标换回逻辑；
+//                      1× 或 WSLg 原点对不齐时用 LCL Left/Top（不要把 CSD
+//                      尺寸比当成 DPI）。
 //   TSnapFormAdapter — Windows：子类化原生 WndProc 收 WM_ENTER/EXITSIZEMOVE
 //                      GTK3/X11：TryBeginCaptionDrag 模拟 HTCAPTION 拖动，
 //                      松手走 OnDragFinished（与 Windows 吸附同一套）
@@ -14,7 +16,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, LCLType, LCLIntf, LMessages, Types,
-  UWindowSnapMath, UWindowSnapManager, UPlatformWindow;
+  UWindowSnapMath, UWindowSnapManager, UPlatformWindow, UDpiScale;
 
 type
   TFormSnapWindow = class(TInterfacedObject, ISnapWindow)
@@ -96,15 +98,11 @@ begin
 end;
 
 function TFormSnapWindow.GetBounds: TSnapRect;
-{$IFDEF WINDOWS}
 var
   wr: TRect;
-  pw, ph: Integer;
-{$ENDIF}
+  pw, ph, lx, ly: Integer;
 begin
   Result := SnapRectXYWH(FForm.Left, FForm.Top, FForm.Width, FForm.Height);
-{$IFDEF WINDOWS}
-  // Win：GetWindowRect 是物理像素，LCL Left/Width 是 96dpi 逻辑像素。
   if (FForm = nil) or (not FForm.HandleAllocated) then Exit;
   wr := Types.Rect(0, 0, 0, 0);
   if not PlatformGetWindowRect(FForm.Handle, wr) then Exit;
@@ -112,13 +110,17 @@ begin
   ph := wr.Bottom - wr.Top;
   if (pw <= 0) or (ph <= 0) or (FForm.Width <= 0) or (FForm.Height <= 0) then
     Exit;
-  Result.X := Round(wr.Left * FForm.Width / pw);
-  Result.Y := Round(wr.Top * FForm.Height / ph);
+  // 仅在宽高均匀缩放到常见 DPI 档时换算。CSD 或 WSLg 原点错位走 LCL。
+  if WindowScaleFromSizes(FForm.Width, FForm.Height, pw, ph) <= 1.0001 then
+    Exit;
+  lx := LogicalFromNative(wr.Left, FForm.Width, pw);
+  ly := LogicalFromNative(wr.Top, FForm.Height, ph);
+  if (Abs(lx - FForm.Left) > 64) or (Abs(ly - FForm.Top) > 64) then
+    Exit;
+  Result.X := lx;
+  Result.Y := ly;
   Result.W := FForm.Width;
   Result.H := FForm.Height;
-{$ENDIF}
-  // UNIX/GTK3：LCL 与 X11 同一像素空间。CSD 会撑大 GdkWindow，
-  // 若按 native/LCL 比例换算坐标会指数膨胀，超出 SmallInt。
 end;
 
 procedure TFormSnapWindow.MoveTo(AX, AY: Integer);
@@ -136,6 +138,8 @@ begin
   if (FForm.Left <> AX) or (FForm.Top <> AY) then
     FForm.SetBounds(AX, AY, FForm.Width, FForm.Height);
 {$IFDEF WINDOWS}
+  // Win32 SetWindowPos 是物理像素。GTK3 gtk_window_move 是逻辑像素，
+  // SetBounds 已够；再乘 native/LCL 会和 CSD 一起把坐标撑爆。
   if not FForm.HandleAllocated then Exit;
   wr := Types.Rect(0, 0, 0, 0);
   if not PlatformGetWindowRect(FForm.Handle, wr) then Exit;
@@ -143,8 +147,8 @@ begin
   ph := wr.Bottom - wr.Top;
   if (pw <= 0) or (ph <= 0) or (FForm.Width <= 0) or (FForm.Height <= 0) then
     Exit;
-  physX := Round(AX * pw / FForm.Width);
-  physY := Round(AY * ph / FForm.Height);
+  physX := NativeFromLogical(AX, FForm.Width, pw);
+  physY := NativeFromLogical(AY, FForm.Height, ph);
   if (wr.Left <> physX) or (wr.Top <> physY) then
     PlatformMoveWindow(FForm.Handle, physX, physY);
 {$ENDIF}

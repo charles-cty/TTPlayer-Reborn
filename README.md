@@ -172,7 +172,7 @@ pwsh tools/test-layer1.ps1
 pwsh tools/gen-golden.ps1 -SkipBuild
 ```
 
-**当前测试状态：Layer 1 11/11；Windows FPCUnit 48/48；Linux FPCUnit 53/53（含 AlphaShape）**
+**当前测试状态：Layer 1 11/11；Windows FPCUnit 48/48；Linux FPCUnit 65/65（含 AlphaShape + DpiScale）**
 
 | 层级 | 方法 | 覆盖内容 |
 |---|---|---|

@@ -62,14 +62,26 @@ def main() -> int:
             errors.append(f"{name}: not visible")
         lw, lh = w.get("lcl_width") or 0, w.get("lcl_height") or 0
         nw, nh = w.get("native_width") or 0, w.get("native_height") or 0
+        try:
+            scale = float(w.get("scale") or 1.0)
+        except (TypeError, ValueError):
+            scale = 1.0
+        if scale <= 0:
+            scale = 1.0
         if lw <= 0 or lh <= 0:
             errors.append(f"{name}: lcl size {lw}x{lh}")
         if nw <= 0 or nh <= 0:
             errors.append(f"{name}: native size {nw}x{nh}")
-        elif abs(nw - lw) > 24 or abs(nh - lh) > 24:
-            errors.append(
-                f"{name}: native {nw}x{nh} vs LCL {lw}x{lh} (CSD/frame still on)"
-            )
+        else:
+            xw = int(w.get("x11_width") or nw)
+            xh = int(w.get("x11_height") or nh)
+            exp_w, exp_h = round(lw * scale), round(lh * scale)
+            # GDK 宽度可能是逻辑像素；X 窗口像素才和 Shape 对齐。
+            if abs(xw - exp_w) > 24 or abs(xh - exp_h) > 24:
+                errors.append(
+                    f"{name}: X11 {xw}x{xh} vs LCL {lw}x{lh}×{scale:g} "
+                    f"(expected {exp_w}x{exp_h}; CSD/frame still on)"
+                )
         if w.get("decorated"):
             errors.append(f"{name}: gtk_window decorated still true")
         if w.get("has_titlebar"):
@@ -107,6 +119,7 @@ def main() -> int:
                 "widgetset": data.get("widgetset"),
                 "gdk_display": data.get("gdk_display"),
                 "shape_supported": data.get("shape_supported"),
+                "dpi": data.get("dpi"),
                 "skin": data.get("skin"),
                 "snap": snap,
             },

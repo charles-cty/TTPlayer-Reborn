@@ -191,12 +191,12 @@ Ubuntu apt 的 Lazarus 3.0 只有 GTK2/Qt5，没有 LCL GTK3 包。用用户目�
 ```bash
 # FPC: $HOME/opt/fpc    Lazarus: $HOME/opt/lazarus（make lazbuild）
 bash tools/build-pascal-linux.sh          # ttdump + tests + skinpreview --ws=gtk3
-bash tools/test-gtk3-wayland.sh           # FPCUnit 53 + X11 --probe
+bash tools/test-gtk3-wayland.sh           # FPCUnit 65 + X11 --probe + GDK_SCALE=2
 ```
 
-`skinpreview --probe [--probe-out file.json]` 创建四窗口后写出 JSON（widgetset / Gdk backend / shape_supported / 各窗 LCL+native 矩形 / 程序化吸附间隙），然后退出，不进入 `Application.Run`。
+`skinpreview --probe [--probe-out file.json]` 创建四窗口后写出 JSON（widgetset / Gdk backend / shape_supported / dpi / 各窗 LCL+native 矩形 / 程序化吸附间隙），然后退出，不进入 `Application.Run`。
 
-断言（`tools/smoke_gtk3_wayland.py`）：`backend=x11`，`shape_supported=true`，四窗口在且可见。native 尺寸须 >0 且与 LCL 相差 ≤24（CSD/frame 仍开则失败）。`decorated`/`has_titlebar` 须为 false。程序化吸附 `gap_after` 须合缝（|gap|≤1）。Player 探测时调用 `gtk_window_set_keep_above`；`ewmh_above` 在 WSLg Weston 上可能仍为 false（合成器不实现 `_NET_WM_STATE_ABOVE`），记 NOTE 不失败。`backend=wayland` 视为失败。
+断言（`tools/smoke_gtk3_wayland.py`）：`backend=x11`，`shape_supported=true`，四窗口在且可见。native 尺寸须 >0 且与 LCL×`scale` 相差 ≤24（CSD/frame 仍开则失败；`GDK_SCALE=2` 时 native 可以是 2×）。`decorated`/`has_titlebar` 须为 false。程序化吸附 `gap_after` 须合缝（|gap|≤1）。Player 探测时调用 `gtk_window_set_keep_above`；`ewmh_above` 在 WSLg Weston 上可能仍为 false（合成器不实现 `_NET_WM_STATE_ABOVE`），记 NOTE 不失败。`backend=wayland` 视为失败。`tools/test-gtk3-wayland.sh` 另跑一次 `GDK_SCALE=2` 探测。
 
 stderr 里 `gtk_widget_get_window: assertion 'GTK_IS_WIDGET'` 视为失败（把 `TGtk3Widget` 当成了 `GtkWidget*`）。`gdk_pixbuf_get_from_surface` 0 尺寸 CRITICAL 是 LCL GTK3 在未映射/`bsNone` 上的已知噪音，不判失败。
 
