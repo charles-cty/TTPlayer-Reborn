@@ -188,7 +188,7 @@ pwsh tools/gen-golden.ps1 -SkipBuild
 
 - Qt 版仍有较多 bug，功能不完善。
 - Lazarus 重写版（`pascal/`）四个皮肤窗口 + Windows 吸附已可运行；音频仍为 `TStubBackend`（ttcore 抽库未开始）。
-- Lazarus Linux 只支持 X11（XWayland / Xorg，`GDK_BACKEND=x11`），不支持 Wayland 客户端。
+- Lazarus Linux 只支持 X11（XWayland / Xorg，`GDK_BACKEND=x11`），不支持 Wayland 客户端。GTK3 皮肤窗：无 CSD、XShape、标题栏拖动、吸附、置顶（对齐 Windows）。
 - LCL GTK3 的 `Handle` 是 `TGtk3Widget` 对象，不是 `GtkWidget*`；已在 `UPlatformWindow` 中转换，避免 `gtk_widget_get_window` Access violation。
 
 ---

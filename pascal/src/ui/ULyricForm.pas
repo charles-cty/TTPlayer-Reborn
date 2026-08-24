@@ -36,6 +36,8 @@ type
     procedure MouseUp(Button: TMouseButton; Shift: TShiftState;
       X, Y: Integer); override;
     procedure MouseLeave; override;
+    procedure CreateWnd; override;
+    procedure DoShow; override;
 
     procedure WMNCHitTest(var Msg: TLMessage); message LM_NCHITTEST;
 
@@ -96,7 +98,7 @@ type
 implementation
 
 uses
-  LCLProc, Math;
+  LCLProc, Math, UFormSnap;
 
 const
   kResizeSense = 8;  // 调整大小感应带宽度（像素）
@@ -279,6 +281,19 @@ begin
   finally
     if own then bmp.Free;
   end;
+end;
+
+procedure TLyricForm.CreateWnd;
+begin
+  inherited CreateWnd;
+  ConfigurePlatformWindow(Self);
+end;
+
+procedure TLyricForm.DoShow;
+begin
+  inherited DoShow;
+  ConfigurePlatformWindow(Self);
+  BuildRegion;
 end;
 
 procedure TLyricForm.RenderFrame;
@@ -533,6 +548,8 @@ begin
     end;
   end;
   inherited MouseDown(Button, Shift, X, Y);
+  if Button = mbLeft then
+    TryBeginCaptionDrag(Self, X, Y);
 end;
 
 procedure TLyricForm.MouseMove(Shift: TShiftState; X, Y: Integer);

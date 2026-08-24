@@ -354,6 +354,7 @@ function FormBoundsJson(AForm: TForm): string;
 var
   wr: TRect;
   nl, nt, nw, nh: Integer;
+  decorated, hasTitle, above: Boolean;
 begin
   if AForm = nil then
     Exit('{"present":false}');
@@ -361,24 +362,32 @@ begin
   nt := 0;
   nw := 0;
   nh := 0;
+  decorated := False;
+  hasTitle := False;
+  above := False;
   if AForm.HandleAllocated then
   begin
     wr := Types.Rect(0, 0, 0, 0);
-    if LCLIntf.GetWindowRect(AForm.Handle, wr) <> 0 then
+    if PlatformGetWindowRect(AForm.Handle, wr) then
     begin
       nl := wr.Left;
       nt := wr.Top;
       nw := wr.Right - wr.Left;
       nh := wr.Bottom - wr.Top;
     end;
+    decorated := PlatformWindowIsDecorated(AForm.Handle);
+    hasTitle := PlatformWindowHasTitlebar(AForm.Handle);
+    above := PlatformWindowIsAbove(AForm.Handle);
   end;
   Result := Format(
     '{"present":true,"visible":%s,"caption":"%s",' +
     '"lcl_left":%d,"lcl_top":%d,"lcl_width":%d,"lcl_height":%d,' +
-    '"native_left":%d,"native_top":%d,"native_width":%d,"native_height":%d}',
+    '"native_left":%d,"native_top":%d,"native_width":%d,"native_height":%d,' +
+    '"decorated":%s,"has_titlebar":%s,"ewmh_above":%s}',
     [JsonBool(AForm.Visible), JsonEscape(AForm.Caption),
      AForm.Left, AForm.Top, AForm.Width, AForm.Height,
-     nl, nt, nw, nh]);
+     nl, nt, nw, nh,
+     JsonBool(decorated), JsonBool(hasTitle), JsonBool(above)]);
 end;
 
 function HasSwitch(const S: string): Boolean;
@@ -415,6 +424,12 @@ begin
     Sleep(20);
   end;
   EnsureSnapHooked;
+  if FPlayerForm <> nil then
+  begin
+    SetWindowAlwaysOnTop(FPlayerForm, True);
+    Application.ProcessMessages;
+    Sleep(50);
+  end;
 
   skinName := '';
   if FCombo.ItemIndex >= 0 then
@@ -470,8 +485,8 @@ begin
     sl.Add('  "notes": [');
     sl.Add('    "Linux target is X11/XWayland only (GDK_BACKEND=x11, GTK_CSD=0)",');
     sl.Add('    "native Wayland is out of scope",');
-    sl.Add('    "HTCAPTION drag and WM_ENTER/EXITSIZEMOVE are Windows-only",');
-    sl.Add('    "snap here is programmatic OnDragFinished, not mouse drag"');
+    sl.Add('    "GTK3 caption drag is LCL capture + OnDragStarted/Finished",');
+    sl.Add('    "snap here is programmatic OnDragFinished (same manager as mouse drag)"');
     sl.Add('  ]');
     sl.Add('}');
     json := sl.Text;

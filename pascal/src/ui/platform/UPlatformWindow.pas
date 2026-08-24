@@ -18,7 +18,7 @@ unit UPlatformWindow;
 interface
 
 uses
-  Classes, SysUtils, Forms, Controls, LCLType,
+  Classes, SysUtils, Types, Forms, Controls, LCLType,
   BGRABitmap, BGRABitmapTypes, UAlphaShape;
 
 type
@@ -34,6 +34,11 @@ procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);
 procedure ClearWindowShape(AHandle: HWND);
 procedure SetWindowAlwaysOnTop(AForm: TCustomForm; Enable: Boolean);
 procedure ConfigurePlatformWindow(AForm: TCustomForm);
+function PlatformGetWindowRect(AHandle: HWND; out R: TRect): Boolean;
+procedure PlatformMoveWindow(AHandle: HWND; AX, AY: Integer);
+function PlatformWindowIsDecorated(AHandle: HWND): Boolean;
+function PlatformWindowHasTitlebar(AHandle: HWND): Boolean;
+function PlatformWindowIsAbove(AHandle: HWND): Boolean;
 
 implementation
 
@@ -115,6 +120,19 @@ begin
   if AForm = nil then Exit;
 end;
 
+function PlatformGetWindowRect(AHandle: HWND; out R: TRect): Boolean;
+begin
+  R := Rect(0, 0, 0, 0);
+  Result := (AHandle <> 0) and (LCLIntf.GetWindowRect(AHandle, R) <> 0);
+end;
+
+procedure PlatformMoveWindow(AHandle: HWND; AX, AY: Integer);
+begin
+  if AHandle = 0 then Exit;
+  Windows.SetWindowPos(AHandle, 0, AX, AY, 0, 0,
+    SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
+end;
+
 procedure SetWindowAlwaysOnTop(AForm: TCustomForm; Enable: Boolean);
 begin
   if AForm = nil then Exit;
@@ -131,6 +149,23 @@ begin
       SetWindowPos(AForm.Handle, HWND_NOTOPMOST, 0, 0, 0, 0,
         SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
   end;
+end;
+
+function PlatformWindowIsDecorated(AHandle: HWND): Boolean;
+begin
+  Result := (AHandle <> 0) and
+    ((GetWindowLong(AHandle, GWL_STYLE) and WS_CAPTION) <> 0);
+end;
+
+function PlatformWindowHasTitlebar(AHandle: HWND): Boolean;
+begin
+  Result := PlatformWindowIsDecorated(AHandle);
+end;
+
+function PlatformWindowIsAbove(AHandle: HWND): Boolean;
+begin
+  Result := (AHandle <> 0) and
+    ((GetWindowLong(AHandle, GWL_EXSTYLE) and WS_EX_TOPMOST) <> 0);
 end;
 
 {$ELSE}
@@ -150,7 +185,16 @@ type
   TGtkWidgetGetWindow = function(Widget: Pointer): TGdkWindow; cdecl;
   TGtkWidgetRealize = procedure(Widget: Pointer); cdecl;
   TGtkWindowSetDecorated = procedure(Window: Pointer; Decorated: LongInt); cdecl;
-  TGtkWindowSetTitlebar = procedure(Window: Pointer; Titlebar: Pointer); cdecl;
+  TGtkWindowGetDecorated = function(Window: Pointer): LongInt; cdecl;
+  TGtkWindowGetTitlebar = function(Window: Pointer): Pointer; cdecl;
+  TGtkWindowMove = procedure(Window: Pointer; X, Y: LongInt); cdecl;
+  TGtkWindowResize = procedure(Window: Pointer; Width, Height: LongInt); cdecl;
+  TGtkWindowSetKeepAbove = procedure(Window: Pointer; Setting: LongInt); cdecl;
+  TGdkWindowSetDecorations = procedure(Window: TGdkWindow; Decorations: LongWord); cdecl;
+  TGdkWindowGetOrigin = function(Window: TGdkWindow; out X, Y: LongInt): Integer; cdecl;
+  TGdkWindowGetWidth = function(Window: TGdkWindow): Integer; cdecl;
+  TGdkWindowGetHeight = function(Window: TGdkWindow): Integer; cdecl;
+  TGdkWindowGetState = function(Window: TGdkWindow): LongWord; cdecl;
   TGdkX11WindowGetXid = function(Window: TGdkWindow): TXID; cdecl;
   TGdkWindowGetDisplay = function(Window: TGdkWindow): TGdkDisplay; cdecl;
   TGdkX11DisplayGetXdisplay = function(Display: TGdkDisplay): PDisplay; cdecl;
@@ -159,30 +203,34 @@ type
   TGTypeName = function(AType: PtrUInt): PAnsiChar; cdecl;
   TXInternAtom = function(Display: PDisplay; Name: PAnsiChar;
     OnlyIfExists: Integer): Cardinal; cdecl;
-  TXDefaultRootWindow = function(Display: PDisplay): TXID; cdecl;
   TXFlush = procedure(Display: PDisplay); cdecl;
-  TXSendEvent = function(Display: PDisplay; W: TXID; Propagate: Integer;
-    EventMask: LongInt; EventSend: Pointer): Integer; cdecl;
+  TXMoveWindow = procedure(Display: PDisplay; W: TXID; X, Y: Integer); cdecl;
+  TXChangeProperty = function(Display: PDisplay; W: TXID;
+    Prop, AType: Cardinal; Format, Mode: Integer; Data: Pointer;
+    NElements: Integer): Integer; cdecl;
+  TXGetWindowProperty = function(Display: PDisplay; W: TXID; Prop: PtrUInt;
+    LongOffset, LongLength: PtrInt; Delete: Integer; ReqType: PtrUInt;
+    ActualType: PPtrUInt; ActualFormat: PInteger;
+    NItems, BytesAfter: PPtrUInt; PropReturn: PPointer): Integer; cdecl;
+  TXFree = function(Data: Pointer): Integer; cdecl;
   TXShapeCombineRectangles = procedure(Display: PDisplay; Dest: TXID;
     DestKind, XOff, YOff: Integer; Rects: PXRectangle; NRects, Op, Ordering: Integer); cdecl;
-
-  TXClientMessageEvent = record
-    _type: Integer;
-    serial: PtrUInt;
-    send_event: Integer;
-    display: PDisplay;
-    window: TXID;
-    message_type: Cardinal;
-    format: Integer;
-    data: array[0..4] of LongInt;
-  end;
 
 var
   GtkLib, GdkLib, GObjLib, X11Lib, XextLib: TLibHandle;
   GtkWidgetGetWindow: TGtkWidgetGetWindow;
   GtkWidgetRealize: TGtkWidgetRealize;
   GtkWindowSetDecorated: TGtkWindowSetDecorated;
-  GtkWindowSetTitlebar: TGtkWindowSetTitlebar;
+  GtkWindowGetDecorated: TGtkWindowGetDecorated;
+  GtkWindowGetTitlebar: TGtkWindowGetTitlebar;
+  GtkWindowMove: TGtkWindowMove;
+  GtkWindowResize: TGtkWindowResize;
+  GtkWindowSetKeepAbove: TGtkWindowSetKeepAbove;
+  GdkWindowSetDecorations: TGdkWindowSetDecorations;
+  GdkWindowGetOrigin: TGdkWindowGetOrigin;
+  GdkWindowGetWidth: TGdkWindowGetWidth;
+  GdkWindowGetHeight: TGdkWindowGetHeight;
+  GdkWindowGetState: TGdkWindowGetState;
   GdkX11WindowGetXid: TGdkX11WindowGetXid;
   GdkWindowGetDisplay: TGdkWindowGetDisplay;
   GdkX11DisplayGetXdisplay: TGdkX11DisplayGetXdisplay;
@@ -190,9 +238,11 @@ var
   GdkDisplayGetNameFn: TGdkDisplayGetName;
   GTypeNameFn: TGTypeName;
   XInternAtomFn: TXInternAtom;
-  XDefaultRootWindowFn: TXDefaultRootWindow;
   XFlushFn: TXFlush;
-  XSendEventFn: TXSendEvent;
+  XMoveWindowFn: TXMoveWindow;
+  XChangePropertyFn: TXChangeProperty;
+  XGetWindowPropertyFn: TXGetWindowProperty;
+  XFreeFn: TXFree;
   XShapeCombineRectanglesFn: TXShapeCombineRectangles;
   GdkTried: Boolean = False;
   GdkReady: Boolean = False;
@@ -214,7 +264,16 @@ begin
   Pointer(GtkWidgetGetWindow) := GetProcedureAddress(GtkLib, 'gtk_widget_get_window');
   Pointer(GtkWidgetRealize) := GetProcedureAddress(GtkLib, 'gtk_widget_realize');
   Pointer(GtkWindowSetDecorated) := GetProcedureAddress(GtkLib, 'gtk_window_set_decorated');
-  Pointer(GtkWindowSetTitlebar) := GetProcedureAddress(GtkLib, 'gtk_window_set_titlebar');
+  Pointer(GtkWindowGetDecorated) := GetProcedureAddress(GtkLib, 'gtk_window_get_decorated');
+  Pointer(GtkWindowGetTitlebar) := GetProcedureAddress(GtkLib, 'gtk_window_get_titlebar');
+  Pointer(GtkWindowMove) := GetProcedureAddress(GtkLib, 'gtk_window_move');
+  Pointer(GtkWindowResize) := GetProcedureAddress(GtkLib, 'gtk_window_resize');
+  Pointer(GtkWindowSetKeepAbove) := GetProcedureAddress(GtkLib, 'gtk_window_set_keep_above');
+  Pointer(GdkWindowSetDecorations) := GetProcedureAddress(GdkLib, 'gdk_window_set_decorations');
+  Pointer(GdkWindowGetOrigin) := GetProcedureAddress(GdkLib, 'gdk_window_get_origin');
+  Pointer(GdkWindowGetWidth) := GetProcedureAddress(GdkLib, 'gdk_window_get_width');
+  Pointer(GdkWindowGetHeight) := GetProcedureAddress(GdkLib, 'gdk_window_get_height');
+  Pointer(GdkWindowGetState) := GetProcedureAddress(GdkLib, 'gdk_window_get_state');
   Pointer(GdkWindowGetDisplay) := GetProcedureAddress(GdkLib, 'gdk_window_get_display');
   Pointer(GdkDisplayGetDefaultFn) := GetProcedureAddress(GdkLib, 'gdk_display_get_default');
   Pointer(GdkDisplayGetNameFn) := GetProcedureAddress(GdkLib, 'gdk_display_get_name');
@@ -237,9 +296,11 @@ begin
   Pointer(GdkX11DisplayGetXdisplay) :=
     GetProcedureAddress(GdkLib, 'gdk_x11_display_get_xdisplay');
   Pointer(XInternAtomFn) := GetProcedureAddress(X11Lib, 'XInternAtom');
-  Pointer(XDefaultRootWindowFn) := GetProcedureAddress(X11Lib, 'XDefaultRootWindow');
   Pointer(XFlushFn) := GetProcedureAddress(X11Lib, 'XFlush');
-  Pointer(XSendEventFn) := GetProcedureAddress(X11Lib, 'XSendEvent');
+  Pointer(XMoveWindowFn) := GetProcedureAddress(X11Lib, 'XMoveWindow');
+  Pointer(XChangePropertyFn) := GetProcedureAddress(X11Lib, 'XChangeProperty');
+  Pointer(XGetWindowPropertyFn) := GetProcedureAddress(X11Lib, 'XGetWindowProperty');
+  Pointer(XFreeFn) := GetProcedureAddress(X11Lib, 'XFree');
   if XextLib <> 0 then
     Pointer(XShapeCombineRectanglesFn) :=
       GetProcedureAddress(XextLib, 'XShapeCombineRectangles');
@@ -363,6 +424,18 @@ begin
   Result := QueryPlatformWindowBackend = pwbX11;
 end;
 
+function GtkWidgetFromLCLHandle(AHandle: HWND): Pointer;
+begin
+  Result := nil;
+  if AHandle = 0 then Exit;
+{$IFDEF LCLGTK3}
+  if not TGtk3Widget(AHandle).IsValidHandle then Exit;
+  Result := Pointer(TGtk3Widget(AHandle).Widget);
+{$ELSE}
+  Result := Pointer(AHandle);
+{$ENDIF}
+end;
+
 function GdkWindowFromLCLHandle(AHandle: HWND): TGdkWindow;
 {$IFDEF LCLGTK3}
 var
@@ -412,25 +485,185 @@ begin
     Dpy := GdkX11DisplayGetXdisplay(gd);
 end;
 
+procedure ApplyMotifNoDecorations(AHandle: HWND);
+const
+  PropModeReplace = 0;
+  MwmHintsDecorations = 2;
+var
+  dpy: PDisplay;
+  win: TXID;
+  atom: Cardinal;
+  hints: array[0..4] of PtrUInt;
+begin
+  if QueryPlatformWindowBackend <> pwbX11 then Exit;
+  if not EnsureX11 then Exit;
+  if not Assigned(XChangePropertyFn) then Exit;
+  win := XidFromHandle(AHandle, dpy);
+  if (win = 0) or (dpy = nil) then Exit;
+  FillChar(hints, SizeOf(hints), 0);
+  hints[0] := MwmHintsDecorations;
+  hints[2] := 0;
+  atom := XInternAtomFn(dpy, '_MOTIF_WM_HINTS', 0);
+  if atom = 0 then Exit;
+  XChangePropertyFn(dpy, win, atom, atom, 32, PropModeReplace, @hints[0], 5);
+  if Assigned(XFlushFn) then
+    XFlushFn(dpy);
+end;
+
 procedure ConfigurePlatformWindow(AForm: TCustomForm);
 var
   Widget: Pointer;
+  gw: TGdkWindow;
 begin
   if AForm = nil then Exit;
   if AForm.BorderStyle <> bsNone then Exit;
   if not AForm.HandleAllocated then Exit;
   if not EnsureGdk then Exit;
-{$IFDEF LCLGTK3}
-  if not TGtk3Widget(AForm.Handle).IsValidHandle then Exit;
-  Widget := Pointer(TGtk3Widget(AForm.Handle).Widget);
-{$ELSE}
-  Widget := Pointer(AForm.Handle);
-{$ENDIF}
+  Widget := GtkWidgetFromLCLHandle(AForm.Handle);
   if Widget = nil then Exit;
+  // 不要 gtk_window_set_titlebar(nil)：GTK3 会恢复默认 CSD 标题栏。
   if Assigned(GtkWindowSetDecorated) then
     GtkWindowSetDecorated(Widget, 0);
-  if Assigned(GtkWindowSetTitlebar) then
-    GtkWindowSetTitlebar(Widget, nil);
+  gw := GdkWindowFromLCLHandle(AForm.Handle);
+  if (gw <> nil) and Assigned(GdkWindowSetDecorations) then
+    GdkWindowSetDecorations(gw, 0);
+  ApplyMotifNoDecorations(AForm.Handle);
+  if Assigned(GtkWindowResize) and (AForm.Width > 0) and (AForm.Height > 0) then
+    GtkWindowResize(Widget, AForm.Width, AForm.Height);
+end;
+
+function PlatformWindowIsDecorated(AHandle: HWND): Boolean;
+var
+  Widget: Pointer;
+begin
+  Result := False;
+  if AHandle = 0 then Exit;
+  if not EnsureGdk then Exit;
+  Widget := GtkWidgetFromLCLHandle(AHandle);
+  if (Widget = nil) or not Assigned(GtkWindowGetDecorated) then Exit;
+  Result := GtkWindowGetDecorated(Widget) <> 0;
+end;
+
+function PlatformWindowHasTitlebar(AHandle: HWND): Boolean;
+var
+  Widget: Pointer;
+begin
+  Result := False;
+  if AHandle = 0 then Exit;
+  if not EnsureGdk then Exit;
+  Widget := GtkWidgetFromLCLHandle(AHandle);
+  if (Widget = nil) or not Assigned(GtkWindowGetTitlebar) then Exit;
+  Result := GtkWindowGetTitlebar(Widget) <> nil;
+end;
+
+function EwmhHasAbove(AHandle: HWND): Boolean;
+var
+  dpy: PDisplay;
+  win: TXID;
+  stateAtom, aboveAtom, actualType: PtrUInt;
+  actualFormat: Integer;
+  nitems, bytesAfter: PtrUInt;
+  prop: Pointer;
+  atoms: PPtrUInt;
+  i: Integer;
+begin
+  Result := False;
+  if QueryPlatformWindowBackend <> pwbX11 then Exit;
+  if not EnsureX11 then Exit;
+  if not Assigned(XGetWindowPropertyFn) then Exit;
+  win := XidFromHandle(AHandle, dpy);
+  if (win = 0) or (dpy = nil) then Exit;
+  stateAtom := XInternAtomFn(dpy, '_NET_WM_STATE', 0);
+  aboveAtom := XInternAtomFn(dpy, '_NET_WM_STATE_ABOVE', 0);
+  if (stateAtom = 0) or (aboveAtom = 0) then Exit;
+  actualType := 0;
+  actualFormat := 0;
+  nitems := 0;
+  bytesAfter := 0;
+  prop := nil;
+  if XGetWindowPropertyFn(dpy, win, stateAtom, 0, 64, 0, 0,
+    @actualType, @actualFormat, @nitems, @bytesAfter, @prop) <> 0 then
+    Exit;
+  if (prop <> nil) and (nitems > 0) then
+  begin
+    atoms := PPtrUInt(prop);
+    for i := 0 to Integer(nitems) - 1 do
+      if atoms[i] = aboveAtom then
+      begin
+        Result := True;
+        Break;
+      end;
+  end;
+  if (prop <> nil) and Assigned(XFreeFn) then
+    XFreeFn(prop);
+end;
+
+function PlatformWindowIsAbove(AHandle: HWND): Boolean;
+const
+  GDK_WINDOW_STATE_ABOVE = 64; // 1 shl 6
+var
+  gw: TGdkWindow;
+begin
+  Result := False;
+  if AHandle = 0 then Exit;
+  if not EnsureGdk then Exit;
+  gw := GdkWindowFromLCLHandle(AHandle);
+  if (gw <> nil) and Assigned(GdkWindowGetState) then
+  begin
+    if (GdkWindowGetState(gw) and GDK_WINDOW_STATE_ABOVE) <> 0 then
+      Exit(True);
+  end;
+  Result := EwmhHasAbove(AHandle);
+end;
+
+function PlatformGetWindowRect(AHandle: HWND; out R: TRect): Boolean;
+var
+  gw: TGdkWindow;
+  ox, oy: LongInt;
+  ww, hh: Integer;
+begin
+  Result := False;
+  R := Rect(0, 0, 0, 0);
+  if AHandle = 0 then Exit;
+  if not EnsureGdk then Exit;
+  gw := GdkWindowFromLCLHandle(AHandle);
+  if gw = nil then Exit;
+  ox := 0;
+  oy := 0;
+  if Assigned(GdkWindowGetOrigin) then
+    GdkWindowGetOrigin(gw, ox, oy);
+  ww := 0;
+  hh := 0;
+  if Assigned(GdkWindowGetWidth) then
+    ww := GdkWindowGetWidth(gw);
+  if Assigned(GdkWindowGetHeight) then
+    hh := GdkWindowGetHeight(gw);
+  if (ww <= 0) or (hh <= 0) then Exit;
+  R := Bounds(ox, oy, ww, hh);
+  Result := True;
+end;
+
+procedure PlatformMoveWindow(AHandle: HWND; AX, AY: Integer);
+var
+  Widget: Pointer;
+  dpy: PDisplay;
+  win: TXID;
+begin
+  if AHandle = 0 then Exit;
+  // 只走 gtk_window_move。再 XMoveWindow 会和 GTK/WM 抢位置，
+  // 配合 CSD 尺寸比会把坐标指数放大到 SmallInt 溢出。
+  Widget := GtkWidgetFromLCLHandle(AHandle);
+  if (Widget <> nil) and Assigned(GtkWindowMove) then
+  begin
+    GtkWindowMove(Widget, AX, AY);
+    Exit;
+  end;
+  if QueryPlatformWindowBackend <> pwbX11 then Exit;
+  win := XidFromHandle(AHandle, dpy);
+  if (win = 0) or (dpy = nil) or not Assigned(XMoveWindowFn) then Exit;
+  XMoveWindowFn(dpy, win, AX, AY);
+  if Assigned(XFlushFn) then
+    XFlushFn(dpy);
 end;
 
 procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);
@@ -490,17 +723,8 @@ begin
 end;
 
 procedure SetWindowAlwaysOnTop(AForm: TCustomForm; Enable: Boolean);
-const
-  ClientMessage = 33;
-  SubstructureNotify = 1 shl 19;
-  SubstructureRedirect = 1 shl 20;
-  _NET_WM_STATE_REMOVE = 0;
-  _NET_WM_STATE_ADD = 1;
 var
-  dpy: PDisplay;
-  win, root: TXID;
-  ev: TXClientMessageEvent;
-  action: LongInt;
+  Widget: Pointer;
 begin
   if AForm = nil then Exit;
   if Enable then
@@ -508,25 +732,15 @@ begin
   else
     AForm.FormStyle := fsNormal;
   if not AForm.HandleAllocated then Exit;
-  if QueryPlatformWindowBackend <> pwbX11 then Exit;
-  win := XidFromHandle(AForm.Handle, dpy);
-  if (win = 0) or (dpy = nil) then Exit;
-  FillChar(ev, SizeOf(ev), 0);
-  ev._type := ClientMessage;
-  ev.display := dpy;
-  ev.window := win;
-  ev.message_type := XInternAtomFn(dpy, '_NET_WM_STATE', 0);
-  ev.format := 32;
-  if Enable then action := _NET_WM_STATE_ADD else action := _NET_WM_STATE_REMOVE;
-  ev.data[0] := action;
-  ev.data[1] := XInternAtomFn(dpy, '_NET_WM_STATE_ABOVE', 0);
-  ev.data[2] := 0;
-  ev.data[3] := 1;
-  ev.data[4] := 0;
-  root := XDefaultRootWindowFn(dpy);
-  XSendEventFn(dpy, root, 0, SubstructureNotify or SubstructureRedirect, @ev);
-  if Assigned(XFlushFn) then
-    XFlushFn(dpy);
+  // 用 GTK 发 EWMH，不要手写 XClientMessageEvent：64 位布局不对会
+  // XSendEvent BadValue，GDK 直接把进程杀掉。
+  if not EnsureGdk then Exit;
+  if Assigned(GtkWindowSetKeepAbove) then
+  begin
+    Widget := GtkWidgetFromLCLHandle(AForm.Handle);
+    if Widget <> nil then
+      GtkWindowSetKeepAbove(Widget, Ord(Enable));
+  end;
 end;
 
 {$ENDIF}

@@ -41,6 +41,8 @@ type
     procedure MouseUp(Button: TMouseButton; Shift: TShiftState;
       X, Y: Integer); override;
     procedure MouseLeave; override;
+    procedure CreateWnd; override;
+    procedure DoShow; override;
 
     // 背景→HTCAPTION（系统拖动），按钮/滑块→HTCLIENT。
     procedure WMNCHitTest(var Msg: TLMessage); message LM_NCHITTEST;
@@ -88,7 +90,7 @@ type
 implementation
 
 uses
-  LCLProc, Math;
+  LCLProc, Math, UFormSnap;
 
 { ── EQ 预设（与 Qt EqualizerWindow::initPresets 一致）─────────────── }
 
@@ -198,6 +200,19 @@ begin
   bmp := FSkin^.EqualizerWindow.BackgroundPixmap;
   if bmp = nil then Exit;
   ApplyAlphaShape(Handle, bmp);
+end;
+
+procedure TEqualizerForm.CreateWnd;
+begin
+  inherited CreateWnd;
+  ConfigurePlatformWindow(Self);
+end;
+
+procedure TEqualizerForm.DoShow;
+begin
+  inherited DoShow;
+  ConfigurePlatformWindow(Self);
+  BuildRegion;
 end;
 
 procedure TEqualizerForm.RenderFrame;
@@ -473,6 +488,8 @@ begin
     end;
   end;
   inherited MouseDown(Button, Shift, X, Y);
+  if Button = mbLeft then
+    TryBeginCaptionDrag(Self, X, Y);
 end;
 
 procedure TEqualizerForm.MouseMove(Shift: TShiftState; X, Y: Integer);
@@ -640,7 +657,12 @@ begin
 
   if HitTest(pt.X, pt.Y, hitName, hitElem, hitIsSlider,
              hitMinV, hitMaxV, hitIsVert) then
-    Msg.Result := HTCLIENT
+  begin
+    if hitIsSlider and (not FEqEnabled) and IsGatedEqSlider(hitName) then
+      Msg.Result := HTCAPTION
+    else
+      Msg.Result := HTCLIENT;
+  end
   else
     Msg.Result := HTCAPTION;
 end;

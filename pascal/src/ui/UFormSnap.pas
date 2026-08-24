@@ -3,21 +3,18 @@ unit UFormSnap;
 {$mode objfpc}{$H+}
 
 // LCL 窗口与 TWindowSnapManager 的桥：
-//   TFormSnapWindow  — ISnapWindow 适配 TForm；DPI≠100% 时用 GetWindowRect
-//                      换算到 LCL 单位，MoveTo 再用 SetWindowPos 写回物理像素
-//   TSnapFormAdapter — 截获拖动：Windows 上子类化原生 WndProc 收取
-//                      WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE（LCL WindowProc
-//                      收不到跨进程 SendMessage 的这两条）；LM_MOVE 仍走 LCL
-//
-// GTK3/XWayland 上 WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE 不会到达；HTCAPTION
-// 拖动也不走 Win32 系统移动。程序化 OnDragStarted/MoveTo/OnDragFinished 仍可用。
+//   TFormSnapWindow  — ISnapWindow 适配 TForm；Windows 用 GetWindowRect
+//                      做 DPI 换算，GTK3/X11 直接用 LCL 坐标（同一像素空间）
+//   TSnapFormAdapter — Windows：子类化原生 WndProc 收 WM_ENTER/EXITSIZEMOVE
+//                      GTK3/X11：TryBeginCaptionDrag 模拟 HTCAPTION 拖动，
+//                      松手走 OnDragFinished（与 Windows 吸附同一套）
 // Linux 只支持 X11（见 UGdkX11Backend）。探测：tools/test-gtk3-wayland.sh。
 
 interface
 
 uses
   Classes, SysUtils, Forms, Controls, LCLType, LCLIntf, LMessages, Types,
-  UWindowSnapMath, UWindowSnapManager;
+  UWindowSnapMath, UWindowSnapManager, UPlatformWindow;
 
 type
   TFormSnapWindow = class(TInterfacedObject, ISnapWindow)
@@ -46,6 +43,8 @@ type
     FNativeHooked: Boolean;
     FHookedWnd: HWND;
     FOrigWndProc: PtrUInt;
+    FCaptionDragging: Boolean;
+    FGrabOffX, FGrabOffY: Integer;
     procedure WndProc(var Msg: TLMessage);
     procedure HandleShow(Sender: TObject);
     procedure HandleHide(Sender: TObject);
@@ -58,12 +57,18 @@ type
     constructor Create(AForm: TForm; AManager: TWindowSnapManager;
       AWin: ISnapWindow; AIsMain: Boolean); reintroduce;
     destructor Destroy; override;
+    procedure BeginCaptionDrag;
+    procedure EndCaptionDrag;
   end;
 
 function HookSnapWindow(AForm: TForm; AManager: TWindowSnapManager;
   AIsMain: Boolean): ISnapWindow;
 
 function ResizeEdgesOf(RightEdge, BottomEdge: Boolean): TSnapEdges;
+
+// GTK3：WMNCHitTest 的 HTCAPTION 不会启动系统拖动。皮肤窗在 MouseDown
+// 里调用本函数，命中标题区则走与 Windows 相同的 OnDragStarted/Finished。
+procedure TryBeginCaptionDrag(AForm: TForm; ClientX, ClientY: Integer);
 
 implementation
 
@@ -91,38 +96,49 @@ begin
 end;
 
 function TFormSnapWindow.GetBounds: TSnapRect;
+{$IFDEF WINDOWS}
 var
   wr: TRect;
   pw, ph: Integer;
+{$ENDIF}
 begin
   Result := SnapRectXYWH(FForm.Left, FForm.Top, FForm.Width, FForm.Height);
+{$IFDEF WINDOWS}
+  // Win：GetWindowRect 是物理像素，LCL Left/Width 是 96dpi 逻辑像素。
   if (FForm = nil) or (not FForm.HandleAllocated) then Exit;
   wr := Types.Rect(0, 0, 0, 0);
-  if LCLIntf.GetWindowRect(FForm.Handle, wr) = 0 then Exit;
+  if not PlatformGetWindowRect(FForm.Handle, wr) then Exit;
   pw := wr.Right - wr.Left;
   ph := wr.Bottom - wr.Top;
   if (pw <= 0) or (ph <= 0) or (FForm.Width <= 0) or (FForm.Height <= 0) then
     Exit;
-  // DPI≠100% 时 Win32 矩形是物理像素，LCL Left/Width 是 96dpi。
-  // 用实际窗口位置换算到 LCL 单位，这样外部 SetWindowPos 也能参与吸附。
   Result.X := Round(wr.Left * FForm.Width / pw);
   Result.Y := Round(wr.Top * FForm.Height / ph);
   Result.W := FForm.Width;
   Result.H := FForm.Height;
+{$ENDIF}
+  // UNIX/GTK3：LCL 与 X11 同一像素空间。CSD 会撑大 GdkWindow，
+  // 若按 native/LCL 比例换算坐标会指数膨胀，超出 SmallInt。
 end;
 
 procedure TFormSnapWindow.MoveTo(AX, AY: Integer);
+{$IFDEF WINDOWS}
 var
   wr: TRect;
   pw, ph, physX, physY: Integer;
+{$ENDIF}
 begin
   if FForm = nil then Exit;
+  // LCL SendMoveSizeMessages 把 Left/Top 塞进 SmallInt。
+  if (AX < Low(SmallInt)) or (AX > High(SmallInt)) or
+     (AY < Low(SmallInt)) or (AY > High(SmallInt)) then
+    Exit;
   if (FForm.Left <> AX) or (FForm.Top <> AY) then
     FForm.SetBounds(AX, AY, FForm.Width, FForm.Height);
-  {$IFDEF WINDOWS}
+{$IFDEF WINDOWS}
   if not FForm.HandleAllocated then Exit;
   wr := Types.Rect(0, 0, 0, 0);
-  if LCLIntf.GetWindowRect(FForm.Handle, wr) = 0 then Exit;
+  if not PlatformGetWindowRect(FForm.Handle, wr) then Exit;
   pw := wr.Right - wr.Left;
   ph := wr.Bottom - wr.Top;
   if (pw <= 0) or (ph <= 0) or (FForm.Width <= 0) or (FForm.Height <= 0) then
@@ -130,9 +146,8 @@ begin
   physX := Round(AX * pw / FForm.Width);
   physY := Round(AY * ph / FForm.Height);
   if (wr.Left <> physX) or (wr.Top <> physY) then
-    Windows.SetWindowPos(FForm.Handle, 0, physX, physY, 0, 0,
-      SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
-  {$ENDIF}
+    PlatformMoveWindow(FForm.Handle, physX, physY);
+{$ENDIF}
 end;
 
 procedure TFormSnapWindow.ResizeTo(AW, AH: Integer);
@@ -170,6 +185,9 @@ begin
   FIsMain := AIsMain;
   FLastX := AForm.Left;
   FLastY := AForm.Top;
+  FCaptionDragging := False;
+  FGrabOffX := 0;
+  FGrabOffY := 0;
   FOldProc := AForm.WindowProc;
   AForm.WindowProc := @WndProc;
   FPrevShow := AForm.OnShow;
@@ -182,6 +200,12 @@ end;
 
 destructor TSnapFormAdapter.Destroy;
 begin
+  if FCaptionDragging then
+  begin
+    FCaptionDragging := False;
+    if FForm.HandleAllocated and (GetCapture = FForm.Handle) then
+      ReleaseCapture;
+  end;
   RemoveNativeHook;
   if Assigned(FForm) then
   begin
@@ -295,11 +319,38 @@ begin
 end;
 {$ENDIF}
 
+procedure TSnapFormAdapter.BeginCaptionDrag;
+var
+  b: TSnapRect;
+begin
+  {$IFDEF WINDOWS}
+  Exit;
+  {$ENDIF}
+  if FCaptionDragging or (FForm = nil) or (FWin = nil) then Exit;
+  b := FWin.GetBounds;
+  FGrabOffX := Mouse.CursorPos.X - b.X;
+  FGrabOffY := Mouse.CursorPos.Y - b.Y;
+  FCaptionDragging := True;
+  if FForm.HandleAllocated then
+    SetCapture(FForm.Handle);
+  HandleEnterSizeMove;
+end;
+
+procedure TSnapFormAdapter.EndCaptionDrag;
+begin
+  if not FCaptionDragging then Exit;
+  FCaptionDragging := False;
+  if FForm.HandleAllocated and (GetCapture = FForm.Handle) then
+    ReleaseCapture;
+  HandleExitSizeMove;
+end;
+
 procedure TSnapFormAdapter.HandleShow(Sender: TObject);
 begin
   if Assigned(FPrevShow) then
     FPrevShow(Sender);
   InstallNativeHook;
+  ConfigurePlatformWindow(FForm);
   UpdateScreenRect;
   if FManager <> nil then
     FManager.RebuildSnapGraph;
@@ -323,6 +374,16 @@ begin
 
   FOldProc(Msg);
 
+  if FCaptionDragging then
+  begin
+    if Msg.Msg = LM_MOUSEMOVE then
+    begin
+      FWin.MoveTo(Mouse.CursorPos.X - FGrabOffX, Mouse.CursorPos.Y - FGrabOffY);
+    end
+    else if (Msg.Msg = LM_LBUTTONUP) or (Msg.Msg = LM_CAPTURECHANGED) then
+      EndCaptionDrag;
+  end;
+
   if Msg.Msg = LM_MOVE then
   begin
     b := FWin.GetBounds;
@@ -340,6 +401,39 @@ begin
   end
   else if Msg.Msg = WM_EXITSIZEMOVE then
     HandleExitSizeMove;
+end;
+
+function FindSnapAdapter(AForm: TForm): TSnapFormAdapter;
+var
+  i: Integer;
+begin
+  Result := nil;
+  if AForm = nil then Exit;
+  for i := 0 to AForm.ComponentCount - 1 do
+    if AForm.Components[i] is TSnapFormAdapter then
+      Exit(TSnapFormAdapter(AForm.Components[i]));
+end;
+
+procedure TryBeginCaptionDrag(AForm: TForm; ClientX, ClientY: Integer);
+{$IFNDEF WINDOWS}
+var
+  A: TSnapFormAdapter;
+  pt: TPoint;
+  lp: LPARAM;
+{$ENDIF}
+begin
+{$IFDEF WINDOWS}
+  Exit;
+{$ELSE}
+  if AForm = nil then Exit;
+  if GetCapture <> 0 then Exit;
+  pt := AForm.ClientToScreen(Point(ClientX, ClientY));
+  lp := LPARAM(Word(SmallInt(pt.X))) or (LPARAM(Word(SmallInt(pt.Y))) shl 16);
+  if AForm.Perform(LM_NCHITTEST, 0, lp) <> HTCAPTION then Exit;
+  A := FindSnapAdapter(AForm);
+  if A <> nil then
+    A.BeginCaptionDrag;
+{$ENDIF}
 end;
 
 function HookSnapWindow(AForm: TForm; AManager: TWindowSnapManager;

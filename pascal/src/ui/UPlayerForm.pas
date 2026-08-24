@@ -5,7 +5,7 @@ unit UPlayerForm;
 // 主播放器窗口，对应 Qt 版 src/ui/PlayerWindow。
 // 无边框自绘，通过色键生成 Windows Region 实现异形窗口。
 // 绘制由 USkinRender 离屏合成，直接贴到 LCL Canvas（BGRABitmap.Draw）。
-// 拖动通过 WMNCHitTest 返回 HTCAPTION 实现，由系统处理。
+// 拖动：Windows 上 WMNCHitTest=HTCAPTION 由系统处理；GTK3 走 TryBeginCaptionDrag。
 
 interface
 
@@ -38,8 +38,10 @@ type
     procedure MouseUp(Button: TMouseButton; Shift: TShiftState;
       X, Y: Integer); override;
     procedure MouseLeave; override;
+    procedure CreateWnd; override;
+    procedure DoShow; override;
 
-    // 拖动：背景区域返回 HTCAPTION，让系统处理窗口移动。
+    // 拖动：背景区域返回 HTCAPTION（Win 系统拖动 / GTK3 TryBeginCaptionDrag）。
     procedure WMNCHitTest(var Msg: TLMessage); message LM_NCHITTEST;
 
   private
@@ -73,7 +75,7 @@ type
 implementation
 
 uses
-  LCLProc, Math;
+  LCLProc, Math, UFormSnap;
 
 { TPlayerForm }
 
@@ -157,6 +159,19 @@ begin
   bmp := FSkin^.PlayerWindow.BackgroundPixmap;
   if bmp = nil then Exit;
   ApplyAlphaShape(Handle, bmp);
+end;
+
+procedure TPlayerForm.CreateWnd;
+begin
+  inherited CreateWnd;
+  ConfigurePlatformWindow(Self);
+end;
+
+procedure TPlayerForm.DoShow;
+begin
+  inherited DoShow;
+  ConfigurePlatformWindow(Self);
+  BuildRegion;
 end;
 
 // 离屏合成当前帧到 FFrame。
@@ -333,6 +348,8 @@ begin
     end;
   end;
   inherited MouseDown(Button, Shift, X, Y);
+  if Button = mbLeft then
+    TryBeginCaptionDrag(Self, X, Y);
 end;
 
 procedure TPlayerForm.MouseUp(Button: TMouseButton; Shift: TShiftState;
@@ -372,9 +389,9 @@ begin
   inherited MouseLeave;
 end;
 
-// 拖动实现：背景区域（无命中按钮）返回 HTCAPTION，
-// 系统将后续鼠标事件解释为标题栏拖动（无需 ReleaseCapture）。
-// 按钮区域返回 HTCLIENT，LCL 继续分发 MouseDown/Up 事件。
+// 拖动：背景返回 HTCAPTION。Windows 由系统拖动；GTK3 在 MouseDown
+// 里 TryBeginCaptionDrag 捕获鼠标并走 OnDragStarted/Finished。
+// 按钮区域返回 HTCLIENT，LCL 继续分发 MouseDown/Up。
 procedure TPlayerForm.WMNCHitTest(var Msg: TLMessage);
 var
   pt: TPoint;

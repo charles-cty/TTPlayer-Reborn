@@ -67,23 +67,37 @@ def main() -> int:
         if nw <= 0 or nh <= 0:
             errors.append(f"{name}: native size {nw}x{nh}")
         elif abs(nw - lw) > 24 or abs(nh - lh) > 24:
-            notes.append(
-                f"{name}: native {nw}x{nh} vs LCL {lw}x{lh} (CSD/frame extents)"
+            errors.append(
+                f"{name}: native {nw}x{nh} vs LCL {lw}x{lh} (CSD/frame still on)"
             )
+        if w.get("decorated"):
+            errors.append(f"{name}: gtk_window decorated still true")
+        if w.get("has_titlebar"):
+            errors.append(f"{name}: CSD titlebar present")
 
     if data.get("backend") == "wayland":
         errors.append("backend=wayland; Linux target is XWayland/X11 only")
 
+    if args.expect_backend == "x11" and not data.get("always_on_top_native"):
+        errors.append("always_on_top_native is false")
+    player = wins.get("player") or {}
+    if args.expect_backend == "x11" and player.get("present") and not player.get(
+        "ewmh_above"
+    ):
+        notes.append(
+            "player keep_above not in _NET_WM_STATE "
+            "(WM may ignore ABOVE, e.g. WSLg Weston)"
+        )
+
     snap = data.get("snap") or {}
     gap_after = snap.get("gap_after")
-    snapped = bool(snap.get("snapped"))
     if args.expect_backend == "x11":
-        if gap_after not in (0, -0, 0.0) and not snapped:
-            msg = f"programmatic snap did not close gap (gap_after={gap_after})"
-            if args.strict_snap:
-                errors.append(msg)
-            else:
-                notes.append(msg)
+        if gap_after is None:
+            errors.append("snap gap_after missing")
+        elif abs(int(gap_after)) > 1:
+            errors.append(
+                f"programmatic snap did not close gap (gap_after={gap_after})"
+            )
 
     print(
         "probe",

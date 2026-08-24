@@ -45,6 +45,8 @@ type
     procedure DblClick; override;
     function DoMouseWheel(Shift: TShiftState; WheelDelta: Integer;
       MousePos: TPoint): Boolean; override;
+    procedure CreateWnd; override;
+    procedure DoShow; override;
 
     procedure WMNCHitTest(var Msg: TLMessage); message LM_NCHITTEST;
 
@@ -225,6 +227,9 @@ type
 
 implementation
 
+uses
+  UFormSnap;
+
 const
   kResizeSense              = 8;
   kPlaylistMinW             = 200;
@@ -381,6 +386,19 @@ begin
   finally
     if own then bmp.Free;
   end;
+end;
+
+procedure TPlaylistForm.CreateWnd;
+begin
+  inherited CreateWnd;
+  ConfigurePlatformWindow(Self);
+end;
+
+procedure TPlaylistForm.DoShow;
+begin
+  inherited DoShow;
+  ConfigurePlatformWindow(Self);
+  BuildRegion;
 end;
 
 procedure TPlaylistForm.InvalidateFrame;
@@ -1753,6 +1771,8 @@ begin
     end;
   end;
   inherited MouseDown(Button, Shift, X, Y);
+  if Button = mbLeft then
+    TryBeginCaptionDrag(Self, X, Y);
 end;
 
 procedure TPlaylistForm.DblClick;

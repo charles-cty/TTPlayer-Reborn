@@ -32,7 +32,7 @@ LCL GTK3 后端在以下方面已知不稳定：
 - CSD（客户端装饰）可能引入隐性坐标 margin，影响窗口吸附计算
 - **HWND 不是 `GtkWidget*`**：GTK2 的 `Handle` 是控件指针；GTK3 的 `Handle` 是 `TGtk3Widget` 对象。对 Handle 直接调用 `gtk_widget_get_window` 会 `GTK_IS_WIDGET` 失败，严重时 Access violation（`G_DEBUG=fatal-criticals` 下为 SIGTRAP）
 
-绕行方案：`UGdkX11Backend` 在 `Interfaces` 之前强制 `GDK_BACKEND=x11` 和 `GTK_CSD=0`（关掉客户区装饰）。Shape/置顶/EWMH 直接调 X11；句柄转换见 `GdkWindowFromLCLHandle`（`TGtk3Widget.Widget` / `GetWindow`）。平台代码隔离在 `src/ui/platform`。原生 Wayland 不在支持范围。
+绕行方案：`UGdkX11Backend` 在 `Interfaces` 之前强制 `GDK_BACKEND=x11` 和 `GTK_CSD=0`。`ConfigurePlatformWindow` 再关 decorated / Motif 装饰（不要 `set_titlebar(nil)`）。Shape/置顶走 X11 + `gtk_window_set_keep_above`；拖动走 LCL capture。句柄转换见 `GdkWindowFromLCLHandle`。原生 Wayland 不在支持范围。
 
 ---
 
@@ -96,7 +96,7 @@ Lazarus 工程（全自绘）
 - 独立双轴吸附、主窗口联动组、子窗口单独拖动、松手吸附、屏幕边缘、缩放吸附
 - 几何与图结构可在 NoLCL FPCUnit 中验证（MR-4）
 - Windows：`TSnapFormAdapter` 子类化原生 WndProc 收取 `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE`（LCL `WindowProc` 收不到跨进程 `SendMessage`）；DPI≠100% 时 `GetBounds`/`MoveTo` 在 LCL 逻辑像素与 `GetWindowRect` 物理像素之间换算
-- `src/ui/platform/`：Win `SetWindowRgn`；Linux 仅 X11 Shape + EWMH（`UGdkX11Backend` 强制 XWayland）。GTK3 无 `WM_ENTER/EXITSIZEMOVE` / `HTCAPTION`，程序化 `OnDragFinished` 仍可用
+- `src/ui/platform/`：Win `SetWindowRgn`；Linux 仅 X11 Shape + EWMH（`UGdkX11Backend` 强制 XWayland）。GTK3 用 `TryBeginCaptionDrag`（LCL capture）对齐 Windows 的 HTCAPTION + `OnDragStarted/Finished`；`PlatformGetWindowRect` 用 GDK client 几何，避开 CSD frame_extents
 
 **Step 7（推迟）**：ttcore 抽库 + FFI 对接，替换 TStubBackend。音频核与 GUI 解耦，可等 GUI 与测试补齐后再做。
 
@@ -152,11 +152,14 @@ Lazarus 工程（全自绘）
 
 | 探测 | 结果 |
 |---|---|
-| `skinpreview --probe` | `backend=x11`，`shape_supported=true`；四窗口须在 |
-| 句柄 AV | 已修：LCL GTK3 `Handle` 是 `TGtk3Widget`，不能当 `GtkWidget*` 传给 `gtk_widget_get_window` |
+| `skinpreview --probe` | `backend=x11`，`shape_supported=true`；四窗口须在；程序化吸附须合缝 |
+| 无边框 | `CreateWnd`/`DoShow` 调 `ConfigurePlatformWindow`：`gtk_window_set_decorated(0)` + Motif 去装饰。禁止 `gtk_window_set_titlebar(nil)`（会恢复 CSD） |
+| 拖动 / 吸附 | `TryBeginCaptionDrag` 按 `WMNCHitTest=HTCAPTION` 捕获鼠标，走同一套 `OnDragStarted/Move/Finished` |
+| 置顶 | `gtk_window_set_keep_above`（GDK 发 EWMH）。WSLg Weston 可能忽略 `_NET_WM_STATE_ABOVE` |
+| 句柄 AV | 已修：LCL GTK3 `Handle` 是 `TGtk3Widget` |
 | 仍有的 LCL 噪音 | `gdk_pixbuf_get_from_surface` 0 尺寸 CRITICAL；ComboBox `GtkCssCustomGadget` 的 `set_has_window` |
 
-未做：GTK3 标题栏拖动（`gtk_window_begin_move_drag`）、鼠标拖动吸附、非 WSLg 的实体 Linux 桌面。
+未做：非 WSLg 的实体 Linux 桌面；原生 Wayland 客户端。
 
 **下一步**：Step 7（ttcore 抽库 + FFI 对接，替换 `TStubBackend`）。元数据加载器随 TagLib/ttcore 一起做。
 

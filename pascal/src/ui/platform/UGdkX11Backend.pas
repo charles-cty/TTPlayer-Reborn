@@ -4,7 +4,8 @@ unit UGdkX11Backend;
 
 // 必须排在 program uses 里 Interfaces 之前：GTK 在 widgetset 初始化时读环境。
 // Linux 只走 X11（桌面 XWayland 或原生 Xorg），不支持 Wayland 客户端。
-// GDK_BACKEND=x11；GTK_CSD=0 关掉客户区装饰（WSLg 上 GetWindowRect 仍可能含阴影）。
+// GDK_BACKEND=x11；GTK_CSD=0。bsNone 窗口再由 ConfigurePlatformWindow
+// 关 decorated / Motif 装饰；不要 gtk_window_set_titlebar(nil)（会恢复 CSD）。
 
 interface
 
