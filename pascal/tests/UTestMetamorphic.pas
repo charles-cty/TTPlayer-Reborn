@@ -44,6 +44,8 @@ type
     procedure TestTransparentColorSwap;
     // MR-3：解析位置坐标与背景图尺寸无关
     procedure TestPositionIndependentOfImageSize;
+    // 最近邻拉伸不得越界（BGRA rmSimpleStretch 在 1px 高图上会 AV）
+    procedure TestNearestResampleThin;
   end;
 
 implementation
@@ -300,6 +302,46 @@ begin
     thumb.Free;
     FreeSkinData(skinSmall);
     FreeSkinData(skinLarge);
+  end;
+end;
+
+procedure TMetamorphicTest.TestNearestResampleThin;
+var
+  src, dst: TBGRABitmap;
+  i: Integer;
+begin
+  // 1px 高条在 150% 下会走到 BGRA SimpleStretch 的越界 ScanLine。
+  src := TBGRABitmap.Create(8, 1, BGRA(200, 10, 20, 255));
+  try
+    dst := NearestResample(src, 12, 2);
+    try
+      AssertEquals(12, dst.Width);
+      AssertEquals(2, dst.Height);
+      for i := 0 to 11 do
+      begin
+        AssertEquals(200, dst.GetPixel(i, 0).red);
+        AssertEquals(200, dst.GetPixel(i, 1).red);
+      end;
+    finally
+      dst.Free;
+    end;
+  finally
+    src.Free;
+  end;
+
+  src := TBGRABitmap.Create(275, 116, BGRA(1, 2, 3, 255));
+  try
+    dst := NearestResample(src, 413, 174);
+    try
+      AssertEquals(413, dst.Width);
+      AssertEquals(174, dst.Height);
+      AssertEquals(1, dst.GetPixel(0, 0).red);
+      AssertEquals(1, dst.GetPixel(412, 173).red);
+    finally
+      dst.Free;
+    end;
+  finally
+    src.Free;
   end;
 end;
 

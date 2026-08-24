@@ -41,10 +41,12 @@ procedure NotifySkinViewScale(AForm: TForm);
 
 implementation
 
-{$IFDEF WINDOWS}
 uses
-  Windows;
+  USkinRender
+{$IFDEF WINDOWS}
+  , Windows
 {$ENDIF}
+  ;
 
 function EnvGdkScale: Integer;
 var
@@ -173,7 +175,7 @@ begin
     Exit;
   end;
   if (Dest.Width < 1) or (Dest.Height < 1) then Exit;
-  scaled := Src.Resample(Dest.Width, Dest.Height, rmSimpleStretch);
+  scaled := NearestResample(Src, Dest.Width, Dest.Height);
   try
     Dest.PutImage(0, 0, scaled, dmSet);
   finally
@@ -196,7 +198,7 @@ begin
     Dest.PutImage(DestR.Left, DestR.Top, Src, Mode);
     Exit;
   end;
-  scaled := Src.Resample(dw, dh, rmSimpleStretch);
+  scaled := NearestResample(Src, dw, dh);
   try
     Dest.PutImage(DestR.Left, DestR.Top, scaled, Mode);
   finally
@@ -216,8 +218,8 @@ begin
     Frame.Draw(ACanvas, 0, 0, True);
     Exit;
   end;
-  // 最近邻：皮肤是像素图，HALFTONE/双线性会把字和 LED 拉糊。
-  scaled := Frame.Resample(DestW, DestH, rmSimpleStretch);
+  // 最近邻：皮肤是像素图。不用 BGRA rmSimpleStretch（上采样会 AV）。
+  scaled := NearestResample(Frame, DestW, DestH);
   try
     scaled.Draw(ACanvas, 0, 0, True);
   finally

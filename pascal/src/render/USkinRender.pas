@@ -66,6 +66,10 @@ procedure DrawNinePatch(Dest: TBGRABitmap;
   Base: TBGRABitmap; const RR: TSkinRect; Tile: Boolean;
   DestW, DestH: Integer; ExclusiveMids: Boolean = False);
 
+// 最近邻放大/缩小。不要用 BGRA `Resample(..., rmSimpleStretch)`：
+// 它对 1px 高/宽图和一般上采样会读越界 ScanLine，Windows DPI≠100% 即 AV。
+function NearestResample(Src: TBGRABitmap; DestW, DestH: Integer): TBGRABitmap;
+
 // Qt alignedRect：按 align 把内容矩形放到当前窗口中。
 // ContentW/H<=0 时退回 BaseRect 的宽高。
 function AlignedRect(const BaseRect: TSkinRect;
@@ -203,6 +207,41 @@ begin
   Dest.InvalidateBitmap;
 end;
 
+function NearestResample(Src: TBGRABitmap; DestW, DestH: Integer): TBGRABitmap;
+var
+  x, y, sx, sy: Integer;
+  p, sp: PBGRAPixel;
+begin
+  if DestW < 1 then DestW := 1;
+  if DestH < 1 then DestH := 1;
+  Result := TBGRABitmap.Create(DestW, DestH);
+  if (Src = nil) or (Src.Width < 1) or (Src.Height < 1) then
+    Exit;
+  if (Src.Width = DestW) and (Src.Height = DestH) then
+  begin
+    Result.PutImage(0, 0, Src, dmSet);
+    Exit;
+  end;
+  for y := 0 to DestH - 1 do
+  begin
+    // Qt fast transform：src = floor((d+0.5)*sw/dw - 0.5)，再夹到扫描行。
+    sy := ((Int64(2) * y + 1) * Src.Height - DestH) div (Int64(2) * DestH);
+    if sy < 0 then sy := 0;
+    if sy > Src.Height - 1 then sy := Src.Height - 1;
+    sp := Src.ScanLine[sy];
+    p := Result.ScanLine[y];
+    for x := 0 to DestW - 1 do
+    begin
+      sx := ((Int64(2) * x + 1) * Src.Width - DestW) div (Int64(2) * DestW);
+      if sx < 0 then sx := 0;
+      if sx > Src.Width - 1 then sx := Src.Width - 1;
+      p^ := (sp + sx)^;
+      Inc(p);
+    end;
+  end;
+  Result.InvalidateBitmap;
+end;
+
 // 等价于 QPainter::drawPixmap(destRect, pixmap)（无平滑变换）：
 // 最近邻缩放。Qt fast transform 以目标像素中心反算源坐标：
 // src = floor((d + 0.5) * sw / dw)。
@@ -210,10 +249,10 @@ procedure QtStretchPutImage(Dest: TBGRABitmap; const DestRect: TRect;
   Src: TBGRABitmap);
 var
   tmp: TBGRABitmap;
-  dw, dh, x, y, sx, sy: Integer;
-  p: PBGRAPixel;
+  dw, dh: Integer;
 begin
-  if Src = nil then Exit;
+  if (Src = nil) or (Dest = nil) then Exit;
+  if (Src.Width < 1) or (Src.Height < 1) then Exit;
   dw := DestRect.Right - DestRect.Left;
   dh := DestRect.Bottom - DestRect.Top;
   if (dw <= 0) or (dh <= 0) then Exit;
@@ -224,25 +263,8 @@ begin
     Exit;
   end;
 
-  tmp := TBGRABitmap.Create(dw, dh);
+  tmp := NearestResample(Src, dw, dh);
   try
-    for y := 0 to dh - 1 do
-    begin
-      // Qt fast transform 定点映射：src = floor((d+0.5)*sw/dw - 0.5)
-      sy := ((2 * y + 1) * Src.Height - dh) div (2 * dh);
-      if sy < 0 then sy := 0;
-      if sy > Src.Height - 1 then sy := Src.Height - 1;
-      p := tmp.ScanLine[y];
-      for x := 0 to dw - 1 do
-      begin
-        sx := ((2 * x + 1) * Src.Width - dw) div (2 * dw);
-        if sx < 0 then sx := 0;
-        if sx > Src.Width - 1 then sx := Src.Width - 1;
-        p^ := Src.GetPixel(sx, sy);
-        Inc(p);
-      end;
-    end;
-    tmp.InvalidateBitmap;
     QtPutImage(Dest, DestRect.Left, DestRect.Top, tmp);
   finally
     tmp.Free;

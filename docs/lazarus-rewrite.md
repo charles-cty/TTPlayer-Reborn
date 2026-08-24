@@ -144,7 +144,7 @@ Lazarus 工程（全自绘）
 | Qt SkinDumper | `src/tools/SkinDumper.{h,cpp}` + `--dump-skin` |
 | Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames`（捕帧前 `clearMask`，playlist/lyric 按 `baseSize`） |
 | Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
-| 测试（Windows 48/48；Linux FPCUnit 70/70，含 AlphaShape + DpiScale） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5）；Linux：`tools/test-gtk3-wayland.sh` |
+| 测试（Windows 48/48；Linux FPCUnit 71/71，含 AlphaShape + DpiScale + NearestResample） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5）；Linux：`tools/test-gtk3-wayland.sh` |
 
 **GTK3 + XWayland（WSL2/WSLg，2026-08-24）**
 
