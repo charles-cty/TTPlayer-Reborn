@@ -6,6 +6,8 @@ unit UEqualizerForm;
 // 无边框自绘，异形 Region 色键；10 波段垂直 EQ 滑块 + preamp/balance/surround 滑块。
 // 拖动通过 WMNCHitTest 返回 HTCAPTION 实现（同 UPlayerForm）。
 // 滑块拖动：MouseDown 捕获鼠标，MouseMove 从绝对坐标计算值，MouseUp 释放。
+// EQ 关闭时（原版行为）：preamp 与十波段不可调，点击落在 HTCAPTION；
+// balance / surround 以及预设/复位按钮仍可用。
 
 interface
 
@@ -77,6 +79,8 @@ type
       out hitMinV, hitMaxV: Double; out hitIsVert: Boolean): Boolean;
 
     function IsEqButton(const AName: string): Boolean;
+    // 原版/Qt：EQ 关闭时前置增益与十波段不可调；balance/surround 仍可。
+    function IsGatedEqSlider(const AName: string): Boolean;
     procedure FireButtonClick(const AName: string; MouseX, MouseY: Integer);
   end;
 
@@ -128,7 +132,7 @@ begin
   FPreamp    := 0;
   FBalance   := 0;
   FSurround  := 0;
-  FEqEnabled := True;
+  FEqEnabled := False;  // 与 Qt Equalizer::enabled_ / Config.eqEnabled_ 默认一致
 
   FDrag.SliderName := '';
   FMouseCaptured   := False;
@@ -306,6 +310,12 @@ begin
   Result := False;
 end;
 
+function TEqualizerForm.IsGatedEqSlider(const AName: string): Boolean;
+begin
+  Result := SameText(AName, 'preamp') or
+            ((Length(AName) >= 3) and (LowerCase(Copy(AName, 1, 2)) = 'eq'));
+end;
+
 // 综合命中测试：按钮优先，其次各类滑块。
 // 用 PX/PY 而非 X/Y 避免与 TSkinRect 的字段名冲突。
 function TEqualizerForm.HitTest(PX, PY: Integer;
@@ -344,9 +354,9 @@ begin
     end;
   end;
 
-  // ── 2. Preamp 滑块（垂直，-12..+12）────────────────────────────────
+  // ── 2. Preamp 滑块（垂直，-12..+12；EQ 关闭时不命中，交给 HTCAPTION）
   ep := wnd.FindElement('preamp');
-  if ep <> nil then
+  if (ep <> nil) and FEqEnabled then
   begin
     pos := ep^.Position;
     if (PX >= pos.X) and (PX < pos.X + pos.W) and
@@ -398,9 +408,9 @@ begin
     end;
   end;
 
-  // ── 5. EQ factor 滑块（垂直 × 10，-12..+12）─────────────────────────
+  // ── 5. EQ factor 滑块（垂直 × 10，-12..+12；EQ 关闭时不命中）────────
   ep := wnd.FindElement('eqfactor');
-  if ep <> nil then
+  if (ep <> nil) and FEqEnabled then
     for band := 0 to 9 do
     begin
       bandRect := EqFactorRect(ep^, band, wnd.EqInterval);
@@ -469,13 +479,16 @@ begin
     begin
       if hitIsSlider then
       begin
-        FDrag.SliderName := hitName;
-        FDrag.SliderElem := hitElem;
-        FDrag.MinV       := hitMinV;
-        FDrag.MaxV       := hitMaxV;
-        FDrag.IsVert     := hitIsVert;
-        SetCapture(Handle);
-        FMouseCaptured := True;
+        if FEqEnabled or (not IsGatedEqSlider(hitName)) then
+        begin
+          FDrag.SliderName := hitName;
+          FDrag.SliderElem := hitElem;
+          FDrag.MinV       := hitMinV;
+          FDrag.MaxV       := hitMaxV;
+          FDrag.IsVert     := hitIsVert;
+          SetCapture(Handle);
+          FMouseCaptured := True;
+        end;
       end
       else
       begin
