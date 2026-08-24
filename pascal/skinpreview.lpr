@@ -8,11 +8,11 @@ program skinpreview;
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   Interfaces,
-  Classes, SysUtils, Forms, Controls, StdCtrls, ExtCtrls, Dialogs,
-  LazFileUtils, LazUTF8,
+  Classes, SysUtils, Forms, Controls, StdCtrls, ExtCtrls, Dialogs, Types,
+  LazFileUtils, LazUTF8, LCLIntf,
   USkinTypes, USkinLoader, UPlayerForm, UEqualizerForm, ULyricForm,
   UVisualWidget, UPlaylistForm, UPlayerBackend,
-  UWindowSnapManager, UFormSnap;
+  UWindowSnapManager, UFormSnap, UWindowSnapMath, UPlatformWindow;
 
 type
   TPreviewMainForm = class(TForm)
@@ -46,6 +46,7 @@ type
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+    procedure RunProbe(const OutPath: string);
   end;
 
 constructor TPreviewMainForm.Create(AOwner: TComponent);
@@ -325,11 +326,173 @@ begin
   Application.Terminate;
 end;
 
+function JsonEscape(const S: string): string;
+begin
+  Result := StringReplace(S, '\', '\\', [rfReplaceAll]);
+  Result := StringReplace(Result, '"', '\"', [rfReplaceAll]);
+  Result := StringReplace(Result, #13, '\r', [rfReplaceAll]);
+  Result := StringReplace(Result, #10, '\n', [rfReplaceAll]);
+end;
+
+function JsonBool(B: Boolean): string;
+begin
+  if B then Result := 'true' else Result := 'false';
+end;
+
+function WidgetSetName: string;
+begin
+  Result := 'unknown';
+  {$IFDEF LCLGTK3} Result := 'gtk3'; {$ENDIF}
+  {$IFDEF LCLGTK2} Result := 'gtk2'; {$ENDIF}
+  {$IFDEF LCLQT5} Result := 'qt5'; {$ENDIF}
+  {$IFDEF LCLQT6} Result := 'qt6'; {$ENDIF}
+  {$IFDEF LCLWIN32} Result := 'win32'; {$ENDIF}
+end;
+
+function FormBoundsJson(AForm: TForm): string;
+var
+  wr: TRect;
+  nl, nt, nw, nh: Integer;
+begin
+  if AForm = nil then
+    Exit('{"present":false}');
+  nl := 0;
+  nt := 0;
+  nw := 0;
+  nh := 0;
+  if AForm.HandleAllocated then
+  begin
+    wr := Types.Rect(0, 0, 0, 0);
+    if LCLIntf.GetWindowRect(AForm.Handle, wr) <> 0 then
+    begin
+      nl := wr.Left;
+      nt := wr.Top;
+      nw := wr.Right - wr.Left;
+      nh := wr.Bottom - wr.Top;
+    end;
+  end;
+  Result := Format(
+    '{"present":true,"visible":%s,"caption":"%s",' +
+    '"lcl_left":%d,"lcl_top":%d,"lcl_width":%d,"lcl_height":%d,' +
+    '"native_left":%d,"native_top":%d,"native_width":%d,"native_height":%d}',
+    [JsonBool(AForm.Visible), JsonEscape(AForm.Caption),
+     AForm.Left, AForm.Top, AForm.Width, AForm.Height,
+     nl, nt, nw, nh]);
+end;
+
+function HasSwitch(const S: string): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 1 to ParamCount do
+    if SameText(ParamStr(i), S) then
+      Exit(True);
+end;
+
+function SwitchValue(const S: string): string;
+var
+  i: Integer;
+begin
+  Result := '';
+  for i := 1 to ParamCount - 1 do
+    if SameText(ParamStr(i), S) then
+      Exit(ParamStr(i + 1));
+end;
+
+procedure TPreviewMainForm.RunProbe(const OutPath: string);
+var
+  pr, er: TSnapRect;
+  gapBefore, gapAfter, i: Integer;
+  sl: TStringList;
+  skinName, json: string;
+  snapped: Boolean;
+begin
+  for i := 1 to 30 do
+  begin
+    Application.ProcessMessages;
+    Sleep(20);
+  end;
+  EnsureSnapHooked;
+
+  skinName := '';
+  if FCombo.ItemIndex >= 0 then
+    skinName := FCombo.Items[FCombo.ItemIndex];
+
+  gapBefore := 0;
+  gapAfter := 0;
+  snapped := False;
+  if (FPlayerWin <> nil) and (FEqWin <> nil) then
+  begin
+    pr := FPlayerWin.GetBounds;
+    FSnap.OnDragStarted(FEqWin);
+    FEqWin.MoveTo(pr.X + pr.W + 5, pr.Y);
+    Application.ProcessMessages;
+    er := FEqWin.GetBounds;
+    gapBefore := er.X - (pr.X + pr.W);
+    FSnap.OnDragFinished(FEqWin);
+    Application.ProcessMessages;
+    pr := FPlayerWin.GetBounds;
+    er := FEqWin.GetBounds;
+    gapAfter := er.X - (pr.X + pr.W);
+    snapped := FSnap.IsSnapped(FEqWin);
+  end;
+
+  sl := TStringList.Create;
+  try
+    sl.Add('{');
+    sl.Add('  "ok": true,');
+    sl.Add('  "widgetset": "' + JsonEscape(WidgetSetName) + '",');
+    sl.Add('  "backend": "' + JsonEscape(PlatformBackendName) + '",');
+    sl.Add('  "gdk_display": "' + JsonEscape(PlatformGdkDisplayName) + '",');
+    sl.Add('  "wayland_display": "' +
+      JsonEscape(GetEnvironmentVariable('WAYLAND_DISPLAY')) + '",');
+    sl.Add('  "x11_display": "' +
+      JsonEscape(GetEnvironmentVariable('DISPLAY')) + '",');
+    sl.Add('  "shape_supported": ' + JsonBool(PlatformShapeSupported) + ',');
+    sl.Add('  "always_on_top_native": ' +
+      JsonBool(PlatformAlwaysOnTopNative) + ',');
+    sl.Add('  "skin": "' + JsonEscape(skinName) + '",');
+    sl.Add('  "windows": {');
+    sl.Add('    "player": ' + FormBoundsJson(FPlayerForm) + ',');
+    sl.Add('    "equalizer": ' + FormBoundsJson(FEqForm) + ',');
+    sl.Add('    "lyric": ' + FormBoundsJson(FLyricForm) + ',');
+    sl.Add('    "playlist": ' + FormBoundsJson(FPlaylistForm));
+    sl.Add('  },');
+    sl.Add('  "snap": {');
+    sl.Add('    "threshold": ' + IntToStr(FSnap.SnapThreshold) + ',');
+    sl.Add('    "gap_before": ' + IntToStr(gapBefore) + ',');
+    sl.Add('    "gap_after": ' + IntToStr(gapAfter) + ',');
+    sl.Add('    "snapped": ' + JsonBool(snapped));
+    sl.Add('  },');
+    sl.Add('  "notes": [');
+    sl.Add('    "shape and EWMH only on X11 GdkDisplay",');
+    sl.Add('    "HTCAPTION drag and WM_ENTER/EXITSIZEMOVE are Windows-only",');
+    sl.Add('    "snap here is programmatic OnDragFinished, not mouse drag"');
+    sl.Add('  ]');
+    sl.Add('}');
+    json := sl.Text;
+    if OutPath <> '' then
+      sl.SaveToFile(OutPath);
+  finally
+    sl.Free;
+  end;
+  WriteLn(json);
+  Flush(Output);
+end;
+
 var
   MainForm: TPreviewMainForm;
+  ProbeOut: string;
 begin
   RequireDerivedFormResource := False;  // 纯代码窗口，无 .lfm 资源
   Application.Initialize;
   Application.CreateForm(TPreviewMainForm, MainForm);
+  if HasSwitch('--probe') then
+  begin
+    ProbeOut := SwitchValue('--probe-out');
+    MainForm.RunProbe(ProbeOut);
+    Exit;
+  end;
   Application.Run;
 end.

@@ -44,12 +44,12 @@
   <CompilerOptions>
     <Version Value="11"/>
     <Target>
-      <Filename Value="bin\tests"/>
+      <Filename Value="bin/tests"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="src\skin;src\render;src\playlist;src\lyric;src\ui;tests"/>
-      <UnitOutputDirectory Value="lib\tests\$(TargetCPU)-$(TargetOS)"/>
+      <OtherUnitFiles Value="src/skin;src/render;src/playlist;src/lyric;src/ui;src/ui/platform;tests"/>
+      <UnitOutputDirectory Value="lib/tests/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <CodeGeneration>
       <Optimizations>

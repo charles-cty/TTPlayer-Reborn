@@ -44,12 +44,12 @@
   <CompilerOptions>
     <Version Value="11"/>
     <Target>
-      <Filename Value="bin\ttplayer"/>
+      <Filename Value="bin/ttplayer"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="src\skin;src\render;src\backend;src\ui;src\ui\platform;src\playlist;src\lyric;C:\lazarus\lcl\units\x86_64-win64;C:\lazarus\lcl\units\x86_64-win64\win32"/>
-      <UnitOutputDirectory Value="lib\ttplayer\$(TargetCPU)-$(TargetOS)"/>
+      <OtherUnitFiles Value="src/skin;src/render;src/backend;src/ui;src/ui/platform;src/playlist;src/lyric"/>
+      <UnitOutputDirectory Value="lib/ttplayer/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <CodeGeneration>
       <Optimizations>

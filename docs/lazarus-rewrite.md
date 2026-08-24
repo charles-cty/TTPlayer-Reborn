@@ -30,8 +30,9 @@ TTPlayer Reborn 的 UI 本来就是**全自绘**（无边框 + `setMask` + 位�
 LCL GTK3 后端在以下方面已知不稳定：
 - `bsNone`（无边框）+ 置顶 + Tool 窗口类型
 - CSD（客户端装饰）可能引入隐性坐标 margin，影响窗口吸附计算
+- **HWND 不是 `GtkWidget*`**：GTK2 的 `Handle` 是控件指针；GTK3 的 `Handle` 是 `TGtk3Widget` 对象。对 Handle 直接调用 `gtk_widget_get_window` 会 `GTK_IS_WIDGET` 失败，严重时 Access violation（`G_DEBUG=fatal-criticals` 下为 SIGTRAP）
 
-绕行方案：Shape/置顶/EWMH 直接调 X11 API，绕开 LCL；所有平台相关代码隔离在 `src/ui/platform` 单元（`{$IFDEF}`），必要时可退回 GTK2 或 Qt6 widgetset。
+绕行方案：Shape/置顶/EWMH 直接调 X11 API，绕开 LCL；UNIX 侧先用 `g_type_name` 判断 `GdkX11Display` / `GdkWaylandDisplay`，只在 X11 上调 `gdk_x11_window_get_xid`。句柄转换见 `GdkWindowFromLCLHandle`（`TGtk3Widget.Widget` / `GetWindow`）。平台代码隔离在 `src/ui/platform`（`{$IFDEF}`），必要时可退回 GTK2 或 Qt6 widgetset。
 
 ---
 
@@ -49,7 +50,7 @@ Lazarus 工程（全自绘）
   src/render/     渲染原语（USkinRender，QtPutImage 精确合成）
   src/ui/         PlayerForm/PlaylistForm/EqualizerForm/LyricForm（无边框自绘）
                   UWindowSnapMath / UWindowSnapManager / UFormSnap（窗口吸附）
-  src/ui/platform/ Windows/X11 平台特定调用（SetWindowRgn、XShape、EWMH）
+  src/ui/platform/ Windows/X11/Wayland 平台特定调用（SetWindowRgn、XShape、EWMH；Wayland 无 Shape）
 ```
 
 ### C ABI 边界约定
@@ -79,7 +80,7 @@ Lazarus 工程（全自绘）
 - 色键生成 Shape 区域（`UPlatformWindow.ApplyAlphaShape`：Win `SetWindowRgn` / X11 `XShapeCombineRectangles`）
 - 按钮命中测试、悬停/按下视觉状态
 - 窗口拖动
-- GTK3：平台原语已隔离；真机验证仍待 Linux 桌面会话
+- GTK3：`UPlatformWindow` 已在 WSL2/WSLg 上探测（见文末当前状态）
 
 **Step 3（已完成）**：PlaylistWindow
 - 虚拟列表、7 组工具栏菜单、皮肤滚动条、文件拖放、双击 OpenFile
@@ -95,7 +96,7 @@ Lazarus 工程（全自绘）
 - 独立双轴吸附、主窗口联动组、子窗口单独拖动、松手吸附、屏幕边缘、缩放吸附
 - 几何与图结构可在 NoLCL FPCUnit 中验证（MR-4）
 - Windows：`TSnapFormAdapter` 子类化原生 WndProc 收取 `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE`（LCL `WindowProc` 收不到跨进程 `SendMessage`）；DPI≠100% 时 `GetBounds`/`MoveTo` 在 LCL 逻辑像素与 `GetWindowRect` 物理像素之间换算
-- `src/ui/platform/` 已提供 Shape / 置顶 / EWMH；GTK3 CSD 坐标仍待 Linux 真机验证
+- `src/ui/platform/`：Win `SetWindowRgn`；X11 Shape + EWMH；Wayland 跳过 X11 API。GTK3 无 `WM_ENTER/EXITSIZEMOVE` / `HTCAPTION`，程序化 `OnDragFinished` 仍可用；WSLg Wayland 窗口原点常为 0,0，X11 路径有 CSD 尺寸偏差
 
 **Step 7（推迟）**：ttcore 抽库 + FFI 对接，替换 TStubBackend。音频核与 GUI 解耦，可等 GUI 与测试补齐后再做。
 
@@ -136,14 +137,29 @@ Lazarus 工程（全自绘）
 | LyricForm | `pascal/src/ui/ULyricForm`（九宫格、LRC 滚动高亮、右/下边缘调整大小） |
 | VisualWidget | `pascal/src/ui/UVisualWidget`（柱状频谱 + 模糊示波图动画） |
 | WindowSnap | `pascal/src/ui/UWindowSnapMath` + `UWindowSnapManager` + `UFormSnap` |
-| 平台窗口 | `pascal/src/ui/platform/UPlatformWindow`（Win `SetWindowRgn` / X11 Shape + EWMH 置顶） |
+| 平台窗口 | `pascal/src/ui/platform/UPlatformWindow` + `UAlphaShape`（Win `SetWindowRgn` / X11 Shape + EWMH；GTK3 Handle→`TGtk3Widget`） |
 | Pascal 工具集 | `pascal/ttdump.lpi`、`pascal/skinpreview.lpi`、`pascal/ttplayer.lpi`、`pascal/tests.lpi` |
+| Linux GTK3 构建 | `tools/build-pascal-linux.sh`（用户目录 FPC 3.2.2 + Lazarus 4.8，`--ws=gtk3`） |
+| GTK3 探测 | `skinpreview --probe` + `tools/test-gtk3-wayland.sh` + `tools/smoke_gtk3_wayland.py` |
 | Qt SkinDumper | `src/tools/SkinDumper.{h,cpp}` + `--dump-skin` |
 | Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames`（捕帧前 `clearMask`，playlist/lyric 按 `baseSize`） |
 | Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
-| 测试（48/48 FPCUnit） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5 GUI 冒烟） |
+| 测试（Windows 48/48；Linux FPCUnit 53/53，含 AlphaShape） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5）；Linux：`tools/test-gtk3-wayland.sh` |
 
-**下一步**：Step 7（ttcore 抽库 + FFI 对接，替换 `TStubBackend`）。元数据加载器随 TagLib/ttcore 一起做。GTK3 真机验证不阻塞 Windows。
+**GTK3 + Wayland（WSL2/WSLg，2026-08-24）**
+
+环境：Ubuntu 24.04 用户目录 FPC 3.2.2 + Lazarus 4.8（apt 无 `lcl-gtk3`，未用 sudo）。默认 `WAYLAND_DISPLAY=wayland-0`，`GDK_BACKEND=x11` 走 Xwayland。
+
+| 探测 | 结果 |
+|---|---|
+| `GDK_BACKEND=wayland` `--probe` | `backend=wayland`，`shape_supported=false`，四窗口 LCL 尺寸正确；原生原点常为 0,0；程序化吸附几何不可用 |
+| `GDK_BACKEND=x11` `--probe` | `backend=x11`，`shape_supported=true`；CSD 使 native 尺寸大于 LCL（ArcticAMP 275×116 → ~351×213） |
+| 句柄 AV | 已修：LCL GTK3 `Handle` 是 `TGtk3Widget`，不能当 `GtkWidget*` 传给 `gtk_widget_get_window` |
+| 仍有的 LCL 噪音 | `gdk_pixbuf_get_from_surface` 0 尺寸 CRITICAL（未映射/`bsNone` 绘制）；ComboBox 内部 `GtkCssCustomGadget` 的 `set_has_window`（非本仓库代码） |
+
+未做：GTK3 标题栏拖动（`gtk_window_begin_move_drag`）、鼠标拖动吸附、Wayland 置顶、非 WSLg 的实体 Linux 桌面。
+
+**下一步**：Step 7（ttcore 抽库 + FFI 对接，替换 `TStubBackend`）。元数据加载器随 TagLib/ttcore 一起做。
 
 ---
 

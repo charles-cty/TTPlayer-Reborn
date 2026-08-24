@@ -182,6 +182,24 @@ pwsh tools/test-all.ps1
 
 Layer 5（`tools/smoke_skinpreview.py`）在四个窗口渲染之外，还会：点 EQ `enabled` 断言标题变为 `Equalizer ON`、换到 Subaru/HiFi 等尺寸差明显的皮肤并断言窗口尺寸或像素变化、把 Player 放到 EQ 旁发 `WM_ENTERSIZEMOVE`/`SetWindowPos`/`WM_EXITSIZEMOVE` 断言吸附间隙 ~0（LCL 逻辑像素；原生 WndProc 子类化才能收到跨进程的这两条消息）。
 
+### Linux GTK3 / Wayland（WSL2）
+
+Ubuntu apt 的 Lazarus 3.0 只有 GTK2/Qt5，没有 LCL GTK3 包。用用户目录 FPC + Lazarus 4.8：
+
+```bash
+# FPC: $HOME/opt/fpc    Lazarus: $HOME/opt/lazarus（make lazbuild）
+bash tools/build-pascal-linux.sh          # ttdump + tests + skinpreview --ws=gtk3
+bash tools/test-gtk3-wayland.sh           # FPCUnit 53 + wayland/x11 --probe
+```
+
+`skinpreview --probe [--probe-out file.json]` 创建四窗口后写出 JSON（widgetset / Gdk backend / shape_supported / 各窗 LCL+native 矩形 / 程序化吸附间隙），然后退出，不进入 `Application.Run`。
+
+断言（`tools/smoke_gtk3_wayland.py`）：
+- Wayland：`shape_supported=false`；窗口须在；吸附几何不作硬失败（合成器常报原点 0,0）
+- X11：`shape_supported=true`；程序化吸附默认软提示（CSD 会让 native 矩形大于 LCL）
+
+stderr 里 `gtk_widget_get_window: assertion 'GTK_IS_WIDGET'` 视为失败（把 `TGtk3Widget` 当成了 `GtkWidget*`）。`gdk_pixbuf_get_from_surface` 0 尺寸 CRITICAL 是 LCL GTK3 在未映射/`bsNone` 上的已知噪音，不判失败。
+
 ### 仅 FPCUnit
 
 ```powershell

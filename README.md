@@ -77,7 +77,9 @@ TTPlayer-Reborn/
 │   ├── test-all.ps1          # ★ 统一测试入口（Layer 1-4 全部测试）
 │   ├── test-layer1.ps1       # Layer 1 差分测试
 │   ├── gen-golden.ps1        # 从 Qt 版生成 golden 基准数据
-│   └── build-pascal.ps1      # lazbuild 构建全部 Lazarus 工程
+│   ├── build-pascal.ps1      # lazbuild 构建全部 Lazarus 工程（Windows）
+│   ├── build-pascal-linux.sh # 用户目录 FPC + Lazarus GTK3 构建
+│   └── test-gtk3-wayland.sh  # Linux FPCUnit + skinpreview --probe
 │
 └── docs/
     ├── testing.md            # 测试体系详细文档
@@ -132,16 +134,25 @@ cmake --build build-mingw64
 
 ---
 
-## 构建（Lazarus 重写版，Windows）
+## 构建（Lazarus 重写版）
 
 > 详见 [docs/lazarus-rewrite.md](docs/lazarus-rewrite.md)
+
+**Windows**
 
 ```powershell
 # 初始化 BGRABitmap submodule
 git submodule update --init
 
-# 构建全部 Pascal 工程（ttdump + tests）
+# 构建全部 Pascal 工程（ttdump + tests + skinpreview）
 pwsh tools/build-pascal.ps1
+```
+
+**Linux（GTK3，用户目录 FPC/Lazarus）**
+
+```bash
+bash tools/build-pascal-linux.sh
+bash tools/test-gtk3-wayland.sh
 ```
 
 ---
@@ -161,7 +172,7 @@ pwsh tools/test-layer1.ps1
 pwsh tools/gen-golden.ps1 -SkipBuild
 ```
 
-**当前测试状态：Layer 1 11/11；FPCUnit 48/48**
+**当前测试状态：Layer 1 11/11；Windows FPCUnit 48/48；Linux FPCUnit 53/53（含 AlphaShape）**
 
 | 层级 | 方法 | 覆盖内容 |
 |---|---|---|
@@ -176,8 +187,9 @@ pwsh tools/gen-golden.ps1 -SkipBuild
 ## 已知问题 / 限制
 
 - Qt 版仍有较多 bug，功能不完善。
-- Lazarus 重写版（`pascal/`）四个皮肤窗口 + 吸附已可运行；音频仍为 `TStubBackend`（ttcore 抽库未开始）。
-- Wayland 下窗口 Shape / 吸附功能退化（Qt 版与 Lazarus 版均如此）。
+- Lazarus 重写版（`pascal/`）四个皮肤窗口 + Windows 吸附已可运行；音频仍为 `TStubBackend`（ttcore 抽库未开始）。
+- Wayland 下窗口 Shape / 吸附功能退化（Qt 版与 Lazarus 版均如此）：无 XShape，合成器常报窗口原点 0,0。
+- LCL GTK3 的 `Handle` 是 `TGtk3Widget` 对象，不是 `GtkWidget*`；已在 `UPlatformWindow` 中转换，避免 `gtk_widget_get_window` Access violation。
 
 ---
 

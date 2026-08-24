@@ -41,12 +41,12 @@
   <CompilerOptions>
     <Version Value="11"/>
     <Target>
-      <Filename Value="bin\ttdump"/>
+      <Filename Value="bin/ttdump"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="src\skin;src\backend"/>
-      <UnitOutputDirectory Value="lib\ttdump\$(TargetCPU)-$(TargetOS)"/>
+      <OtherUnitFiles Value="src/skin;src/backend"/>
+      <UnitOutputDirectory Value="lib/ttdump/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <CodeGeneration>
       <Optimizations>
