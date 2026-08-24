@@ -71,7 +71,10 @@ end;
 
 destructor TPreviewMainForm.Destroy;
 begin
-  // 子 Form 均以 Self 为 Owner 创建，LCL 在本对象销毁时自动释放，无需手动 Free。
+  // 先从吸附图拿掉 ISnapWindow，避免子 Form BeforeDestruction.Hide
+  // 重建图时读到已释放的 TForm。
+  if FSnap <> nil then
+    FSnap.ClearWindows;
   FPlayerWin := nil;
   FEqWin := nil;
   FLyricWin := nil;

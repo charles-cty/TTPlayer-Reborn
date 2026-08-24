@@ -31,6 +31,8 @@ type
     function GetVisible: Boolean;
     procedure SetVisible(AValue: Boolean);
     function GetName: string;
+    // 宿主窗口正在销毁时断开引用。之后 GetVisible=False，GetBounds 为空。
+    procedure Detach;
   end;
 
   TMemorySnapWindow = class(TInterfacedObject, ISnapWindow)
@@ -46,6 +48,7 @@ type
     function GetVisible: Boolean;
     procedure SetVisible(AValue: Boolean);
     function GetName: string;
+    procedure Detach;
   end;
 
   TWindowSnapManager = class
@@ -55,6 +58,8 @@ type
 
     procedure SetMainWindow(AWin: ISnapWindow);
     procedure AddSubWindow(AWin: ISnapWindow);
+    procedure RemoveSubWindow(AWin: ISnapWindow);
+    procedure ClearWindows;
 
     function  GetSnapThreshold: Integer;
     procedure SetSnapThreshold(Px: Integer);
@@ -168,6 +173,11 @@ begin
   Result := FName;
 end;
 
+procedure TMemorySnapWindow.Detach;
+begin
+  FVisible := False;
+end;
+
 { TWindowSnapManager }
 
 constructor TWindowSnapManager.Create;
@@ -205,6 +215,40 @@ begin
   FSubs[n].Win := AWin;
   FSubs[n].Anchor := SNAP_NO_ANCHOR;
   FSubs[n].SnapOffset := SnapPointXY(0, 0);
+end;
+
+procedure TWindowSnapManager.RemoveSubWindow(AWin: ISnapWindow);
+var
+  idx, i, last: Integer;
+begin
+  if AWin = nil then Exit;
+  if FMain = AWin then
+    FMain := nil;
+  idx := FindSubIndex(AWin);
+  if idx = SNAP_NO_ANCHOR then Exit;
+  last := High(FSubs);
+  for i := 0 to last do
+  begin
+    if FSubs[i].Anchor = idx then
+      FSubs[i].Anchor := SNAP_NO_ANCHOR
+    else if (idx <> last) and (FSubs[i].Anchor = last) then
+      FSubs[i].Anchor := idx;
+  end;
+  if idx <> last then
+    FSubs[idx] := FSubs[last];
+  FSubs[last].Win := nil;
+  SetLength(FSubs, Length(FSubs) - 1);
+end;
+
+procedure TWindowSnapManager.ClearWindows;
+var
+  i: Integer;
+begin
+  ClearDrag;
+  FMain := nil;
+  for i := 0 to High(FSubs) do
+    FSubs[i].Win := nil;
+  SetLength(FSubs, 0);
 end;
 
 function TWindowSnapManager.GetSnapThreshold: Integer;

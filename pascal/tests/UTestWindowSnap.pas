@@ -33,6 +33,7 @@ type
     procedure TestSubDragAwayDetaches;
     procedure TestSubDragNearSnapsOnFinish;
     procedure TestHiddenWindowIgnored;
+    procedure TestRemoveSubWindowThenRebuild;
     procedure TestInPlaceRebuildDoesNotMove;
     procedure TestGroupFollowThenDetach;
     procedure TestResizeSnapToMain;
@@ -374,6 +375,39 @@ begin
     mgr.RebuildSnapGraph;
     AssertFalse(mgr.ConnectedToMain(eq));
     AssertEquals('隐藏窗口不被拉过去', 216, eq.GetBounds.Y);
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestRemoveSubWindowThenRebuild;
+var
+  mgr: TWindowSnapManager;
+  main, eq, lyric: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main  := MakeWin('player', 100, 100, 275, 116);
+    eq    := MakeWin('eq',     100, 216, 275, 80);
+    lyric := MakeWin('lyric',  380, 100, 268, 60);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.AddSubWindow(lyric);
+    mgr.RebuildSnapGraph;
+    AssertEquals(2, mgr.SubCount);
+    AssertTrue(mgr.ConnectedToMain(eq));
+
+    eq.Detach;
+    mgr.RemoveSubWindow(eq);
+    AssertEquals(1, mgr.SubCount);
+    mgr.RebuildSnapGraph;
+    AssertEquals('卸掉子窗口后重建不得 AV', 1, mgr.SubCount);
+    AssertEquals(SNAP_NO_ANCHOR, mgr.FindSubIndex(eq));
+    AssertTrue(mgr.FindSubIndex(lyric) >= 0);
+
+    mgr.ClearWindows;
+    AssertEquals(0, mgr.SubCount);
+    mgr.RebuildSnapGraph;
   finally
     mgr.Free;
   end;

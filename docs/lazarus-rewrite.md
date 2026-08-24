@@ -144,7 +144,7 @@ Lazarus 工程（全自绘）
 | Qt SkinDumper | `src/tools/SkinDumper.{h,cpp}` + `--dump-skin` |
 | Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames`（捕帧前 `clearMask`，playlist/lyric 按 `baseSize`） |
 | Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
-| 测试（Windows 48/48；Linux FPCUnit 71/71，含 AlphaShape + DpiScale + NearestResample） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5）；Linux：`tools/test-gtk3-wayland.sh` |
+| 测试（Windows 48/48；Linux FPCUnit 72/72，含 AlphaShape + DpiScale + NearestResample + snap Detach） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5）；Linux：`tools/test-gtk3-wayland.sh` |
 
 **GTK3 + XWayland（WSL2/WSLg，2026-08-24）**
 
@@ -158,6 +158,7 @@ Lazarus 工程（全自绘）
 | DPI | `UDpiScale` + `USkinView`：宽高均匀缩放到 125/150/200% 才换算，CSD 比不当 DPI。Shape 按 `XGetGeometry`（GDK_SCALE=2 时 X 窗口 2×，`gdk_window_get_width` 仍是逻辑尺寸）。吸附在逻辑像素；WSLg 原点对不齐时用 LCL 坐标。Windows：`UWinDpiAware` Per-Monitor V2，窗体按 `view_scale` 放大皮肤；皮肤位图最近邻拉伸（不用 GDI HALFTONE）；播放列表/歌词 TrueType 在 dest 像素栅格化（`fqFineClearTypeRGB`）。拖到另一监视器走 `WM_DPICHANGED`。GTK：`GDK_SCALE≥2` 时 `view_scale=1`，禁止 `SetBounds(skin*2)`（否则 X 窗口 4×） |
 | 置顶 | `gtk_window_set_keep_above`（GDK 发 EWMH）。WSLg Weston 可能忽略 `_NET_WM_STATE_ABOVE` |
 | 句柄 AV | 已修：LCL GTK3 `Handle` 是 `TGtk3Widget` |
+| 关闭窗口 AV | 已修：`TFormSnapWindow.GetVisible` 在子窗 `BeforeDestruction.Hide` 时读悬空 `FForm`。`Detach` + `ClearWindows`，销毁中不重建吸附图 |
 | 仍有的 LCL 噪音 | `gdk_pixbuf_get_from_surface` 0 尺寸 CRITICAL；ComboBox `GtkCssCustomGadget` 的 `set_has_window` |
 
 未做：非 WSLg 的实体 Linux 桌面；原生 Wayland 客户端。

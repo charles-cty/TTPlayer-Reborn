@@ -87,6 +87,8 @@ end;
 
 destructor TTPlayerApp.Destroy;
 begin
+  if FSnap <> nil then
+    FSnap.ClearWindows;
   FPlayerWin := nil;
   FEqWin := nil;
   FLyricWin := nil;

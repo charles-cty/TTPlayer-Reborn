@@ -30,6 +30,7 @@ type
     function GetVisible: Boolean;
     procedure SetVisible(AValue: Boolean);
     function GetName: string;
+    procedure Detach;
   end;
 
   TSnapFormAdapter = class(TComponent)
@@ -106,8 +107,10 @@ var
   wr: TRect;
   pw, ph, lx, ly: Integer;
 begin
+  Result := SnapRectXYWH(0, 0, 0, 0);
+  if FForm = nil then Exit;
   Result := SnapRectXYWH(FForm.Left, FForm.Top, FForm.Width, FForm.Height);
-  if (FForm = nil) or (not FForm.HandleAllocated) then Exit;
+  if not FForm.HandleAllocated then Exit;
   wr := Types.Rect(0, 0, 0, 0);
   if not PlatformGetWindowRect(FForm.Handle, wr) then Exit;
   pw := wr.Right - wr.Left;
@@ -160,25 +163,41 @@ end;
 
 procedure TFormSnapWindow.ResizeTo(AW, AH: Integer);
 begin
+  if FForm = nil then Exit;
   if (FForm.Width <> AW) or (FForm.Height <> AH) then
     FForm.SetBounds(FForm.Left, FForm.Top, AW, AH);
 end;
 
 function TFormSnapWindow.GetVisible: Boolean;
 begin
-  Result := FForm.Visible;
+  // FForm 为空或已进入销毁：不能读 TForm.Visible（nil 时指令就在
+  // `mov al,[rax+0x3fc]`，Linux 上即 EAccessViolation @ GetVisible）。
+  Result := Assigned(FForm) and FForm.Visible and
+    not (csDestroying in FForm.ComponentState);
 end;
 
 procedure TFormSnapWindow.SetVisible(AValue: Boolean);
 begin
+  if FForm = nil then Exit;
+  if csDestroying in FForm.ComponentState then Exit;
   FForm.Visible := AValue;
 end;
 
 function TFormSnapWindow.GetName: string;
 begin
+  if FForm = nil then
+  begin
+    Result := '';
+    Exit;
+  end;
   Result := FForm.Caption;
   if Result = '' then
     Result := FForm.ClassName;
+end;
+
+procedure TFormSnapWindow.Detach;
+begin
+  FForm := nil;
 end;
 
 { TSnapFormAdapter }
@@ -213,7 +232,8 @@ begin
   if FCaptionDragging then
   begin
     FCaptionDragging := False;
-    if FForm.HandleAllocated and (GetCapture = FForm.Handle) then
+    if Assigned(FForm) and FForm.HandleAllocated and
+       (GetCapture = FForm.Handle) then
       ReleaseCapture;
   end;
   RemoveNativeHook;
@@ -224,7 +244,17 @@ begin
     FForm.OnShow := FPrevShow;
     FForm.OnHide := FPrevHide;
   end;
+  if Assigned(FWin) then
+    FWin.Detach;
+  if FManager <> nil then
+  begin
+    if FIsMain then
+      FManager.SetMainWindow(nil)
+    else
+      FManager.RemoveSubWindow(FWin);
+  end;
   FWin := nil;
+  FForm := nil;
   inherited Destroy;
 end;
 
@@ -263,7 +293,7 @@ procedure TSnapFormAdapter.HandleEnterSizeMove;
 var
   b: TSnapRect;
 begin
-  if FManager = nil then Exit;
+  if (FManager = nil) or (FWin = nil) then Exit;
   b := FWin.GetBounds;
   FLastX := b.X;
   FLastY := b.Y;
@@ -275,7 +305,7 @@ procedure TSnapFormAdapter.HandleExitSizeMove;
 var
   b: TSnapRect;
 begin
-  if FManager = nil then Exit;
+  if (FManager = nil) or (FWin = nil) then Exit;
   FManager.OnDragFinished(FWin);
   b := FWin.GetBounds;
   FLastX := b.X;
@@ -383,6 +413,7 @@ procedure TSnapFormAdapter.HandleShow(Sender: TObject);
 begin
   if Assigned(FPrevShow) then
     FPrevShow(Sender);
+  if (FForm = nil) or (csDestroying in FForm.ComponentState) then Exit;
   InstallNativeHook;
   ConfigurePlatformWindow(FForm);
   UpdateScreenRect;
@@ -394,6 +425,9 @@ procedure TSnapFormAdapter.HandleHide(Sender: TObject);
 begin
   if Assigned(FPrevHide) then
     FPrevHide(Sender);
+  // BeforeDestruction 里 Hide 时 csDestroying 已置位；此时重建图会
+  // 读到别的已拆掉的 TFormSnapWindow.FForm。
+  if (FForm = nil) or (csDestroying in FForm.ComponentState) then Exit;
   if FManager <> nil then
     FManager.RebuildSnapGraph;
 end;
@@ -404,6 +438,13 @@ var
   b: TSnapRect;
   cur: TPoint;
 begin
+  if Assigned(FForm) and (csDestroying in FForm.ComponentState) then
+  begin
+    if Assigned(FOldProc) then
+      FOldProc(Msg);
+    Exit;
+  end;
+
   if Msg.Msg = WM_ENTERSIZEMOVE then
     HandleEnterSizeMove;
 
@@ -412,6 +453,8 @@ begin
     EndCaptionDrag;
 
   FOldProc(Msg);
+
+  if (FForm = nil) or (FWin = nil) or (FManager = nil) then Exit;
 
   if FCaptionDragging then
   begin
