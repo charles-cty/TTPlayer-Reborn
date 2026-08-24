@@ -14,17 +14,18 @@ uses
   LCLIntf, LCLType, LMessages, LazUTF8, Math, Types,
   BGRABitmap, BGRABitmapTypes,
   USkinTypes, USkinRender, UPlayerBackend, UPlaylistModel, UPlaylistBook,
-  UPlatformWindow;
+  UPlatformWindow, USkinView;
 
 type
   TPlayFileEvent = procedure(Sender: TObject; const FilePath: string) of object;
 
-  TPlaylistForm = class(TForm)
+  TPlaylistForm = class(TForm, ISkinViewForm)
   public
     constructor Create(AOwner: TComponent; ABackend: IPlayerBackend); reintroduce;
     destructor Destroy; override;
 
     procedure ApplySkin(ASkin: PSkinData);
+    procedure RefreshViewScale;
 
     procedure AddEntry(const FilePath, Title, Artist: string; DurationMs: Int64);
     procedure Clear;
@@ -103,6 +104,7 @@ type
     procedure BuildRegion;
     procedure RenderFrame;
     procedure InvalidateFrame;
+    procedure MapHit(var X, Y: Integer);
     procedure ApplyListFont;
     procedure RebuildVisible;
     procedure SyncSelectionLength;
@@ -228,7 +230,7 @@ type
 implementation
 
 uses
-  UFormSnap;
+  UFormSnap, UDpiScale;
 
 const
   kResizeSense              = 8;
@@ -330,7 +332,7 @@ begin
       FLogicW := bg.Width;
       FLogicH := bg.Height;
     end;
-    SetBounds(Left, Top, FLogicW, FLogicH);
+    ApplySkinFormSize(Self, FLogicW, FLogicH);
   end;
 
   SplitScrollButtons;
@@ -346,13 +348,16 @@ end;
 procedure TPlaylistForm.SetBounds(ALeft, ATop, AWidth, AHeight: Integer);
 var
   sizeChanged: Boolean;
+  s: Double;
 begin
   sizeChanged := (AWidth <> Width) or (AHeight <> Height);
   inherited SetBounds(ALeft, ATop, AWidth, AHeight);
   if sizeChanged and (FSkin <> nil) then
   begin
-    FLogicW := Width;
-    FLogicH := Height;
+    s := FormViewScale(Self);
+    if s < 0.01 then s := 1.0;
+    FLogicW := Max(1, Round(Width / s));
+    FLogicH := Max(1, Round(Height / s));
     ClampDividerPos;
     ClampScroll;
     FreeAndNil(FFrame);
@@ -360,6 +365,23 @@ begin
       BuildRegion;
     Invalidate;
   end;
+end;
+
+procedure TPlaylistForm.MapHit(var X, Y: Integer);
+begin
+  ClientToSkinXY(Self, FLogicW, FLogicH, X, Y);
+end;
+
+procedure TPlaylistForm.RefreshViewScale;
+var
+  s: Double;
+begin
+  if FSkin = nil then Exit;
+  s := FormViewScale(Self);
+  SetBounds(Left, Top, ScalePx(FLogicW, s), ScalePx(FLogicH, s));
+  if HandleAllocated then
+    BuildRegion;
+  Invalidate;
 end;
 
 procedure TPlaylistForm.BuildRegion;
@@ -392,12 +414,14 @@ procedure TPlaylistForm.CreateWnd;
 begin
   inherited CreateWnd;
   ConfigurePlatformWindow(Self);
+  RefreshViewScale;
 end;
 
 procedure TPlaylistForm.DoShow;
 begin
   inherited DoShow;
   ConfigurePlatformWindow(Self);
+  RefreshViewScale;
   BuildRegion;
 end;
 
@@ -496,12 +520,18 @@ end;
 function TPlaylistForm.ToolbarMenuAnchor(Group: Integer): TPoint;
 var
   r: TSkinRect;
+  x, y: Integer;
 begin
   r := ToolbarGroupRect(Group);
   if r.IsEmpty then
     Result := Mouse.CursorPos
   else
-    Result := ClientToScreen(Point(r.X, r.Y + r.H));
+  begin
+    x := r.X;
+    y := r.Y + r.H;
+    SkinToClientXY(Self, FLogicW, FLogicH, x, y);
+    Result := ClientToScreen(Point(x, y));
+  end;
 end;
 
 function TPlaylistForm.PtInSkinRect(PX, PY: Integer; const R: TSkinRect): Boolean;
@@ -1475,7 +1505,7 @@ begin
   if FFrame = nil then
     RenderFrame;
   if FFrame = nil then Exit;
-  FFrame.Draw(Canvas, 0, 0, True);
+  DrawSkinFrame(Canvas, FFrame, ClientWidth, ClientHeight);
 end;
 
 function TPlaylistForm.HitButton(PX, PY: Integer): string;
@@ -1661,7 +1691,11 @@ var
   hitName: string;
   group, row, part: Integer;
   thumb: TSkinRect;
+  cx, cy: Integer;
 begin
+  cx := X;
+  cy := Y;
+  MapHit(X, Y);
   if Button = mbLeft then
   begin
     if ssDouble in Shift then
@@ -1770,9 +1804,9 @@ begin
       ShowEditMenu;
     end;
   end;
-  inherited MouseDown(Button, Shift, X, Y);
+  inherited MouseDown(Button, Shift, cx, cy);
   if Button = mbLeft then
-    TryBeginCaptionDrag(Self, X, Y);
+    TryBeginCaptionDrag(Self, cx, cy);
 end;
 
 procedure TPlaylistForm.DblClick;
@@ -1789,26 +1823,32 @@ var
   needRedraw: Boolean;
   avail: Integer;
   ratio: Double;
+  s: Double;
 begin
   if FResizing then
   begin
+    s := FormViewScale(Self);
+    if s < 0.01 then s := 1.0;
     dx := Mouse.CursorPos.X - FResizeStartX;
     dy := Mouse.CursorPos.Y - FResizeStartY;
     newW := FResizeStartW;
     newH := FResizeStartH;
-    if FResizeEdgeRight  then newW := Max(kPlaylistMinW, FResizeStartW + dx);
-    if FResizeEdgeBottom then newH := Max(kPlaylistMinH, FResizeStartH + dy);
+    if FResizeEdgeRight  then
+      newW := Max(kPlaylistMinW, FResizeStartW + Round(dx / s));
+    if FResizeEdgeBottom then
+      newH := Max(kPlaylistMinH, FResizeStartH + Round(dy / s));
     if (newW <> FLogicW) or (newH <> FLogicH) then
     begin
-      FLogicW := newW;
-      FLogicH := newH;
-      SetBounds(Left, Top, newW, newH);
+      SetBounds(Left, Top, ScalePx(newW, s), ScalePx(newH, s));
       RenderFrame;
       if Assigned(FOnResizeInProgress) then
         FOnResizeInProgress(Self);
     end;
   end
-  else if FSbDragging then
+  else
+  begin
+  MapHit(X, Y);
+  if FSbDragging then
   begin
     track := SbTrackRect;
     thumb := SbThumbRect;
@@ -1882,6 +1922,7 @@ begin
     else
       Cursor := crDefault;
   end;
+  end;
   inherited MouseMove(Shift, X, Y);
 end;
 
@@ -1892,6 +1933,7 @@ var
   group, released, insertSrc, vis: Integer;
   wasDrag: Boolean;
 begin
+  MapHit(X, Y);
   if Button = mbLeft then
   begin
     if FDragRows then
@@ -2004,9 +2046,7 @@ var
   er, eb: Boolean;
   pl: TSkinRect;
 begin
-  pt := ScreenToClient(Point(
-    SmallInt(Msg.LParam and $FFFF),
-    SmallInt((Msg.LParam shr 16) and $FFFF)));
+  pt := NcHitToSkin(Self, Msg, FLogicW, FLogicH);
 
   if HitButton(pt.X, pt.Y) <> '' then
     Msg.Result := HTCLIENT

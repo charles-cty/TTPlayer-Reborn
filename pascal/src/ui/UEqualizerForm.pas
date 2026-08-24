@@ -14,7 +14,7 @@ interface
 uses
   Classes, SysUtils, Forms, Controls, Graphics, LCLIntf, LCLType, LMessages,
   Menus, BGRABitmap, BGRABitmapTypes,
-  USkinTypes, USkinRender, UPlayerBackend, UPlatformWindow;
+  USkinTypes, USkinRender, UPlayerBackend, UPlatformWindow, USkinView;
 
 type
   // 正在拖动的滑块的完整状态（'' = 无拖动）。
@@ -25,13 +25,14 @@ type
     IsVert: Boolean;          // True = 垂直滑块
   end;
 
-  TEqualizerForm = class(TForm)
+  TEqualizerForm = class(TForm, ISkinViewForm)
   public
     constructor Create(AOwner: TComponent; ABackend: IPlayerBackend); reintroduce;
     destructor Destroy; override;
 
     // 应用皮肤；换肤时调用，重建 Region 并刷新。
     procedure ApplySkin(ASkin: PSkinData);
+    procedure RefreshViewScale;
 
   protected
     procedure Paint; override;
@@ -70,6 +71,8 @@ type
     procedure BuildRegion;
     procedure UpdateCaption;
     procedure RenderFrame;
+    procedure SkinSize(out W, H: Integer);
+    procedure MapHit(var X, Y: Integer);
     procedure BuildProfileMenu;
     procedure OnPresetClick(Sender: TObject);
 
@@ -168,11 +171,9 @@ begin
     ClearWindowShape(Handle);
 
   if ASkin^.EqualizerWindow.BackgroundPixmap <> nil then
-  begin
-    SetBounds(Left, Top,
+    ApplySkinFormSize(Self,
       ASkin^.EqualizerWindow.BackgroundPixmap.Width,
       ASkin^.EqualizerWindow.BackgroundPixmap.Height);
-  end;
 
   if HandleAllocated then
     BuildRegion;
@@ -202,16 +203,51 @@ begin
   ApplyAlphaShape(Handle, bmp);
 end;
 
+procedure TEqualizerForm.SkinSize(out W, H: Integer);
+var
+  bmp: TBGRABitmap;
+begin
+  W := Width;
+  H := Height;
+  if FSkin = nil then Exit;
+  bmp := FSkin^.EqualizerWindow.BackgroundPixmap;
+  if bmp = nil then Exit;
+  W := bmp.Width;
+  H := bmp.Height;
+end;
+
+procedure TEqualizerForm.MapHit(var X, Y: Integer);
+var
+  sw, sh: Integer;
+begin
+  SkinSize(sw, sh);
+  ClientToSkinXY(Self, sw, sh, X, Y);
+end;
+
+procedure TEqualizerForm.RefreshViewScale;
+var
+  sw, sh: Integer;
+begin
+  if FSkin = nil then Exit;
+  SkinSize(sw, sh);
+  ApplySkinFormSize(Self, sw, sh);
+  if HandleAllocated then
+    BuildRegion;
+  Invalidate;
+end;
+
 procedure TEqualizerForm.CreateWnd;
 begin
   inherited CreateWnd;
   ConfigurePlatformWindow(Self);
+  RefreshViewScale;
 end;
 
 procedure TEqualizerForm.DoShow;
 begin
   inherited DoShow;
   ConfigurePlatformWindow(Self);
+  RefreshViewScale;
   BuildRegion;
 end;
 
@@ -249,7 +285,7 @@ end;
 procedure TEqualizerForm.Paint;
 begin
   if FFrame = nil then Exit;
-  FFrame.Draw(Canvas, 0, 0, True);
+  DrawSkinFrame(Canvas, FFrame, ClientWidth, ClientHeight);
 end;
 
 procedure TEqualizerForm.BuildProfileMenu;
@@ -460,10 +496,14 @@ var
   hitIsSlider: Boolean;
   hitMinV, hitMaxV: Double;
   hitIsVert: Boolean;
+  sx, sy: Integer;
 begin
+  sx := X;
+  sy := Y;
+  MapHit(sx, sy);
   if Button = mbLeft then
   begin
-    if HitTest(X, Y, hitName, hitElem, hitIsSlider,
+    if HitTest(sx, sy, hitName, hitElem, hitIsSlider,
                hitMinV, hitMaxV, hitIsVert) then
     begin
       if hitIsSlider then
@@ -505,6 +545,7 @@ var
   needRedraw: Boolean;
   newHover: string;
 begin
+  MapHit(X, Y);
   if FDrag.SliderName <> '' then
   begin
     // ── 拖动滑块 ─────────────────────────────────────────────────────
@@ -597,7 +638,11 @@ var
   hitIsSlider: Boolean;
   hitMinV, hitMaxV: Double;
   hitIsVert: Boolean;
+  sx, sy: Integer;
 begin
+  sx := X;
+  sy := Y;
+  MapHit(sx, sy);
   if Button = mbLeft then
   begin
     if FMouseCaptured then
@@ -615,7 +660,7 @@ begin
       if clickedType <> '' then
       begin
         // 鼠标在同一按钮上抬起才算点击
-        if HitTest(X, Y, hitName, hitElem, hitIsSlider,
+        if HitTest(sx, sy, hitName, hitElem, hitIsSlider,
                    hitMinV, hitMaxV, hitIsVert) and
            SameText(hitName, clickedType) then
           FireButtonClick(clickedType, X, Y)
@@ -650,10 +695,10 @@ var
   hitIsSlider: Boolean;
   hitMinV, hitMaxV: Double;
   hitIsVert: Boolean;
+  sw, sh: Integer;
 begin
-  pt := ScreenToClient(Point(
-    SmallInt(Msg.LParam and $FFFF),
-    SmallInt((Msg.LParam shr 16) and $FFFF)));
+  SkinSize(sw, sh);
+  pt := NcHitToSkin(Self, Msg, sw, sh);
 
   if HitTest(pt.X, pt.Y, hitName, hitElem, hitIsSlider,
              hitMinV, hitMaxV, hitIsVert) then

@@ -38,6 +38,7 @@ ui_*.h
 pascal/bin/
 pascal/lib/
 pascal/*.compiled
+pascal/*.res
 pascal/probe.lpi
 pascal/probe.lpr
 pascal/probebmp.lpi

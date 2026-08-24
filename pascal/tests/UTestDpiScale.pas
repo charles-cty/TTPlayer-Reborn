@@ -24,6 +24,11 @@ type
     procedure TestMapPosOriginMismatch;
     procedure TestScaleShapeRects2x;
     procedure TestScaleShapeRects15;
+    procedure TestViewScaleFromDpi;
+    procedure TestScalePx150;
+    procedure TestMapClientToSkin150;
+    procedure TestMapClientToSkinIdentity;
+    procedure TestMapSkinClientRoundTrip;
   end;
 
 implementation
@@ -125,6 +130,45 @@ begin
   AssertEquals(0, dst[0].Y);
   AssertEquals(413, dst[0].W);
   AssertEquals(174, dst[0].H);
+end;
+
+procedure TDpiScaleTest.TestViewScaleFromDpi;
+begin
+  AssertEquals(1.0, ViewScaleFromDpi(96), 1e-9);
+  AssertEquals(1.25, ViewScaleFromDpi(120), 1e-9);
+  AssertEquals(1.5, ViewScaleFromDpi(144), 1e-9);
+  AssertEquals(2.0, ViewScaleFromDpi(192), 1e-9);
+  AssertEquals(1.0, ViewScaleFromDpi(0), 1e-9);
+end;
+
+procedure TDpiScaleTest.TestScalePx150;
+begin
+  AssertEquals(275, ScalePx(275, 1.0));
+  AssertEquals(413, ScalePx(275, 1.5));
+  AssertEquals(550, ScalePx(275, 2.0));
+end;
+
+procedure TDpiScaleTest.TestMapClientToSkin150;
+begin
+  AssertEquals(0, MapClientToSkin(0, 413, 275));
+  AssertEquals(275, MapClientToSkin(413, 413, 275));
+  AssertEquals(137, MapClientToSkin(206, 413, 275));
+end;
+
+procedure TDpiScaleTest.TestMapClientToSkinIdentity;
+begin
+  AssertEquals(40, MapClientToSkin(40, 275, 275));
+  AssertEquals(40, MapSkinToClient(40, 275, 275));
+end;
+
+procedure TDpiScaleTest.TestMapSkinClientRoundTrip;
+var
+  c, s: Integer;
+begin
+  c := MapSkinToClient(20, 275, 550);
+  AssertEquals(40, c);
+  s := MapClientToSkin(c, 550, 275);
+  AssertEquals(20, s);
 end;
 
 initialization

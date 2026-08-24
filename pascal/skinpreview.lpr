@@ -8,12 +8,13 @@ program skinpreview;
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   UGdkX11Backend,
+  UWinDpiAware,
   Interfaces,
   Classes, SysUtils, Forms, Controls, StdCtrls, ExtCtrls, Dialogs, Types,
   LazFileUtils, LazUTF8, LCLIntf,
   USkinTypes, USkinLoader, UPlayerForm, UEqualizerForm, ULyricForm,
   UVisualWidget, UPlaylistForm, UPlayerBackend,
-  UWindowSnapManager, UFormSnap, UWindowSnapMath, UPlatformWindow;
+  UWindowSnapManager, UFormSnap, UWindowSnapMath, UPlatformWindow, USkinView;
 
 type
   TPreviewMainForm = class(TForm)
@@ -364,7 +365,7 @@ var
   wr: TRect;
   nl, nt, nw, nh, gdkScale, xw, xh: Integer;
   decorated, hasTitle, above: Boolean;
-  scale: Double;
+  scale, viewScale: Double;
 begin
   if AForm = nil then
     Exit('{"present":false}');
@@ -378,6 +379,7 @@ begin
   hasTitle := False;
   above := False;
   scale := 1.0;
+  viewScale := FormViewScale(AForm);
   gdkScale := 1;
   if AForm.HandleAllocated then
   begin
@@ -405,12 +407,12 @@ begin
     '"lcl_left":%d,"lcl_top":%d,"lcl_width":%d,"lcl_height":%d,' +
     '"native_left":%d,"native_top":%d,"native_width":%d,"native_height":%d,' +
     '"x11_width":%d,"x11_height":%d,' +
-    '"scale":%s,"gdk_scale_factor":%d,' +
+    '"scale":%s,"view_scale":%s,"gdk_scale_factor":%d,' +
     '"decorated":%s,"has_titlebar":%s,"ewmh_above":%s}',
     [JsonBool(AForm.Visible), JsonEscape(AForm.Caption),
      AForm.Left, AForm.Top, AForm.Width, AForm.Height,
      nl, nt, nw, nh, xw, xh,
-     JsonNumber(scale), gdkScale,
+     JsonNumber(scale), JsonNumber(viewScale), gdkScale,
      JsonBool(decorated), JsonBool(hasTitle), JsonBool(above)]);
 end;
 
@@ -441,7 +443,7 @@ var
   sl: TStringList;
   skinName, json: string;
   snapped: Boolean;
-  uiScale: Double;
+  uiScale, viewScale: Double;
 begin
   for i := 1 to 30 do
   begin
@@ -480,6 +482,7 @@ begin
   end;
 
   uiScale := 1.0;
+  viewScale := 1.0;
   gdkScale := 1;
   ppi := Screen.PixelsPerInch;
   if ppi <= 0 then
@@ -492,6 +495,8 @@ begin
         FPlayerForm.Width, FPlayerForm.Height);
       gdkScale := PlatformGdkScaleFactor(FPlayerForm.Handle);
     end;
+    viewScale := FormViewScale(FPlayerForm);
+    ppi := FormDpi(FPlayerForm);
   end;
 
   sl := TStringList.Create;
@@ -510,6 +515,7 @@ begin
       JsonBool(PlatformAlwaysOnTopNative) + ',');
     sl.Add('  "dpi": {');
     sl.Add('    "scale": ' + JsonNumber(uiScale) + ',');
+    sl.Add('    "view_scale": ' + JsonNumber(viewScale) + ',');
     sl.Add('    "gdk_scale_factor": ' + IntToStr(gdkScale) + ',');
     sl.Add('    "pixels_per_inch": ' + IntToStr(ppi));
     sl.Add('  },');
@@ -532,7 +538,8 @@ begin
     sl.Add('    "native Wayland is out of scope",');
     sl.Add('    "GTK3 caption drag is LCL capture + OnDragStarted/Finished",');
     sl.Add('    "snap here is programmatic OnDragFinished (same manager as mouse drag)",');
-    sl.Add('    "DPI: snap in logical pixels; Shape scaled when native size is a uniform UI scale"');
+    sl.Add('    "DPI: snap in logical pixels; Shape scaled when native size is a uniform UI scale",');
+    sl.Add('    "view_scale sizes LCL to skin*dpi/96 on Windows; GTK GDK_SCALE>=2 keeps LCL at 1x"');
     sl.Add('  ]');
     sl.Add('}');
     json := sl.Text;
@@ -550,6 +557,7 @@ var
   ProbeOut: string;
 begin
   RequireDerivedFormResource := False;  // 纯代码窗口，无 .lfm 资源
+  Application.Scaled := False;
   Application.Initialize;
   Application.CreateForm(TPreviewMainForm, MainForm);
   if HasSwitch('--probe') then

@@ -16,7 +16,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, LCLType, LCLIntf, LMessages, Types,
-  UWindowSnapMath, UWindowSnapManager, UPlatformWindow, UDpiScale;
+  UWindowSnapMath, UWindowSnapManager, UPlatformWindow, UDpiScale, USkinView;
 
 type
   TFormSnapWindow = class(TInterfacedObject, ISnapWindow)
@@ -47,7 +47,10 @@ type
     FOrigWndProc: PtrUInt;
     FCaptionDragging: Boolean;
     FGrabOffX, FGrabOffY: Integer;
+    FLastViewScale: Double;
+    FSyncingView: Boolean;
     procedure WndProc(var Msg: TLMessage);
+    procedure SyncViewScale(Force: Boolean);
     procedure HandleShow(Sender: TObject);
     procedure HandleHide(Sender: TObject);
     procedure UpdateScreenRect;
@@ -82,6 +85,7 @@ uses
 const
   WM_ENTERSIZEMOVE = $0231;
   WM_EXITSIZEMOVE  = $0232;
+  WM_DPICHANGED    = $02E0;
   SNAP_PROP_NAME   = 'TTPSnapAdpt';
 
 {$IFDEF WINDOWS}
@@ -192,6 +196,8 @@ begin
   FCaptionDragging := False;
   FGrabOffX := 0;
   FGrabOffY := 0;
+  FLastViewScale := FormViewScale(AForm);
+  FSyncingView := False;
   FOldProc := AForm.WindowProc;
   AForm.WindowProc := @WndProc;
   FPrevShow := AForm.OnShow;
@@ -235,6 +241,22 @@ begin
     r := Screen.WorkAreaRect;
   FManager.ScreenRect := SnapRectXYWH(r.Left, r.Top,
     r.Right - r.Left, r.Bottom - r.Top);
+end;
+
+procedure TSnapFormAdapter.SyncViewScale(Force: Boolean);
+var
+  s: Double;
+begin
+  if FSyncingView or (FForm = nil) then Exit;
+  s := FormViewScale(FForm);
+  if (not Force) and (Abs(s - FLastViewScale) < 0.01) then Exit;
+  FSyncingView := True;
+  try
+    FLastViewScale := s;
+    NotifySkinViewScale(FForm);
+  finally
+    FSyncingView := False;
+  end;
 end;
 
 procedure TSnapFormAdapter.HandleEnterSizeMove;
@@ -315,6 +337,15 @@ begin
   if (A = nil) or (not A.FNativeHooked) then
     Exit(DefWindowProc(Wnd, uMsg, wParam, lParam));
   orig := A.FOrigWndProc;
+  if uMsg = WM_DPICHANGED then
+  begin
+    if lParam <> 0 then
+      A.FForm.SetBounds(PRect(lParam)^.Left, PRect(lParam)^.Top,
+        A.FForm.Width, A.FForm.Height);
+    A.SyncViewScale(True);
+    Result := 0;
+    Exit;
+  end;
   if uMsg = WM_ENTERSIZEMOVE then
     A.HandleEnterSizeMove;
   Result := CallWindowProc(WNDPROC(orig), Wnd, uMsg, wParam, lParam);
@@ -414,7 +445,10 @@ begin
       else
         FManager.OnSubMoved(FWin, dx, dy);
     end;
+    SyncViewScale(False);
   end
+  else if Msg.Msg = WM_DPICHANGED then
+    SyncViewScale(True)
   else if Msg.Msg = WM_EXITSIZEMOVE then
     HandleExitSizeMove;
 end;

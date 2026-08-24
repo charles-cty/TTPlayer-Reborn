@@ -10,6 +10,7 @@ program ttplayer;
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   UGdkX11Backend,
+  UWinDpiAware,
   Interfaces,
   Classes, SysUtils, Forms,
   LazFileUtils,
@@ -207,6 +208,7 @@ var
   TheApp: TTPlayerApp;
 begin
   RequireDerivedFormResource := False;  // 纯代码窗口，无 .lfm 资源
+  Application.Scaled := False;
   Application.Initialize;
   TheApp := TTPlayerApp.Create;
   try

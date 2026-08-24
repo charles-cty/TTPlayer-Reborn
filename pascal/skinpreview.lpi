@@ -11,6 +11,10 @@
       </Flags>
       <SessionStorage Value="None"/>
       <Title Value="skinpreview"/>
+      <UseXPManifest Value="True"/>
+      <XPManifest>
+        <DpiAware Value="True/PM_V2"/>
+      </XPManifest>
       <UseDefaultCompilerOptions Value="True"/>
     </General>
     <BuildModes Count="1">

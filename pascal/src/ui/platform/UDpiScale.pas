@@ -5,6 +5,7 @@ unit UDpiScale;
 // UI 缩放换算（无 LCL）。皮肤与吸附在逻辑像素里算；Shape / Win32
 // GetWindowRect 在物理像素里。不能把 CSD 撑大的 native/LCL 比当成 DPI
 // （GTK3 上会把坐标指数放大到 SmallInt 溢出）。
+// 皮肤视图：ScalePx / ViewScaleFromDpi / MapClientToSkin；LCL 侧见 USkinView。
 //
 // 判别：宽高缩放须一致，且贴近 125/150/200% 等常见档；否则视为 1×。
 
@@ -19,6 +20,13 @@ function LogicalFromNative(Native, LogicalExtent, NativeExtent: Integer): Intege
 function NativeFromLogical(Logical, LogicalExtent, NativeExtent: Integer): Integer;
 function MapNativePosToLogical(NativePos, LclPos, LogicalExtent, NativeExtent: Integer): Integer;
 function ScaleShapeRects(const Rects: TShapeRectArray; ScaleX, ScaleY: Double): TShapeRectArray;
+
+// 皮肤视图缩放（LCL 客户区相对 1× 皮肤像素）。GTK 在 GDK_SCALE≥2 时
+// 由 cairo 做设备缩放，LCL 仍用 1×，不要把皮肤再乘一遍。
+function ScalePx(V: Integer; Scale: Double): Integer;
+function ViewScaleFromDpi(Dpi: Integer): Double;
+function MapClientToSkin(Client, ClientExtent, SkinExtent: Integer): Integer;
+function MapSkinToClient(Skin, SkinExtent, ClientExtent: Integer): Integer;
 
 implementation
 
@@ -41,6 +49,31 @@ begin
     Result := Trunc(V * Scale + 0.5)
   else
     Result := Trunc(V * Scale - 0.5);
+end;
+
+function ScalePx(V: Integer; Scale: Double): Integer;
+begin
+  Result := ScaleInt(V, Scale);
+end;
+
+function ViewScaleFromDpi(Dpi: Integer): Double;
+begin
+  Result := 1.0;
+  if Dpi <= 0 then
+    Exit;
+  Result := QuantizeUiScale(Dpi / 96.0);
+  if Result < 1.0 then
+    Result := 1.0;
+end;
+
+function MapClientToSkin(Client, ClientExtent, SkinExtent: Integer): Integer;
+begin
+  Result := LogicalFromNative(Client, SkinExtent, ClientExtent);
+end;
+
+function MapSkinToClient(Skin, SkinExtent, ClientExtent: Integer): Integer;
+begin
+  Result := NativeFromLogical(Skin, SkinExtent, ClientExtent);
 end;
 
 function SizeMatchesScale(Logical, Native: Integer; Scale: Double): Boolean;

@@ -11,7 +11,7 @@ unit UVisualWidget;
 interface
 
 uses
-  Classes, SysUtils, Controls, Graphics, ExtCtrls,
+  Classes, SysUtils, Controls, Graphics, ExtCtrls, Forms,
   BGRABitmap, BGRABitmapTypes,
   USkinTypes, UPlayerBackend;
 
@@ -64,7 +64,7 @@ type
 implementation
 
 uses
-  Math, LCLType;
+  Math, LCLType, USkinView, UDpiScale;
 
 const
   kScopeLen     = 256;
@@ -113,8 +113,13 @@ begin
 end;
 
 procedure TVisualWidget.SetVisualRect(const R: TSkinRect);
+var
+  s: Double;
+  f: TCustomForm;
 begin
-  SetBounds(R.X, R.Y, R.W, R.H);
+  f := GetParentForm(Self);
+  s := FormViewScale(f);
+  SetBounds(ScalePx(R.X, s), ScalePx(R.Y, s), ScalePx(R.W, s), ScalePx(R.H, s));
   UpdateTimer;
 end;
 

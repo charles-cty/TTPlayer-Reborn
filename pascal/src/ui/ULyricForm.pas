@@ -13,16 +13,18 @@ uses
   Classes, SysUtils, Forms, Controls, Graphics, ExtCtrls,
   LCLIntf, LCLType, LMessages,
   BGRABitmap, BGRABitmapTypes,
-  USkinTypes, USkinRender, UPlayerBackend, ULrcParser, UPlatformWindow;
+  USkinTypes, USkinRender, UPlayerBackend, ULrcParser, UPlatformWindow,
+  USkinView;
 
 type
-  TLyricForm = class(TForm)
+  TLyricForm = class(TForm, ISkinViewForm)
   public
     constructor Create(AOwner: TComponent; ABackend: IPlayerBackend); reintroduce;
     destructor Destroy; override;
 
     // 应用皮肤；换肤时调用。
     procedure ApplySkin(ASkin: PSkinData);
+    procedure RefreshViewScale;
     procedure SetBounds(ALeft, ATop, AWidth, AHeight: Integer); override;
     procedure LoadLrc(const APath: string);
     procedure ClearLrc;
@@ -73,6 +75,7 @@ type
 
     procedure BuildRegion;
     procedure RenderFrame;
+    procedure MapHit(var X, Y: Integer);
     procedure OnLyricTick(Sender: TObject);
     function LyricArea: TSkinRect;
     procedure DrawLyrics;
@@ -98,7 +101,7 @@ type
 implementation
 
 uses
-  LCLProc, Math, UFormSnap;
+  LCLProc, Math, UFormSnap, UDpiScale;
 
 const
   kResizeSense = 8;  // 调整大小感应带宽度（像素）
@@ -227,7 +230,7 @@ begin
   begin
     FLogicW := bg.Width;
     FLogicH := bg.Height;
-    SetBounds(Left, Top, bg.Width, bg.Height);
+    ApplySkinFormSize(Self, FLogicW, FLogicH);
   end;
 
   if HandleAllocated then
@@ -243,19 +246,39 @@ end;
 procedure TLyricForm.SetBounds(ALeft, ATop, AWidth, AHeight: Integer);
 var
   sizeChanged: Boolean;
+  s: Double;
 begin
   sizeChanged := (AWidth <> Width) or (AHeight <> Height);
   inherited SetBounds(ALeft, ATop, AWidth, AHeight);
   if sizeChanged and (FSkin <> nil) then
   begin
-    FLogicW := Width;
-    FLogicH := Height;
+    s := FormViewScale(Self);
+    if s < 0.01 then s := 1.0;
+    FLogicW := Max(1, Round(Width / s));
+    FLogicH := Max(1, Round(Height / s));
     if HandleAllocated then
       BuildRegion;
     FreeAndNil(FFrame);
     RenderFrame;
     Invalidate;
   end;
+end;
+
+procedure TLyricForm.MapHit(var X, Y: Integer);
+begin
+  ClientToSkinXY(Self, FLogicW, FLogicH, X, Y);
+end;
+
+procedure TLyricForm.RefreshViewScale;
+var
+  s: Double;
+begin
+  if FSkin = nil then Exit;
+  s := FormViewScale(Self);
+  SetBounds(Left, Top, ScalePx(FLogicW, s), ScalePx(FLogicH, s));
+  if HandleAllocated then
+    BuildRegion;
+  Invalidate;
 end;
 
 procedure TLyricForm.BuildRegion;
@@ -287,12 +310,14 @@ procedure TLyricForm.CreateWnd;
 begin
   inherited CreateWnd;
   ConfigurePlatformWindow(Self);
+  RefreshViewScale;
 end;
 
 procedure TLyricForm.DoShow;
 begin
   inherited DoShow;
   ConfigurePlatformWindow(Self);
+  RefreshViewScale;
   BuildRegion;
 end;
 
@@ -444,7 +469,7 @@ begin
   if FFrame = nil then
     RenderFrame;
   if FFrame = nil then Exit;
-  FFrame.Draw(Canvas, 0, 0, True);
+  DrawSkinFrame(Canvas, FFrame, ClientWidth, ClientHeight);
 end;
 
 // Qt alignedRect('right') 的等价计算：
@@ -526,16 +551,20 @@ procedure TLyricForm.MouseDown(Button: TMouseButton; Shift: TShiftState;
 var
   er, eb: Boolean;
   hitName: string;
+  sx, sy: Integer;
 begin
+  sx := X;
+  sy := Y;
+  MapHit(sx, sy);
   if Button = mbLeft then
   begin
-    hitName := HitButton(X, Y);
+    hitName := HitButton(sx, sy);
     if hitName <> '' then
     begin
       FPressedType := hitName;
       RenderFrame; Invalidate;
     end
-    else if HitResizeEdge(X, Y, er, eb) then
+    else if HitResizeEdge(sx, sy, er, eb) then
     begin
       FResizing := True;
       FResizeEdgeRight  := er;
@@ -557,26 +586,28 @@ var
   newName: string;
   er, eb: Boolean;
   newW, newH, dx, dy: Integer;
+  s: Double;
 begin
   if FResizing then
   begin
+    s := FormViewScale(Self);
+    if s < 0.01 then s := 1.0;
     dx := Mouse.CursorPos.X - FResizeStartX;
     dy := Mouse.CursorPos.Y - FResizeStartY;
     newW := FResizeStartW;
     newH := FResizeStartH;
-    if FResizeEdgeRight  then newW := Max(200, FResizeStartW + dx);
-    if FResizeEdgeBottom then newH := Max(50,  FResizeStartH + dy);
+    if FResizeEdgeRight  then newW := Max(200, FResizeStartW + Round(dx / s));
+    if FResizeEdgeBottom then newH := Max(50,  FResizeStartH + Round(dy / s));
     if (newW <> FLogicW) or (newH <> FLogicH) then
     begin
-      FLogicW := newW;
-      FLogicH := newH;
-      SetBounds(Left, Top, newW, newH);
+      SetBounds(Left, Top, ScalePx(newW, s), ScalePx(newH, s));
       if Assigned(FOnResizeInProgress) then
         FOnResizeInProgress(Self);
     end;
   end
   else
   begin
+    MapHit(X, Y);
     // hover 高亮（按钮）
     newName := HitButton(X, Y);
     if newName <> FHoveredType then
@@ -602,6 +633,7 @@ procedure TLyricForm.MouseUp(Button: TMouseButton; Shift: TShiftState;
 var
   clickedType, hitName: string;
 begin
+  MapHit(X, Y);
   if Button = mbLeft then
   begin
     if FResizing then
@@ -645,9 +677,7 @@ var
   pt: TPoint;
   er, eb: Boolean;
 begin
-  pt := ScreenToClient(Point(
-    SmallInt(Msg.LParam and $FFFF),
-    SmallInt((Msg.LParam shr 16) and $FFFF)));
+  pt := NcHitToSkin(Self, Msg, FLogicW, FLogicH);
 
   if HitButton(pt.X, pt.Y) <> '' then
     Msg.Result := HTCLIENT

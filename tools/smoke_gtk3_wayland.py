@@ -46,6 +46,21 @@ def main() -> int:
             f"backend={data.get('backend')!r} expected {args.expect_backend!r}"
         )
 
+    dpi = data.get("dpi") or {}
+    try:
+        view_scale = float(dpi.get("view_scale") or 1.0)
+    except (TypeError, ValueError):
+        view_scale = 1.0
+    try:
+        gdk_scale = int(dpi.get("gdk_scale_factor") or 1)
+    except (TypeError, ValueError):
+        gdk_scale = 1
+    if gdk_scale >= 2 and abs(view_scale - 1.0) > 0.05:
+        errors.append(
+            f"GDK_SCALE={gdk_scale} must keep view_scale=1 "
+            f"(got {view_scale}); SetBounds(skin*2) would make a 4x X window"
+        )
+
     expect_shape = args.expect_backend == "x11"
     if bool(data.get("shape_supported")) != expect_shape:
         errors.append(

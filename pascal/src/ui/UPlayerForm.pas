@@ -12,13 +12,14 @@ interface
 uses
   Classes, SysUtils, Forms, Controls, Graphics, LCLIntf, LCLType, LMessages,
   BGRABitmap, BGRABitmapTypes,
-  USkinTypes, USkinRender, UPlayerBackend, UVisualWidget, UPlatformWindow;
+  USkinTypes, USkinRender, UPlayerBackend, UVisualWidget, UPlatformWindow,
+  USkinView;
 
 type
   TAuxToggleEvent = procedure(Sender: TObject; const AType: string;
     AToggled: Boolean) of object;
 
-  TPlayerForm = class(TForm)
+  TPlayerForm = class(TForm, ISkinViewForm)
   public
     constructor Create(AOwner: TComponent; ABackend: IPlayerBackend); reintroduce;
     destructor Destroy; override;
@@ -26,6 +27,7 @@ type
     // 应用皮肤数据；换肤时调用，重建 Region 并刷新。
     // ASkin 必须指向引擎持有的 TSkinData（TSkinEngine.SkinPtr），不能是副本。
     procedure ApplySkin(ASkin: PSkinData);
+    procedure RefreshViewScale;
 
     // 切换辅助窗口按钮的切换状态（lyric/equalizer/playlist）。
     procedure SetAuxToggle(const AType: string; AToggled: Boolean);
@@ -61,6 +63,8 @@ type
 
     procedure BuildRegion;
     procedure RenderFrame;
+    procedure SkinSize(out W, H: Integer);
+    procedure MapHit(var X, Y: Integer);
     function  HitElement(X, Y: Integer): PSkinElement;
     function  IsButtonType(const AType: string): Boolean;
     function  IsToggleButton(const AType: string): Boolean;
@@ -120,11 +124,9 @@ begin
     ClearWindowShape(Handle);
 
   if (ASkin^.PlayerWindow.BackgroundPixmap <> nil) then
-  begin
-    SetBounds(Left, Top,
+    ApplySkinFormSize(Self,
       ASkin^.PlayerWindow.BackgroundPixmap.Width,
       ASkin^.PlayerWindow.BackgroundPixmap.Height);
-  end;
 
   // 重建异形 Region
   if HandleAllocated then
@@ -161,16 +163,56 @@ begin
   ApplyAlphaShape(Handle, bmp);
 end;
 
+procedure TPlayerForm.SkinSize(out W, H: Integer);
+var
+  bmp: TBGRABitmap;
+begin
+  W := Width;
+  H := Height;
+  if FSkin = nil then Exit;
+  bmp := FSkin^.PlayerWindow.BackgroundPixmap;
+  if bmp = nil then Exit;
+  W := bmp.Width;
+  H := bmp.Height;
+end;
+
+procedure TPlayerForm.MapHit(var X, Y: Integer);
+var
+  sw, sh: Integer;
+begin
+  SkinSize(sw, sh);
+  ClientToSkinXY(Self, sw, sh, X, Y);
+end;
+
+procedure TPlayerForm.RefreshViewScale;
+var
+  visualElem: PSkinElement;
+  sw, sh: Integer;
+begin
+  if FSkin = nil then Exit;
+  SkinSize(sw, sh);
+  ApplySkinFormSize(Self, sw, sh);
+  if HandleAllocated then
+    BuildRegion;
+  visualElem := FSkin^.PlayerWindow.FindElement('visual');
+  if (visualElem <> nil) and (not visualElem^.Position.IsEmpty) and
+     (FVisual <> nil) and FVisual.Visible then
+    FVisual.SetVisualRect(visualElem^.Position);
+  Invalidate;
+end;
+
 procedure TPlayerForm.CreateWnd;
 begin
   inherited CreateWnd;
   ConfigurePlatformWindow(Self);
+  RefreshViewScale;
 end;
 
 procedure TPlayerForm.DoShow;
 begin
   inherited DoShow;
   ConfigurePlatformWindow(Self);
+  RefreshViewScale;
   BuildRegion;
 end;
 
@@ -209,7 +251,7 @@ end;
 procedure TPlayerForm.Paint;
 begin
   if FFrame = nil then Exit;
-  FFrame.Draw(Canvas, 0, 0, True);
+  DrawSkinFrame(Canvas, FFrame, ClientWidth, ClientHeight);
 end;
 
 // 元素命中测试：按 position 查找包含 (X,Y) 的元素。
@@ -317,6 +359,7 @@ var
   elem: PSkinElement;
   newHover: string;
 begin
+  MapHit(X, Y);
   elem := HitElement(X, Y);
   if (elem <> nil) and IsButtonType(elem^.ElementType) then
     newHover := elem^.ElementType
@@ -336,10 +379,14 @@ procedure TPlayerForm.MouseDown(Button: TMouseButton; Shift: TShiftState;
   X, Y: Integer);
 var
   elem: PSkinElement;
+  sx, sy: Integer;
 begin
+  sx := X;
+  sy := Y;
+  MapHit(sx, sy);
   if Button = mbLeft then
   begin
-    elem := HitElement(X, Y);
+    elem := HitElement(sx, sy);
     if (elem <> nil) and IsButtonType(elem^.ElementType) then
     begin
       FPressedType := elem^.ElementType;
@@ -358,6 +405,7 @@ var
   elem: PSkinElement;
   clickedType: string;
 begin
+  MapHit(X, Y);
   if Button = mbLeft then
   begin
     clickedType := FPressedType;
@@ -396,10 +444,10 @@ procedure TPlayerForm.WMNCHitTest(var Msg: TLMessage);
 var
   pt: TPoint;
   elem: PSkinElement;
+  sw, sh: Integer;
 begin
-  pt := ScreenToClient(Point(
-    SmallInt(Msg.LParam and $FFFF),
-    SmallInt((Msg.LParam shr 16) and $FFFF)));
+  SkinSize(sw, sh);
+  pt := NcHitToSkin(Self, Msg, sw, sh);
 
   elem := HitElement(pt.X, pt.Y);
   if (elem <> nil) and IsButtonType(elem^.ElementType) then
