@@ -60,6 +60,7 @@ type
 
     FLogicW, FLogicH: Integer;
     FRowHeight: Integer;
+    FDrawScale: Double;
 
     FHoveredType: string;
     FPressedType: string;
@@ -106,6 +107,7 @@ type
     procedure InvalidateFrame;
     procedure MapHit(var X, Y: Integer);
     procedure ApplyListFont;
+    function SX(V: Integer): Integer;
     procedure RebuildVisible;
     procedure SyncSelectionLength;
     procedure ClampScroll;
@@ -261,6 +263,7 @@ begin
   FLogicW := 268;
   FLogicH := 165;
   FRowHeight := 16;
+  FDrawScale := 1.0;
 
   FHoveredType     := '';
   FPressedType     := '';
@@ -780,28 +783,27 @@ begin
   ClampScroll;
 end;
 
+function TPlaylistForm.SX(V: Integer): Integer;
+begin
+  Result := ScalePx(V, FDrawScale);
+end;
+
 procedure TPlaylistForm.ApplyListFont;
 var
   f: TSkinFont;
-  st: TFontStyles;
+  px: Integer;
 begin
   if (FFrame = nil) or (FSkin = nil) then Exit;
   f := FSkin^.PlaylistConfig.Font;
-  if f.Family <> '' then
-    FFrame.FontName := f.Family
-  else
+  px := f.PixelSize;
+  if px <= 0 then px := 12;
+  FFrame.FontName := f.Family;
+  if FFrame.FontName = '' then
     FFrame.FontName := 'SimSun';
-  if f.PixelSize > 0 then
-    FFrame.FontHeight := f.PixelSize
-  else
-    FFrame.FontHeight := 12;
-  st := [];
-  if f.Bold then Include(st, fsBold);
-  if f.Italic then Include(st, fsItalic);
-  FFrame.FontStyle := st;
-  FFrame.FontAntialias := True;
+  FFrame.FontHeight := px;
   FRowHeight := FFrame.TextSize('Ag').cy + 4;
   if FRowHeight < 14 then FRowHeight := 14;
+  ApplyViewFont(FFrame, f.Family, px, f.Bold, f.Italic, FDrawScale);
 end;
 
 procedure TPlaylistForm.FreeScrollButtons;
@@ -952,24 +954,35 @@ end;
 
 procedure TPlaylistForm.DrawVTiled(Src: TBGRABitmap; const R: TSkinRect);
 var
-  y, dh: Integer;
+  y, y2, dh, tileH, tileW, dx, vx, vw: Integer;
   part: TBGRABitmap;
+  srcH: Integer;
 begin
   if (Src = nil) or (R.W <= 0) or (R.H <= 0) then Exit;
-  y := R.Y;
-  while y < R.Y + R.H do
+  vx := SX(R.X);
+  vw := SX(R.X + R.W) - vx;
+  tileW := SX(Src.Width);
+  tileH := SX(Src.Height);
+  if tileW < 1 then tileW := 1;
+  if tileH < 1 then tileH := 1;
+  y := SX(R.Y);
+  y2 := SX(R.Y + R.H);
+  srcH := Src.Height;
+  while y < y2 do
   begin
-    dh := Min(Src.Height, R.Y + R.H - y);
-    if dh < Src.Height then
-      part := Src.GetPart(Classes.Rect(0, 0, Src.Width, dh))
+    dh := Min(tileH, y2 - y);
+    if dh < tileH then
+      part := Src.GetPart(Classes.Rect(0, 0, Src.Width,
+        Max(1, (dh * srcH + tileH - 1) div tileH)))
     else
       part := Src;
     try
-      FFrame.PutImage(R.X + (R.W - Src.Width) div 2, y, part, dmDrawWithTransparency);
+      dx := vx + (vw - tileW) div 2;
+      PutSkinNearest(FFrame, Classes.Rect(dx, y, dx + tileW, y + dh), part);
     finally
       if part <> Src then part.Free;
     end;
-    Inc(y, Src.Height);
+    Inc(y, tileH);
   end;
 end;
 
@@ -979,24 +992,31 @@ var
   fixedTop, fixedBottom: Integer;
   topBmp, midBmp, botBmp: TBGRABitmap;
   midR: TSkinRect;
+  vx, vy, vw, vh, ft, fb: Integer;
 begin
   if (Src = nil) or (R.W <= 0) or (R.H <= 0) then Exit;
+  vx := SX(R.X);
+  vy := SX(R.Y);
+  vw := SX(R.X + R.W) - vx;
+  vh := SX(R.Y + R.H) - vy;
   if (ResizeCenter <= 0) or (Src.Height <= ResizeCenter) or (R.H <= Src.Height) then
   begin
-    FFrame.StretchPutImage(Classes.Rect(R.X, R.Y, R.X + R.W, R.Y + R.H),
-      Src, dmDrawWithTransparency);
+    PutSkinNearest(FFrame, Classes.Rect(vx, vy, vx + vw, vy + vh), Src);
     Exit;
   end;
   fixedTop := (Src.Height - ResizeCenter) div 2;
   fixedBottom := Src.Height - fixedTop - ResizeCenter;
+  ft := SX(fixedTop);
+  fb := SX(fixedBottom);
   topBmp := Src.GetPart(Classes.Rect(0, 0, Src.Width, fixedTop));
   midBmp := Src.GetPart(Classes.Rect(0, fixedTop, Src.Width, fixedTop + ResizeCenter));
   botBmp := Src.GetPart(Classes.Rect(0, Src.Height - fixedBottom, Src.Width, Src.Height));
   try
-    if (topBmp <> nil) and (fixedTop > 0) then
-      FFrame.PutImage(R.X, R.Y, topBmp, dmDrawWithTransparency);
-    if (botBmp <> nil) and (fixedBottom > 0) then
-      FFrame.PutImage(R.X, R.Y + R.H - fixedBottom, botBmp, dmDrawWithTransparency);
+    if (topBmp <> nil) and (ft > 0) then
+      PutSkinNearest(FFrame, Classes.Rect(vx, vy, vx + vw, vy + ft), topBmp);
+    if (botBmp <> nil) and (fb > 0) then
+      PutSkinNearest(FFrame, Classes.Rect(vx, vy + vh - fb, vx + vw, vy + vh),
+        botBmp);
     midR.X := R.X;
     midR.Y := R.Y + fixedTop;
     midR.W := R.W;
@@ -1006,8 +1026,8 @@ begin
       if TileCenter then
         DrawVTiled(midBmp, midR)
       else
-        FFrame.StretchPutImage(Classes.Rect(midR.X, midR.Y, midR.X + midR.W, midR.Y + midR.H),
-          midBmp, dmDrawWithTransparency);
+        PutSkinNearest(FFrame, Classes.Rect(SX(midR.X), SX(midR.Y),
+          SX(midR.X + midR.W), SX(midR.Y + midR.H)), midBmp);
     end;
   finally
     topBmp.Free;
@@ -1047,7 +1067,8 @@ begin
   btn := FSbButtons[0, state];
   if btn = nil then btn := FSbButtons[0, 0];
   if (btn <> nil) and (not topR.IsEmpty) then
-    FFrame.PutImage(topR.X, topR.Y, btn, dmDrawWithTransparency);
+    PutSkinNearest(FFrame, ViewRect(topR.X, topR.Y, topR.W, topR.H, FDrawScale),
+      btn);
 
   if FSbPressedPart = 1 then state := 2
   else if FSbHoverPart = 1 then state := 1
@@ -1055,7 +1076,8 @@ begin
   btn := FSbButtons[1, state];
   if btn = nil then btn := FSbButtons[1, 0];
   if (btn <> nil) and (not botR.IsEmpty) then
-    FFrame.PutImage(botR.X, botR.Y, btn, dmDrawWithTransparency);
+    PutSkinNearest(FFrame, ViewRect(botR.X, botR.Y, botR.W, botR.H, FDrawScale),
+      btn);
 
   if not thumb.IsEmpty then
   begin
@@ -1083,19 +1105,23 @@ end;
 procedure TPlaylistForm.DrawListRows;
 var
   lr: TSkinRect;
-  vis, src, y, hPad, numW, durW, gap, playW, crL, crR: Integer;
+  vis, src, ySkin, hPad, numW, durW, gap, playW, crL, crR: Integer;
+  vx, vy, vw, vh, rowY, rowH, markerH, markerOff: Integer;
   e: TPlaylistEntry;
   selected, playing: Boolean;
   bg, bg2, selC, textC, hiC, numC, durC, rowBg, useC: TBGRAPixel;
   number, title, duration: string;
   plElem: PSkinElement;
-  markerH: Integer;
 begin
   lr := ListRect;
   if (lr.W <= 0) or (lr.H <= 0) or (FSkin = nil) then Exit;
 
   ApplyListFont;
-  FFrame.ClipRect := Classes.Rect(lr.X, lr.Y, lr.X + lr.W, lr.Y + lr.H);
+  vx := SX(lr.X);
+  vy := SX(lr.Y);
+  vw := SX(lr.X + lr.W) - vx;
+  vh := SX(lr.Y + lr.H) - vy;
+  FFrame.ClipRect := Classes.Rect(vx, vy, vx + vw, vy + vh);
 
   bg   := FSkin^.PlaylistConfig.ColorBkgnd.ToBGRA;
   bg2  := FSkin^.PlaylistConfig.ColorBkgnd2.ToBGRA;
@@ -1113,14 +1139,16 @@ begin
   if not FSkin^.PlaylistConfig.ColorDuration.Valid then durC := BGRA($C0, $80, $20);
 
   plElem := FSkin^.PlaylistWindow.FindElement('playlist');
-  hPad := 4;
+  hPad := SX(4);
 
   for vis := FScroll to Min(VisibleCount, FScroll + VisibleRowsFit + 1) - 1 do
   begin
     src := SourceOfVisible(vis);
     if src < 0 then Continue;
-    y := lr.Y + (vis - FScroll) * FRowHeight;
-    if y >= lr.Y + lr.H then Break;
+    ySkin := lr.Y + (vis - FScroll) * FRowHeight;
+    if ySkin >= lr.Y + lr.H then Break;
+    rowY := SX(ySkin);
+    rowH := SX(ySkin + FRowHeight) - rowY;
 
     selected := (src < Length(FSelected)) and FSelected[src];
     playing  := src = FModel.CurrentIndex;
@@ -1129,33 +1157,34 @@ begin
     if selected then
     begin
       if (plElem <> nil) and (plElem^.SelectedPixmap <> nil) then
-        FFrame.StretchPutImage(Classes.Rect(lr.X, y, lr.X + lr.W, y + FRowHeight),
+        PutSkinNearest(FFrame, Classes.Rect(vx, rowY, vx + vw, rowY + rowH),
           plElem^.SelectedPixmap, dmSet)
       else
-        FFrame.GradientFill(lr.X, y, lr.X + lr.W, y + FRowHeight,
-          rowBg, selC, gtLinear, PointF(lr.X, y), PointF(lr.X, y + FRowHeight),
+        FFrame.GradientFill(vx, rowY, vx + vw, rowY + rowH,
+          rowBg, selC, gtLinear, PointF(vx, rowY), PointF(vx, rowY + rowH),
           dmSet, False);
     end
     else
-      FFrame.FillRect(lr.X, y, lr.X + lr.W, y + FRowHeight, rowBg, dmSet);
+      FFrame.FillRect(vx, rowY, vx + vw, rowY + rowH, rowBg, dmSet);
 
     e := FModel.Entries[src];
     number := IntToStr(src + 1);
     title := DisplayTitleForEntry(e);
     duration := DisplayDurationForEntry(e);
 
-    crL := lr.X + hPad;
-    crR := lr.X + lr.W - hPad;
+    crL := vx + hPad;
+    crR := vx + vw - hPad;
 
     if playing then
     begin
-      markerH := Min(6, FRowHeight - 4);
+      markerH := Min(SX(6), Max(3, rowH - SX(4)));
+      markerOff := SX(2);
       FFrame.FillPolyAntialias(
-        [PointF(crL + 2, y + (FRowHeight - markerH) / 2),
-         PointF(crL + 2, y + (FRowHeight + markerH) / 2),
-         PointF(crL + 2 + markerH, y + FRowHeight / 2)],
+        [PointF(crL + markerOff, rowY + (rowH - markerH) / 2),
+         PointF(crL + markerOff, rowY + (rowH + markerH) / 2),
+         PointF(crL + markerOff + markerH, rowY + rowH / 2)],
         hiC);
-      Inc(crL, markerH + 6);
+      Inc(crL, markerH + SX(6));
     end;
 
     if selected or playing then useC := hiC else useC := durC;
@@ -1163,14 +1192,14 @@ begin
     if duration <> '' then
     begin
       durW := FFrame.TextSize(duration).cx;
-      FFrame.TextOut(crR - durW, y + (FRowHeight - FFrame.TextSize(duration).cy) div 2,
+      FFrame.TextOut(crR - durW, rowY + (rowH - FFrame.TextSize(duration).cy) div 2,
         duration, useC);
     end;
 
     if selected or playing then useC := hiC else useC := numC;
     number := number + ' ';
     numW := FFrame.TextSize(number).cx;
-    FFrame.TextOut(crL, y + (FRowHeight - FFrame.TextSize(number).cy) div 2,
+    FFrame.TextOut(crL, rowY + (rowH - FFrame.TextSize(number).cy) div 2,
       number, useC);
 
     if selected or playing then useC := hiC else useC := textC;
@@ -1178,7 +1207,7 @@ begin
     if durW > 0 then gap := FFrame.TextSize('  ').cx;
     playW := Max(1, (crR - durW - gap) - (crL + numW));
     title := ElideRight(title, playW);
-    FFrame.TextOut(crL + numW, y + (FRowHeight - FFrame.TextSize(title).cy) div 2,
+    FFrame.TextOut(crL + numW, rowY + (rowH - FFrame.TextSize(title).cy) div 2,
       title, useC);
   end;
 
@@ -1186,9 +1215,10 @@ begin
 
   if FDragRows and (FDropVisIndex >= 0) then
   begin
-    y := lr.Y + (FDropVisIndex - FScroll) * FRowHeight;
-    if (y >= lr.Y) and (y <= lr.Y + lr.H) then
-      FFrame.FillRect(lr.X, y, lr.X + lr.W, y + 2, hiC, dmSet);
+    ySkin := lr.Y + (FDropVisIndex - FScroll) * FRowHeight;
+    rowY := SX(ySkin);
+    if (rowY >= vy) and (rowY <= vy + vh) then
+      FFrame.FillRect(vx, rowY, vx + vw, rowY + Max(1, SX(2)), hiC, dmSet);
   end;
 end;
 
@@ -1222,14 +1252,19 @@ end;
 procedure TPlaylistForm.DrawTabs;
 var
   r: TSkinRect;
-  i, y, tw: Integer;
+  i, ySkin, tw, vx, vy, vw, vh, rowY, rowH, pad: Integer;
   tabName: string;
   textC, hiC, selC: TBGRAPixel;
 begin
   r := TabListRect;
   if (r.W <= 0) or (r.H <= 0) or (FFrame = nil) or (FBook = nil) then Exit;
   ApplyListFont;
-  FFrame.ClipRect := Classes.Rect(r.X, r.Y, r.X + r.W, r.Y + r.H);
+  vx := SX(r.X);
+  vy := SX(r.Y);
+  vw := SX(r.X + r.W) - vx;
+  vh := SX(r.Y + r.H) - vy;
+  pad := SX(4);
+  FFrame.ClipRect := Classes.Rect(vx, vy, vx + vw, vy + vh);
   if (FSkin <> nil) and FSkin^.PlaylistConfig.ColorText.Valid then
     textC := FSkin^.PlaylistConfig.ColorText.ToBGRA
   else
@@ -1244,21 +1279,23 @@ begin
     selC := BGRA($32, $69, $C8);
   for i := 0 to FBook.TabCount - 1 do
   begin
-    y := r.Y + i * FRowHeight;
-    if y >= r.Y + r.H then Break;
+    ySkin := r.Y + i * FRowHeight;
+    if ySkin >= r.Y + r.H then Break;
+    rowY := SX(ySkin);
+    rowH := SX(ySkin + FRowHeight) - rowY;
     if i = FBook.ActiveIndex then
-      FFrame.FillRect(r.X, y, r.X + r.W, y + FRowHeight, selC, dmSet)
+      FFrame.FillRect(vx, rowY, vx + vw, rowY + rowH, selC, dmSet)
     else if i = FHoveredTab then
-      FFrame.FillRect(r.X, y, r.X + r.W, y + FRowHeight,
+      FFrame.FillRect(vx, rowY, vx + vw, rowY + rowH,
         BGRA(selC.red, selC.green, selC.blue, 80), dmDrawWithTransparency);
     tabName := FBook.Tabs[i].Name;
-    tabName := ElideRight(tabName, Max(1, r.W - 8));
+    tabName := ElideRight(tabName, Max(1, vw - SX(8)));
     tw := FFrame.TextSize(tabName).cx;
     if i = FBook.ActiveIndex then
-      FFrame.TextOut(r.X + 4, y + (FRowHeight - FFrame.TextSize(tabName).cy) div 2,
+      FFrame.TextOut(vx + pad, rowY + (rowH - FFrame.TextSize(tabName).cy) div 2,
         tabName, hiC)
     else
-      FFrame.TextOut(r.X + 4, y + (FRowHeight - FFrame.TextSize(tabName).cy) div 2,
+      FFrame.TextOut(vx + pad, rowY + (rowH - FFrame.TextSize(tabName).cy) div 2,
         tabName, textC);
     if tw = 0 then ;
   end;
@@ -1287,19 +1324,24 @@ end;
 
 procedure TPlaylistForm.DrawSplitterBar(const R: TSkinRect; Front, Back: TBGRAPixel);
 var
-  x, totalW, frontW, backW: Integer;
+  x, totalW, frontW, backW, vx, vy, vw, vh: Integer;
   mix: TBGRAPixel;
 begin
   if (R.W <= 0) or (R.H <= 0) or (FFrame = nil) then Exit;
-  FFrame.FillRect(R.X, R.Y, R.X + R.W, R.Y + 1, Front, dmSet);
-  if R.H > 1 then
-    FFrame.FillRect(R.X, R.Y + R.H - 1, R.X + R.W, R.Y + R.H, Front, dmSet);
-  if R.H <= 2 then Exit;
-  FFrame.FillRect(R.X, R.Y + 1, R.X + 1, R.Y + R.H - 1, Front, dmSet);
-  if R.W > 1 then
-    FFrame.FillRect(R.X + R.W - 1, R.Y + 1, R.X + R.W, R.Y + R.H - 1, Front, dmSet);
-  totalW := R.W;
-  for x := 1 to R.W - 2 do
+  vx := SX(R.X);
+  vy := SX(R.Y);
+  vw := SX(R.X + R.W) - vx;
+  vh := SX(R.Y + R.H) - vy;
+  if (vw <= 0) or (vh <= 0) then Exit;
+  FFrame.FillRect(vx, vy, vx + vw, vy + 1, Front, dmSet);
+  if vh > 1 then
+    FFrame.FillRect(vx, vy + vh - 1, vx + vw, vy + vh, Front, dmSet);
+  if vh <= 2 then Exit;
+  FFrame.FillRect(vx, vy + 1, vx + 1, vy + vh - 1, Front, dmSet);
+  if vw > 1 then
+    FFrame.FillRect(vx + vw - 1, vy + 1, vx + vw, vy + vh - 1, Front, dmSet);
+  totalW := vw;
+  for x := 1 to vw - 2 do
   begin
     frontW := totalW - x;
     backW  := totalW - frontW;
@@ -1307,7 +1349,7 @@ begin
     mix.green := Byte((Integer(Front.green) * frontW + Integer(Back.green) * backW) div totalW);
     mix.blue  := Byte((Integer(Front.blue)  * frontW + Integer(Back.blue)  * backW) div totalW);
     mix.alpha := 255;
-    FFrame.FillRect(R.X + x, R.Y + 1, R.X + x + 1, R.Y + R.H - 1, mix, dmSet);
+    FFrame.FillRect(vx + x, vy + 1, vx + x + 1, vy + vh - 1, mix, dmSet);
   end;
 end;
 
@@ -1329,17 +1371,40 @@ const
     (X:0; Y: 2), (X:1; Y: 2)
   );
 var
-  cy, baseX, i: Integer;
+  cy, baseX, i, px, py, pw, ph: Integer;
+  pt: TPoint;
 begin
   if (R.W < 5) or (R.H < 5) or (FFrame = nil) then Exit;
-  cy := R.Y + R.H div 2;
-  baseX := R.X;
+  cy := SX(R.Y) + (SX(R.Y + R.H) - SX(R.Y)) div 2;
+  baseX := SX(R.X);
   if Collapsed then
+  begin
     for i := 0 to High(kCollapsedPts) do
-      FFrame.SetPixel(baseX + kCollapsedPts[i].X, cy + kCollapsedPts[i].Y, ArrowColor)
+    begin
+      pt := kCollapsedPts[i];
+      px := SX(pt.X);
+      py := SX(pt.Y);
+      pw := SX(pt.X + 1) - px;
+      ph := SX(pt.Y + 1) - py;
+      if pw < 1 then pw := 1;
+      if ph < 1 then ph := 1;
+      FFrame.FillRect(baseX + px, cy + py, baseX + px + pw, cy + py + ph,
+        ArrowColor, dmSet);
+    end;
+  end
   else
     for i := 0 to High(kExpanded) do
-      FFrame.SetPixel(baseX + kExpanded[i].X, cy + kExpanded[i].Y, ArrowColor);
+    begin
+      pt := kExpanded[i];
+      px := SX(pt.X);
+      py := SX(pt.Y);
+      pw := SX(pt.X + 1) - px;
+      ph := SX(pt.Y + 1) - py;
+      if pw < 1 then pw := 1;
+      if ph < 1 then ph := 1;
+      FFrame.FillRect(baseX + px, cy + py, baseX + px + pw, cy + py + ph,
+        ArrowColor, dmSet);
+    end;
 end;
 
 procedure TPlaylistForm.DrawToolbarGroups;
@@ -1397,8 +1462,8 @@ begin
     srcRect := Classes.Rect(srcLeft, 0, srcLeft + srcW, srcH);
     clip_ := sheet.GetPart(srcRect);
     try
-      FFrame.ClipRect := Classes.Rect(gLeft, tb.Y, gRight, tb.Y + tb.H);
-      FFrame.PutImage(drawX, drawY, clip_, dmDrawWithTransparency);
+      FFrame.ClipRect := ViewRect(gLeft, tb.Y, gW, tb.H, FDrawScale);
+      PutSkinNearest(FFrame, ViewRect(drawX, drawY, srcW, srcH, FDrawScale), clip_);
       FFrame.NoClip;
     finally
       clip_.Free;
@@ -1411,22 +1476,46 @@ var
   wnd: TSkinWindow;
   elem: PSkinElement;
   bounds, pl, vis, leftPane, titleRect: TSkinRect;
-  btnX, titleW, titleH: Integer;
+  btnX, titleW, titleH, fw, fh, vx, vy, vw, vh: Integer;
   overType: string;
   overState: TButtonVisualState;
   fillBkgnd, fillBkgnd2, front, back: TBGRAPixel;
   sz: TPoint;
+  s: Double;
+  tmp: TBGRABitmap;
 begin
   if FSkin = nil then Exit;
+
+  s := FormViewScale(Self);
+  if s < 0.01 then s := 1.0;
+  FDrawScale := s;
+  fw := ScalePx(FLogicW, s);
+  fh := ScalePx(FLogicH, s);
+  if fw < 1 then fw := 1;
+  if fh < 1 then fh := 1;
 
   wnd := FSkin^.PlaylistWindow;
   sz := BgSize;
   FreeAndNil(FFrame);
-  FFrame := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);
+  FFrame := TBGRABitmap.Create(fw, fh, BGRAPixelTransparent);
 
   if wnd.BackgroundPixmap <> nil then
-    DrawNinePatch(FFrame, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
-      FLogicW, FLogicH, True);
+  begin
+    if (fw = FLogicW) and (fh = FLogicH) then
+      DrawNinePatch(FFrame, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
+        FLogicW, FLogicH, True)
+    else
+    begin
+      tmp := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);
+      try
+        DrawNinePatch(tmp, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
+          FLogicW, FLogicH, True);
+        BlitNearest(FFrame, tmp);
+      finally
+        tmp.Free;
+      end;
+    end;
+  end;
 
   ApplyListFont;
 
@@ -1448,8 +1537,13 @@ begin
       leftPane.W := Max(0, vis.X - pl.X);
       leftPane.H := pl.H;
       if leftPane.W > 0 then
-        FFrame.FillRect(leftPane.X, leftPane.Y,
-          leftPane.X + leftPane.W, leftPane.Y + leftPane.H, fillBkgnd2, dmSet);
+      begin
+        vx := SX(leftPane.X);
+        vy := SX(leftPane.Y);
+        vw := SX(leftPane.X + leftPane.W) - vx;
+        vh := SX(leftPane.Y + leftPane.H) - vy;
+        FFrame.FillRect(vx, vy, vx + vw, vy + vh, fillBkgnd2, dmSet);
+      end;
     end;
   end;
 
@@ -1468,7 +1562,7 @@ begin
     bounds := ButtonBounds(elem^);
     bounds.X := titleRect.X;
     bounds.Y := titleRect.Y;
-    DrawButton(FFrame, elem^, bounds, bvsNormal);
+    DrawButton(FFrame, elem^, bounds, bvsNormal, s);
   end;
 
   overType  := '';
@@ -1483,9 +1577,9 @@ begin
     btnX   := AlignedButtonX(elem^);
     bounds.X := btnX;
     if SameText(overType, 'close') then
-      DrawButton(FFrame, elem^, bounds, overState)
+      DrawButton(FFrame, elem^, bounds, overState, s)
     else
-      DrawButton(FFrame, elem^, bounds, bvsNormal);
+      DrawButton(FFrame, elem^, bounds, bvsNormal, s);
   end;
 
   if FSkin^.PlaylistConfig.ColorText.Valid then

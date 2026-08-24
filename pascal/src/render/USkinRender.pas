@@ -9,7 +9,7 @@ unit USkinRender;
 interface
 
 uses
-  Classes, SysUtils, BGRABitmap, BGRABitmapTypes, USkinTypes;
+  Classes, SysUtils, BGRABitmap, BGRABitmapTypes, USkinTypes, UDpiScale;
 
 type
   // 按钮视觉状态（与 Qt 版 currentState 的取值一致）。
@@ -19,8 +19,9 @@ type
 function ButtonBounds(const Elem: TSkinElement): TSkinRect;
 
 // 在 Dest 上绘制按钮（对应 SkinButton::paintEvent；X/Y 为控件左上角）。
+// Scale>1 时按视图缩放拉伸状态图（运行时 DPI）；Layer 2 保持 Scale=1。
 procedure DrawButton(Dest: TBGRABitmap; const Elem: TSkinElement;
-  const Bounds: TSkinRect; State: TButtonVisualState);
+  const Bounds: TSkinRect; State: TButtonVisualState; Scale: Double = 1.0);
 
 // 在 Dest 上绘制滑块（对应 SkinSlider::paintEvent）。
 // Value 为当前值，范围 [MinV, MaxV]；ThumbState 同按钮四态。
@@ -288,9 +289,9 @@ begin
 end;
 
 procedure DrawButton(Dest: TBGRABitmap; const Elem: TSkinElement;
-  const Bounds: TSkinRect; State: TButtonVisualState);
+  const Bounds: TSkinRect; State: TButtonVisualState; Scale: Double);
 var
-  stateIdx, drawX, drawY: Integer;
+  stateIdx, drawX, drawY, bx, by, bw, bh, pw, ph: Integer;
   pixmap: TBGRABitmap;
   lowerAlign: string;
 begin
@@ -299,18 +300,40 @@ begin
   pixmap := Elem.StatePixmaps[stateIdx];
   if pixmap = nil then Exit;
 
+  if Scale <= 1.0001 then
+  begin
+    drawX := 0;
+    drawY := 0;
+    lowerAlign := LowerCase(Elem.Align);
+    if Pos('center', lowerAlign) > 0 then
+      drawX := (Bounds.W - pixmap.Width) div 2
+    else if Pos('right', lowerAlign) > 0 then
+      drawX := Bounds.W - pixmap.Width;
+    if Pos('bottom', lowerAlign) > 0 then
+      drawY := Bounds.H - pixmap.Height;
+    QtPutImage(Dest, Bounds.X + drawX, Bounds.Y + drawY, pixmap);
+    Exit;
+  end;
+
+  bx := ScalePx(Bounds.X, Scale);
+  by := ScalePx(Bounds.Y, Scale);
+  bw := ScalePx(Bounds.X + Bounds.W, Scale) - bx;
+  bh := ScalePx(Bounds.Y + Bounds.H, Scale) - by;
+  pw := ScalePx(pixmap.Width, Scale);
+  ph := ScalePx(pixmap.Height, Scale);
+  if pw < 1 then pw := 1;
+  if ph < 1 then ph := 1;
   drawX := 0;
   drawY := 0;
   lowerAlign := LowerCase(Elem.Align);
   if Pos('center', lowerAlign) > 0 then
-    drawX := (Bounds.W - pixmap.Width) div 2
+    drawX := (bw - pw) div 2
   else if Pos('right', lowerAlign) > 0 then
-    drawX := Bounds.W - pixmap.Width;
+    drawX := bw - pw;
   if Pos('bottom', lowerAlign) > 0 then
-    drawY := Bounds.H - pixmap.Height;
-
-  // 默认以 XML 左上角为锚点；仅在显式 align 时才偏移。
-  QtPutImage(Dest, Bounds.X + drawX, Bounds.Y + drawY, pixmap);
+    drawY := bh - ph;
+  QtStretchPutImage(Dest, Classes.Rect(bx + drawX, by + drawY,
+    bx + drawX + pw, by + drawY + ph), pixmap);
 end;
 
 procedure DrawSlider(Dest: TBGRABitmap; const Elem: TSkinElement;

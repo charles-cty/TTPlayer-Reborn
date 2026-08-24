@@ -5,12 +5,14 @@ unit USkinView;
 // 皮肤窗的 LCL 视图缩放：Windows 按监视器 DPI 放大客户区并拉伸绘制；
 // GTK3 在 GDK_SCALE≥2 时 LCL 保持 1× 皮肤尺寸（cairo 已做设备缩放，
 // 再 SetBounds(skin*2) 会变成 4×）。命中测试把客户区坐标映回皮肤像素。
+// 皮肤位图最近邻拉伸；播放列表/歌词 TrueType 在 dest 像素栅格化（Windows
+// ClearType），避免 1× 合成后再 HALFTONE 发糊。
 
 interface
 
 uses
   Classes, SysUtils, Types, Forms, Controls, Graphics, LCLType, LMessages,
-  BGRABitmap, UDpiScale, UPlatformWindow;
+  BGRABitmap, BGRABitmapTypes, UDpiScale, UPlatformWindow;
 
 type
   ISkinViewForm = interface
@@ -23,6 +25,12 @@ function FormViewScale(AForm: TCustomForm): Double;
 procedure ApplySkinFormSize(AForm: TCustomForm; SkinW, SkinH: Integer);
 procedure DrawSkinFrame(ACanvas: TCanvas; Frame: TBGRABitmap;
   DestW, DestH: Integer);
+procedure BlitNearest(Dest, Src: TBGRABitmap);
+procedure PutSkinNearest(Dest: TBGRABitmap; const DestR: Types.TRect;
+  Src: TBGRABitmap; Mode: TDrawMode = dmDrawWithTransparency);
+function ViewRect(AX, AY, AW, AH: Integer; Scale: Double): Types.TRect;
+procedure ApplyViewFont(Bmp: TBGRABitmap; const Family: string;
+  PixelSize: Integer; Bold, Italic: Boolean; Scale: Double);
 procedure ClientToSkinXY(AForm: TCustomForm; SkinW, SkinH: Integer;
   var X, Y: Integer);
 procedure SkinToClientXY(AForm: TCustomForm; SkinW, SkinH: Integer;
@@ -118,16 +126,88 @@ begin
   AForm.SetBounds(AForm.Left, AForm.Top, ScalePx(SkinW, s), ScalePx(SkinH, s));
 end;
 
+function ViewRect(AX, AY, AW, AH: Integer; Scale: Double): Types.TRect;
+begin
+  Result.Left := ScalePx(AX, Scale);
+  Result.Top := ScalePx(AY, Scale);
+  Result.Right := ScalePx(AX + AW, Scale);
+  Result.Bottom := ScalePx(AY + AH, Scale);
+end;
+
+procedure ApplyViewFont(Bmp: TBGRABitmap; const Family: string;
+  PixelSize: Integer; Bold, Italic: Boolean; Scale: Double);
+var
+  st: TFontStyles;
+  px: Integer;
+begin
+  if Bmp = nil then Exit;
+  if Family <> '' then
+    Bmp.FontName := Family
+  else
+    Bmp.FontName := 'SimSun';
+  px := PixelSize;
+  if px <= 0 then
+    px := 12;
+  Bmp.FontHeight := ScalePx(px, Scale);
+  st := [];
+  if Bold then
+    Include(st, fsBold);
+  if Italic then
+    Include(st, fsItalic);
+  Bmp.FontStyle := st;
+{$IFDEF WINDOWS}
+  Bmp.FontQuality := fqFineClearTypeRGB;
+{$ELSE}
+  Bmp.FontAntialias := True;
+{$ENDIF}
+end;
+
+procedure BlitNearest(Dest, Src: TBGRABitmap);
+var
+  scaled: TBGRABitmap;
+begin
+  if (Dest = nil) or (Src = nil) then Exit;
+  if (Src.Width = Dest.Width) and (Src.Height = Dest.Height) then
+  begin
+    Dest.PutImage(0, 0, Src, dmSet);
+    Exit;
+  end;
+  if (Dest.Width < 1) or (Dest.Height < 1) then Exit;
+  scaled := Src.Resample(Dest.Width, Dest.Height, rmSimpleStretch);
+  try
+    Dest.PutImage(0, 0, scaled, dmSet);
+  finally
+    scaled.Free;
+  end;
+end;
+
+procedure PutSkinNearest(Dest: TBGRABitmap; const DestR: Types.TRect;
+  Src: TBGRABitmap; Mode: TDrawMode);
+var
+  scaled: TBGRABitmap;
+  dw, dh: Integer;
+begin
+  if (Dest = nil) or (Src = nil) then Exit;
+  dw := DestR.Right - DestR.Left;
+  dh := DestR.Bottom - DestR.Top;
+  if (dw <= 0) or (dh <= 0) then Exit;
+  if (dw = Src.Width) and (dh = Src.Height) then
+  begin
+    Dest.PutImage(DestR.Left, DestR.Top, Src, Mode);
+    Exit;
+  end;
+  scaled := Src.Resample(dw, dh, rmSimpleStretch);
+  try
+    Dest.PutImage(DestR.Left, DestR.Top, scaled, Mode);
+  finally
+    scaled.Free;
+  end;
+end;
+
 procedure DrawSkinFrame(ACanvas: TCanvas; Frame: TBGRABitmap;
   DestW, DestH: Integer);
-{$IFDEF WINDOWS}
-const
-  COLORONCOLOR = 1;
-  HALFTONE = 4;
 var
-  prev: Integer;
-  integerScale: Boolean;
-{$ENDIF}
+  scaled: TBGRABitmap;
 begin
   if (ACanvas = nil) or (Frame = nil) or (DestW <= 0) or (DestH <= 0) then
     Exit;
@@ -136,22 +216,13 @@ begin
     Frame.Draw(ACanvas, 0, 0, True);
     Exit;
   end;
-{$IFDEF WINDOWS}
-  integerScale :=
-    ((Frame.Width > 0) and (DestW mod Frame.Width = 0) and
-     (Frame.Height > 0) and (DestH mod Frame.Height = 0)) or
-    ((DestW > 0) and (Frame.Width mod DestW = 0) and
-     (DestH > 0) and (Frame.Height mod DestH = 0));
-  if integerScale then
-    prev := SetStretchBltMode(ACanvas.Handle, COLORONCOLOR)
-  else
-    prev := SetStretchBltMode(ACanvas.Handle, HALFTONE);
-  SetBrushOrgEx(ACanvas.Handle, 0, 0, nil);
-{$ENDIF}
-  Frame.Draw(ACanvas, Classes.Rect(0, 0, DestW, DestH), True);
-{$IFDEF WINDOWS}
-  SetStretchBltMode(ACanvas.Handle, prev);
-{$ENDIF}
+  // 最近邻：皮肤是像素图，HALFTONE/双线性会把字和 LED 拉糊。
+  scaled := Frame.Resample(DestW, DestH, rmSimpleStretch);
+  try
+    scaled.Draw(ACanvas, 0, 0, True);
+  finally
+    scaled.Free;
+  end;
 end;
 
 procedure ClientToSkinXY(AForm: TCustomForm; SkinW, SkinH: Integer;

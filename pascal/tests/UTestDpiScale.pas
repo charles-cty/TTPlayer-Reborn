@@ -146,6 +146,11 @@ begin
   AssertEquals(275, ScalePx(275, 1.0));
   AssertEquals(413, ScalePx(275, 1.5));
   AssertEquals(550, ScalePx(275, 2.0));
+  // 列表/歌词 12px 字在 125/150/200% 下的 dest 字号。
+  AssertEquals(12, ScalePx(12, 1.0));
+  AssertEquals(15, ScalePx(12, 1.25));
+  AssertEquals(18, ScalePx(12, 1.5));
+  AssertEquals(24, ScalePx(12, 2.0));
 end;
 
 procedure TDpiScaleTest.TestMapClientToSkin150;

@@ -329,21 +329,40 @@ var
   elem: PSkinElement;
   bounds: TSkinRect;
   btnX: Integer;
+  s: Double;
+  fw, fh: Integer;
+  tmp: TBGRABitmap;
 begin
   if FSkin = nil then Exit;
   FreeAndNil(FFrame);
 
+  s := FormViewScale(Self);
+  if s < 0.01 then s := 1.0;
+  fw := ScalePx(FLogicW, s);
+  fh := ScalePx(FLogicH, s);
+  if fw < 1 then fw := 1;
+  if fh < 1 then fh := 1;
+
   wnd := FSkin^.LyricWindow;
 
-  // 九宫格背景（当前窗口尺寸）
+  FFrame := TBGRABitmap.Create(fw, fh, BGRAPixelTransparent);
   if wnd.BackgroundPixmap <> nil then
   begin
-    FFrame := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);
-    DrawNinePatch(FFrame, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
-      FLogicW, FLogicH, True);
-  end
-  else
-    FFrame := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);
+    if (fw = FLogicW) and (fh = FLogicH) then
+      DrawNinePatch(FFrame, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
+        FLogicW, FLogicH, True)
+    else
+    begin
+      tmp := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);
+      try
+        DrawNinePatch(tmp, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
+          FLogicW, FLogicH, True);
+        BlitNearest(FFrame, tmp);
+      finally
+        tmp.Free;
+      end;
+    end;
+  end;
 
   overType  := '';
   overState := bvsNormal;
@@ -358,9 +377,9 @@ begin
     btnX := AlignedButtonX(elem^);
     bounds.X := btnX;
     if SameText(overType, 'close') then
-      DrawButton(FFrame, elem^, bounds, overState)
+      DrawButton(FFrame, elem^, bounds, overState, s)
     else
-      DrawButton(FFrame, elem^, bounds, bvsNormal);
+      DrawButton(FFrame, elem^, bounds, bvsNormal, s);
   end;
 
   // ontop 按钮（usePressedStateForToggle：开启时用 bvsPressed 渲染）
@@ -371,11 +390,11 @@ begin
     btnX := AlignedButtonX(elem^);
     bounds.X := btnX;
     if SameText(overType, 'ontop') then
-      DrawButton(FFrame, elem^, bounds, overState)
+      DrawButton(FFrame, elem^, bounds, overState, s)
     else if FAlwaysOnTop then
-      DrawButton(FFrame, elem^, bounds, bvsPressed)
+      DrawButton(FFrame, elem^, bounds, bvsPressed, s)
     else
-      DrawButton(FFrame, elem^, bounds, bvsNormal);
+      DrawButton(FFrame, elem^, bounds, bvsNormal, s);
   end;
 
   DrawLyrics;
@@ -385,26 +404,28 @@ procedure TLyricForm.DrawLyrics;
 var
   area: TSkinRect;
   f: TSkinFont;
-  st: TFontStyles;
   textC, hiC: TBGRAPixel;
   info: string;
   lineH, visibleLines, startLine, endLine, i, y, tw: Integer;
   posMs: Int64;
   cur: Integer;
+  s: Double;
+  ax, ay, aw, ah, minLine: Integer;
 begin
   if FFrame = nil then Exit;
   area := LyricArea;
   if (area.W <= 0) or (area.H <= 0) then Exit;
+  s := FormViewScale(Self);
+  if s < 0.01 then s := 1.0;
+  ax := ScalePx(area.X, s);
+  ay := ScalePx(area.Y, s);
+  aw := ScalePx(area.X + area.W, s) - ax;
+  ah := ScalePx(area.Y + area.H, s) - ay;
 
   if FSkin <> nil then
   begin
     f := FSkin^.LyricConfig.Font;
-    if f.Family <> '' then FFrame.FontName := f.Family else FFrame.FontName := 'SimSun';
-    if f.PixelSize > 0 then FFrame.FontHeight := f.PixelSize else FFrame.FontHeight := 12;
-    st := [];
-    if f.Bold then Include(st, fsBold);
-    if f.Italic then Include(st, fsItalic);
-    FFrame.FontStyle := st;
+    ApplyViewFont(FFrame, f.Family, f.PixelSize, f.Bold, f.Italic, s);
     if FSkin^.LyricConfig.TextColor.Valid then
       textC := FSkin^.LyricConfig.TextColor.ToBGRA
     else
@@ -416,13 +437,11 @@ begin
   end
   else
   begin
-    FFrame.FontName := 'SimSun';
-    FFrame.FontHeight := 12;
+    ApplyViewFont(FFrame, 'SimSun', 12, False, False, s);
     textC := BGRA($00, $80, $C0);
     hiC := BGRA($00, $FF, $00);
   end;
-  FFrame.FontAntialias := True;
-  FFrame.ClipRect := Classes.Rect(area.X, area.Y, area.X + area.W, area.Y + area.H);
+  FFrame.ClipRect := Classes.Rect(ax, ay, ax + aw, ay + ah);
 
   if Length(FLrc.Lines) = 0 then
   begin
@@ -436,30 +455,31 @@ begin
     else
       info := '暂无歌词';
     tw := FFrame.TextSize(info).cx;
-    FFrame.TextOut(area.X + (area.W - tw) div 2,
-      area.Y + (area.H - FFrame.TextSize(info).cy) div 2, info, textC);
+    FFrame.TextOut(ax + (aw - tw) div 2,
+      ay + (ah - FFrame.TextSize(info).cy) div 2, info, textC);
     FFrame.NoClip;
     Exit;
   end;
 
-  lineH := FFrame.TextSize('Ag').cy + 4;
-  if lineH < 14 then lineH := 14;
+  minLine := ScalePx(14, s);
+  lineH := FFrame.TextSize('Ag').cy + ScalePx(4, s);
+  if lineH < minLine then lineH := minLine;
   posMs := 0;
   if FBackend <> nil then
     posMs := FBackend.GetPositionMs;
   cur := CurrentLyricIndex(FLrc, posMs);
-  visibleLines := Max(1, area.H div lineH);
+  visibleLines := Max(1, ah div lineH);
   startLine := cur - visibleLines div 2;
   endLine := startLine + visibleLines;
   for i := startLine to endLine do
   begin
     if (i < 0) or (i > High(FLrc.Lines)) then Continue;
-    y := area.Y + (i - startLine) * lineH;
+    y := ay + (i - startLine) * lineH;
     tw := FFrame.TextSize(FLrc.Lines[i].Text).cx;
     if i = cur then
-      FFrame.TextOut(area.X + (area.W - tw) div 2, y, FLrc.Lines[i].Text, hiC)
+      FFrame.TextOut(ax + (aw - tw) div 2, y, FLrc.Lines[i].Text, hiC)
     else
-      FFrame.TextOut(area.X + (area.W - tw) div 2, y, FLrc.Lines[i].Text, textC);
+      FFrame.TextOut(ax + (aw - tw) div 2, y, FLrc.Lines[i].Text, textC);
   end;
   FFrame.NoClip;
 end;

@@ -96,7 +96,7 @@ Lazarus 工程（全自绘）
 - 独立双轴吸附、主窗口联动组、子窗口单独拖动、松手吸附、屏幕边缘、缩放吸附
 - 几何与图结构可在 NoLCL FPCUnit 中验证（MR-4）
 - Windows：`TSnapFormAdapter` 子类化原生 WndProc 收取 `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE`（LCL `WindowProc` 收不到跨进程 `SendMessage`）；DPI≠100% 时 `GetBounds`/`MoveTo` 在 LCL 逻辑像素与 `GetWindowRect` 物理像素之间换算（`UDpiScale`）
-- `src/ui/platform/`：Win `SetWindowRgn`；Linux 仅 X11 Shape + EWMH（`UGdkX11Backend` 强制 XWayland）。GTK3 用 `TryBeginCaptionDrag`（LCL capture）对齐 Windows 的 HTCAPTION + `OnDragStarted/Finished`；`PlatformGetWindowRect` 用 GDK client 几何，避开 CSD frame_extents。DPI/GDK_SCALE：皮肤与吸附在逻辑像素；`ApplyAlphaShape` 在 native 尺寸是均匀 UI 缩放时放大 Region/XShape。禁止把 CSD 宽高比当 DPI。皮肤视图：Windows Per-Monitor V2 下 LCL 客户区 = 皮肤×DPI/96，拉伸绘制并映射命中；GTK `GDK_SCALE≥2` 时 LCL 保持 1×（cairo 已设备缩放）。跨监视器 `WM_DPICHANGED` / 移动时 `RefreshViewScale`。
+- `src/ui/platform/`：Win `SetWindowRgn`；Linux 仅 X11 Shape + EWMH（`UGdkX11Backend` 强制 XWayland）。GTK3 用 `TryBeginCaptionDrag`（LCL capture）对齐 Windows 的 HTCAPTION + `OnDragStarted/Finished`；`PlatformGetWindowRect` 用 GDK client 几何，避开 CSD frame_extents。DPI/GDK_SCALE：皮肤与吸附在逻辑像素；`ApplyAlphaShape` 在 native 尺寸是均匀 UI 缩放时放大 Region/XShape。禁止把 CSD 宽高比当 DPI。皮肤视图：Windows Per-Monitor V2 下 LCL 客户区 = 皮肤×DPI/96；皮肤位图最近邻拉伸，播放列表/歌词在 dest 像素栅格化文字；GTK `GDK_SCALE≥2` 时 LCL 保持 1×（cairo 已设备缩放）。跨监视器 `WM_DPICHANGED` / 移动时 `RefreshViewScale`。
 
 **Step 7（推迟）**：ttcore 抽库 + FFI 对接，替换 TStubBackend。音频核与 GUI 解耦，可等 GUI 与测试补齐后再做。
 
@@ -155,7 +155,7 @@ Lazarus 工程（全自绘）
 | `skinpreview --probe` | `backend=x11`，`shape_supported=true`；四窗口须在；程序化吸附须合缝 |
 | 无边框 | `CreateWnd`/`DoShow` 调 `ConfigurePlatformWindow`：`gtk_window_set_decorated(0)` + Motif 去装饰。禁止 `gtk_window_set_titlebar(nil)`（会恢复 CSD） |
 | 拖动 / 吸附 | `TryBeginCaptionDrag` 按 `WMNCHitTest=HTCAPTION` 捕获鼠标，走同一套 `OnDragStarted/Move/Finished` |
-| DPI | `UDpiScale` + `USkinView`：宽高均匀缩放到 125/150/200% 才换算，CSD 比不当 DPI。Shape 按 `XGetGeometry`（GDK_SCALE=2 时 X 窗口 2×，`gdk_window_get_width` 仍是逻辑尺寸）。吸附在逻辑像素；WSLg 原点对不齐时用 LCL 坐标。Windows：`UWinDpiAware` Per-Monitor V2，窗体按 `view_scale` 放大皮肤并拉伸绘制、映射鼠标；拖到另一监视器走 `WM_DPICHANGED`。GTK：`GDK_SCALE≥2` 时 `view_scale=1`，禁止 `SetBounds(skin*2)`（否则 X 窗口 4×） |
+| DPI | `UDpiScale` + `USkinView`：宽高均匀缩放到 125/150/200% 才换算，CSD 比不当 DPI。Shape 按 `XGetGeometry`（GDK_SCALE=2 时 X 窗口 2×，`gdk_window_get_width` 仍是逻辑尺寸）。吸附在逻辑像素；WSLg 原点对不齐时用 LCL 坐标。Windows：`UWinDpiAware` Per-Monitor V2，窗体按 `view_scale` 放大皮肤；皮肤位图最近邻拉伸（不用 GDI HALFTONE）；播放列表/歌词 TrueType 在 dest 像素栅格化（`fqFineClearTypeRGB`）。拖到另一监视器走 `WM_DPICHANGED`。GTK：`GDK_SCALE≥2` 时 `view_scale=1`，禁止 `SetBounds(skin*2)`（否则 X 窗口 4×） |
 | 置顶 | `gtk_window_set_keep_above`（GDK 发 EWMH）。WSLg Weston 可能忽略 `_NET_WM_STATE_ABOVE` |
 | 句柄 AV | 已修：LCL GTK3 `Handle` 是 `TGtk3Widget` |
 | 仍有的 LCL 噪音 | `gdk_pixbuf_get_from_surface` 0 尺寸 CRITICAL；ComboBox `GtkCssCustomGadget` 的 `set_has_window` |
