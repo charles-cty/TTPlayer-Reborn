@@ -128,4 +128,4 @@ printf '%s\n' "$ID" > "$STAMP"
 
 echo "[build-ffmpeg-win] installed:"
 ls -l "$PREFIX/lib"/libav*.a "$PREFIX/lib"/libswresample.a
-"$PKG_CONFIG" --static --libs libavformat libavcodec libswresample libavutil
+PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" "$PKG_CONFIG" --static --libs libavformat libavcodec libswresample libavutil
