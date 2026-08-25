@@ -5,7 +5,7 @@ unit UPlaylistForm;
 // 播放列表窗口，对应 Qt 版 src/ui/PlaylistWindow。
 // 无边框九宫格、虚拟列表、7 组工具栏、皮肤滚动条、外部拖放、双击 OpenFile。
 // TTBL 读写、列表内拖放重排、搜索对话框、多播放列表标签页。
-// 元数据由 UPlaylistMetadataLoader 经 ttcore/TagLib 回填。
+// 元数据由 UPlaylistMetadataLoader 经 ttcore/FFmpeg 回填。
 
 interface
 

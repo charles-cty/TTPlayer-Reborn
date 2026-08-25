@@ -3,7 +3,8 @@ unit UTestTtcoreBackend;
 {$mode objfpc}{$H+}
 
 // FPCUnit tests that drive the shipped ttcore-backed IPlayerBackend and the
-// TagLib-via-ttcore metadata loader. Fixtures are generated at runtime.
+// FFmpeg-via-ttcore metadata loader. WAV fixtures are generated at runtime;
+// MP3 remux uses pascal/tests/fixtures/sine.mp3.
 
 interface
 
@@ -23,6 +24,7 @@ type
     FTaggedPath: string;
     FCoverWavPath: string;
     FCoverImgPath: string;
+    FMp3Path: string;
     FExpectedDurationMs: Integer;
     procedure OnErr(Sender: TObject; const Message: string);
     procedure OnDur(Sender: TObject; DurationMs: Int64);
@@ -30,6 +32,8 @@ type
     function WriteFixture(const Path: string; DurationMs: Integer): Boolean;
     procedure WriteTinyPng(const Path: string);
     function ReadAllBytes(const Path: string): TBytes;
+    function Mp3FixturePath: string;
+    function CopyFileTo(const Src, Dst: string): Boolean;
   protected
     procedure SetUp; override;
     procedure TearDown; override;
@@ -37,6 +41,7 @@ type
     procedure TestOpenDurationPlayPauseStopSeekVolumeEqSpectrum;
     procedure TestMissingPathError;
     procedure TestTaggedMetadataApi;
+    procedure TestTaggedMp3RemuxMetadata;
     procedure TestMetadataLoaderFillsPlaylist;
     procedure TestDestroyWhilePlaying;
     procedure TestBalanceRoundTrip;
@@ -234,6 +239,41 @@ begin
   end;
 end;
 
+function TTtcoreBackendTest.Mp3FixturePath: string;
+var
+  exeDir, repo: string;
+begin
+  exeDir := IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0)));
+  Result := ExpandFileName(exeDir + '..' + PathDelim + 'tests' + PathDelim +
+    'fixtures' + PathDelim + 'sine.mp3');
+  if FileExists(Result) then
+    Exit;
+  repo := ExpandFileName(exeDir + '..' + PathDelim + '..' + PathDelim);
+  Result := IncludeTrailingPathDelimiter(repo) + 'pascal' + PathDelim +
+    'tests' + PathDelim + 'fixtures' + PathDelim + 'sine.mp3';
+end;
+
+function TTtcoreBackendTest.CopyFileTo(const Src, Dst: string): Boolean;
+var
+  froms, tos: TFileStream;
+begin
+  Result := False;
+  if not FileExists(Src) then
+    Exit;
+  froms := TFileStream.Create(Src, fmOpenRead or fmShareDenyWrite);
+  try
+    tos := TFileStream.Create(Dst, fmCreate);
+    try
+      tos.CopyFrom(froms, 0);
+    finally
+      tos.Free;
+    end;
+  finally
+    froms.Free;
+  end;
+  Result := FileExists(Dst);
+end;
+
 procedure TTtcoreBackendTest.SetUp;
 begin
   Randomize;
@@ -249,6 +289,7 @@ begin
   FTaggedPath := FWorkDir + 'tagged.wav';
   FCoverWavPath := FWorkDir + 'withcover.wav';
   FCoverImgPath := FWorkDir + 'withcover.png';
+  FMp3Path := FWorkDir + 'tagged.mp3';
   AssertTrue('write wav fixture', WriteFixture(FWavPath, FExpectedDurationMs));
 end;
 
@@ -263,6 +304,8 @@ begin
     DeleteFile(FCoverWavPath);
   if (FCoverImgPath <> '') and FileExists(FCoverImgPath) then
     DeleteFile(FCoverImgPath);
+  if (FMp3Path <> '') and FileExists(FMp3Path) then
+    DeleteFile(FMp3Path);
   if (FWorkDir <> '') and DirectoryExists(FWorkDir) then
     RemoveDir(FWorkDir);
 end;
@@ -371,6 +414,41 @@ begin
   AssertEquals('album', 'Fixture Album', Utf8FromPChar(@meta.Album[0]));
   AssertTrue(Format('tagged duration %d', [meta.DurationMs]),
     Abs(meta.DurationMs - FExpectedDurationMs) <= 80);
+end;
+
+procedure TTtcoreBackendTest.TestTaggedMp3RemuxMetadata;
+var
+  src, path, title, artist, album: UTF8String;
+  metaBefore, metaAfter: TTtcoreMetadata;
+  ok: Integer;
+begin
+  RequireTtcore;
+  src := UTF8String(Mp3FixturePath);
+  AssertTrue('mp3 fixture exists: ' + string(src), FileExists(string(src)));
+  AssertTrue('copy mp3 fixture', CopyFileTo(string(src), FMp3Path));
+  path := UTF8String(FMp3Path);
+  FillChar(metaBefore, SizeOf(metaBefore), 0);
+  AssertEquals('read mp3 before write', 1,
+    ttcore_read_metadata(PAnsiChar(path), metaBefore));
+  AssertTrue(Format('mp3 duration before %d', [metaBefore.DurationMs]),
+    metaBefore.DurationMs > 200);
+
+  title := UTF8String('Mp3 Title');
+  artist := UTF8String('Mp3 Artist');
+  album := UTF8String('Mp3 Album');
+  ok := ttcore_write_metadata(PAnsiChar(path), PAnsiChar(title),
+    PAnsiChar(artist), PAnsiChar(album));
+  AssertEquals('ttcore_write_metadata mp3 remux', 1, ok);
+
+  FillChar(metaAfter, SizeOf(metaAfter), 0);
+  ok := ttcore_read_metadata(PAnsiChar(path), metaAfter);
+  AssertEquals('ttcore_read_metadata mp3', 1, ok);
+  AssertEquals('mp3 title', 'Mp3 Title', Utf8FromPChar(@metaAfter.Title[0]));
+  AssertEquals('mp3 artist', 'Mp3 Artist', Utf8FromPChar(@metaAfter.Artist[0]));
+  AssertEquals('mp3 album', 'Mp3 Album', Utf8FromPChar(@metaAfter.Album[0]));
+  AssertTrue(Format('mp3 duration after %d (was %d)',
+    [metaAfter.DurationMs, metaBefore.DurationMs]),
+    Abs(metaAfter.DurationMs - metaBefore.DurationMs) <= 120);
 end;
 
 procedure TTtcoreBackendTest.TestMetadataLoaderFillsPlaylist;

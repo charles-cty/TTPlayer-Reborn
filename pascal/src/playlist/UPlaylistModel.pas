@@ -5,7 +5,7 @@ unit UPlaylistModel;
 // 播放列表数据模型，对应 Qt 版 src/playlist/PlaylistManager。
 // 只负责条目集合与当前索引的维护，不涉及任何渲染或 UI 状态。
 // 元数据（title/artist/album/duration）由调用方填充——UPlaylistMetadataLoader
-// 通过 ttcore / TagLib 回填（对应 Qt 的 PlaylistMetadataLoader）。
+// 通过 ttcore / FFmpeg 回填（对应 Qt 的 PlaylistMetadataLoader）。
 
 interface
 
@@ -121,7 +121,7 @@ begin
     Result := '';
 end;
 
-// 构造仅含路径的占位条目（对应 Qt buildEntryForPath 的无 TagLib 分支）。
+// 构造仅含路径的占位条目（对应 Qt buildEntryForPath 的无标签分支）。
 function BuildEntryForPath(const APath: string): TPlaylistEntry;
 begin
   Result.FilePath       := APath;

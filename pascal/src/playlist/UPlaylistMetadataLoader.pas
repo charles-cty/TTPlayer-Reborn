@@ -2,7 +2,7 @@ unit UPlaylistMetadataLoader;
 
 {$mode objfpc}{$H+}
 
-// Background TagLib metadata fill via ttcore (same shape as Qt PlaylistMetadataLoader).
+// Background FFmpeg metadata fill via ttcore (same shape as Qt PlaylistMetadataLoader).
 // Worker thread calls ttcore_read_metadata; results are marshalled with TThread.Queue
 // before TPlaylistModel.SetMetadata.
 

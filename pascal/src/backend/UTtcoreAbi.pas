@@ -207,7 +207,7 @@ procedure EnsureWinRuntimeSearchPath;
 var
   prefix, bin: string;
 begin
-  // FFmpeg/SDL2/TagLib/MinGW CRT stay in the pacman prefix. Do not vendor
+  // FFmpeg/SDL2/MinGW CRT stay in the pacman prefix. Do not vendor
   // them next to ttcore.dll. Put that bin on PATH so LoadLibrary can see them
   // even when the exe was copied out of pascal\bin (application dir first,
   // then this prefix).
@@ -253,7 +253,7 @@ begin
       [Path, err, SysErrorMessage(err)]);
     if err = ERROR_MOD_NOT_FOUND then
       GError := GError + '; missing a dependency of ' + ExtractFileName(Path) +
-        ' (need MSYS2 mingw-w64 FFmpeg/SDL2/TagLib on PATH, e.g. C:\msys64\mingw64\bin)';
+        ' (need MSYS2 mingw-w64 FFmpeg/SDL2 on PATH, e.g. C:\msys64\mingw64\bin)';
   end;
 {$ELSE}
   GLib := LoadLibrary(Path);
