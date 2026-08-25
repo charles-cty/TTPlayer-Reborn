@@ -11,8 +11,8 @@ STAMP="$PREFIX/share/ttcore-ffmpeg-id"
 VERSION="n8.1.2"
 
 if [[ ! -f "$SRC/configure" ]]; then
-  echo "missing $SRC/configure — init the FFmpeg submodule:" >&2
-  echo "  git submodule update --init third_party/ffmpeg" >&2
+  echo "missing $SRC/configure — init the FFmpeg submodule (depth 1):" >&2
+  echo "  git submodule update --init --depth 1 third_party/ffmpeg" >&2
   exit 1
 fi
 

@@ -10,7 +10,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Src = Join-Path $RepoRoot 'third_party\ffmpeg\configure'
 if (-not (Test-Path -LiteralPath $Src)) {
-    throw "缺少 third_party\ffmpeg（git submodule update --init third_party/ffmpeg）"
+    throw "缺少 third_party\ffmpeg（git submodule update --init --depth 1 third_party/ffmpeg）"
 }
 
 $bash = 'C:\msys64\usr\bin\bash.exe'
