@@ -106,9 +106,8 @@ TTPlayer-Reborn/
 | 依赖 | 用途 |
 |---|---|
 | Qt6 Widgets | GUI |
-| FFmpeg（avformat/avcodec/avutil/swresample） | 音频解码 |
+| FFmpeg（avformat/avcodec/avutil/swresample） | 音频解码、重采样、标签读写 |
 | SDL2 | 音频输出 |
-| TagLib | 音频标签读取 |
 | QuaZip-Qt6 | 皮肤文件（ZIP）解压 |
 | Qt6 DBus（可选，Linux） | MPRIS 媒体控制 |
 | X11（可选，Linux） | 全局快捷键 |

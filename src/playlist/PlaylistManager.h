@@ -12,7 +12,7 @@ struct PlaylistEntry {
     QString album;
     int64_t durationMs = 0;
     bool valid = true;
-    // 是否已通过 TagLib 完整加载过元数据（title/artist/album/durationMs）。
+    // 是否已通过 FFmpeg 完整加载过元数据（title/artist/album/durationMs）。
     // false 表示这是从 TTBL 快速加载的路径占位，元数据尚待后台填充。
     bool metadataLoaded = false;
 };

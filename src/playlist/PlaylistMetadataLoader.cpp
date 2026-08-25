@@ -1,16 +1,7 @@
 #include "PlaylistMetadataLoader.h"
-#include <QFile>
+#include "audio/Metadata.h"
 #include <QElapsedTimer>
 #include <QDebug>
-#include <taglib/audioproperties.h>
-#include <taglib/fileref.h>
-#include <taglib/tag.h>
-
-namespace {
-QString tagToQString(const TagLib::String& s) {
-    return QString::fromUtf8(s.to8Bit(true).c_str());
-}
-} // namespace
 
 PlaylistMetadataLoader::PlaylistMetadataLoader(QObject* parent)
     : QObject(parent)
@@ -114,21 +105,16 @@ void PlaylistMetadataLoader::doWork() {
         if (idx < 0 || idx >= paths_.size())
             continue;
 
-        // 用 TagLib 读取元数据。
         const QString& path = paths_[idx];
         QString title, artist, album;
         qint64 durationMs = 0;
 
-        TagLib::FileRef fileRef(QFile::encodeName(path).constData());
-        if (!fileRef.isNull()) {
-            if (auto* tag = fileRef.tag()) {
-                title  = tagToQString(tag->title()).trimmed();
-                artist = tagToQString(tag->artist()).trimmed();
-                album  = tagToQString(tag->album()).trimmed();
-            }
-            if (auto* props = fileRef.audioProperties()) {
-                durationMs = static_cast<qint64>(props->lengthInMilliseconds());
-            }
+        AudioFileMetadata meta;
+        if (readAudioFileMetadata(path.toUtf8().constData(), meta)) {
+            title  = QString::fromUtf8(meta.title.c_str()).trimmed();
+            artist = QString::fromUtf8(meta.artist.c_str()).trimmed();
+            album  = QString::fromUtf8(meta.album.c_str()).trimmed();
+            durationMs = meta.duration_ms;
         }
 
         // 存入缓存并标记完成。

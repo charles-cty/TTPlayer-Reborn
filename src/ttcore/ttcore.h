@@ -1,6 +1,6 @@
 #pragma once
 
-/* ttcore: Qt-free C ABI around the existing FFmpeg/DSP/SDL2/TagLib audio core.
+/* ttcore: Qt-free C ABI around the existing FFmpeg/DSP/SDL2 audio core.
  *
  * Strings returned by getters are UTF-8. The pointer is a per-calling-thread
  * snapshot valid until the next getter call on that thread (or thread exit).
@@ -100,7 +100,7 @@ TTCORE_API void TTCORE_CALL ttcore_set_progress_callback(ttcore_player player, t
 TTCORE_API void TTCORE_CALL ttcore_set_finished_callback(ttcore_player player, ttcore_finished_cb cb, void* userdata);
 TTCORE_API void TTCORE_CALL ttcore_set_error_callback(ttcore_player player, ttcore_error_cb cb, void* userdata);
 
-/* TagLib metadata. Returns 1 on success. Independent of a player instance. */
+/* FFmpeg avformat metadata. Returns 1 on success. Independent of a player instance. */
 TTCORE_API int TTCORE_CALL ttcore_read_metadata(const char* path_utf8, ttcore_metadata* out);
 TTCORE_API int TTCORE_CALL ttcore_write_metadata(const char* path_utf8,
                                                  const char* title_utf8,

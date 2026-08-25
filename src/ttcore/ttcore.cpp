@@ -3,11 +3,7 @@
 #include "Decoder.h"
 #include "DspChain.h"
 #include "AudioOutput.h"
-
-#include <taglib/audioproperties.h>
-#include <taglib/fileref.h>
-#include <taglib/tag.h>
-#include <taglib/tstring.h>
+#include "Metadata.h"
 
 #include <algorithm>
 #include <atomic>
@@ -148,19 +144,6 @@ void copyUtf8Field(char* dst, size_t cap, const std::string& src) {
     const size_t n = std::min(cap - 1, src.size());
     std::memcpy(dst, src.data(), n);
     dst[n] = '\0';
-}
-
-std::string tagToUtf8(const TagLib::String& s) {
-    return s.to8Bit(true);
-}
-
-TagLib::FileRef openTagRef(const char* pathUtf8) {
-#ifdef _WIN32
-    const std::wstring wide = utf8ToWide(pathUtf8);
-    return TagLib::FileRef(wide.c_str());
-#else
-    return TagLib::FileRef(pathUtf8);
-#endif
 }
 
 class PlayerCore {
@@ -674,18 +657,14 @@ int TTCORE_CALL ttcore_read_metadata(const char* path_utf8, ttcore_metadata* out
         return 0;
     }
 
-    TagLib::FileRef fileRef = openTagRef(path_utf8);
-    if (fileRef.isNull()) {
+    AudioFileMetadata meta;
+    if (!readAudioFileMetadata(path_utf8, meta)) {
         return 0;
     }
-    if (auto* tag = fileRef.tag()) {
-        copyUtf8Field(out->title, sizeof(out->title), tagToUtf8(tag->title()));
-        copyUtf8Field(out->artist, sizeof(out->artist), tagToUtf8(tag->artist()));
-        copyUtf8Field(out->album, sizeof(out->album), tagToUtf8(tag->album()));
-    }
-    if (auto* props = fileRef.audioProperties()) {
-        out->duration_ms = static_cast<int64_t>(props->lengthInMilliseconds());
-    }
+    copyUtf8Field(out->title, sizeof(out->title), meta.title);
+    copyUtf8Field(out->artist, sizeof(out->artist), meta.artist);
+    copyUtf8Field(out->album, sizeof(out->album), meta.album);
+    out->duration_ms = meta.duration_ms;
     return 1;
 }
 
@@ -696,15 +675,7 @@ int TTCORE_CALL ttcore_write_metadata(const char* path_utf8,
     if (!path_utf8 || !*path_utf8) {
         return 0;
     }
-    TagLib::FileRef fileRef = openTagRef(path_utf8);
-    if (fileRef.isNull() || !fileRef.tag()) {
-        return 0;
-    }
-    auto* tag = fileRef.tag();
-    tag->setTitle(TagLib::String(title_utf8 ? title_utf8 : "", TagLib::String::UTF8));
-    tag->setArtist(TagLib::String(artist_utf8 ? artist_utf8 : "", TagLib::String::UTF8));
-    tag->setAlbum(TagLib::String(album_utf8 ? album_utf8 : "", TagLib::String::UTF8));
-    return fileRef.save() ? 1 : 0;
+    return writeAudioFileMetadata(path_utf8, title_utf8, artist_utf8, album_utf8) ? 1 : 0;
 }
 
 } // extern "C"

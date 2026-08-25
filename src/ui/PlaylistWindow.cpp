@@ -4762,7 +4762,7 @@ void PlaylistWindow::onMetadataReady(int tabIndex, int entryIndex,
     }
 
     PlaylistEntry& entry = tabData_[tabIndex].entries[resolvedEntryIndex];
-    // 若 TagLib 返回空标题，保留 TTBL 内嵌标题（回退策略）
+    // 若元数据标题为空，保留 TTBL 内嵌标题（回退策略）
     if (!title.isEmpty())  entry.title  = title;
     if (!artist.isEmpty()) entry.artist = artist;
     if (!album.isEmpty())  entry.album  = album;

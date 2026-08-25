@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     用 MSYS2 MinGW64 + Ninja 只编 ttcore.dll（BUILD_QT_APP=OFF），并复制到 pascal\bin。
-    不复制 FFmpeg/SDL2/TagLib/MinGW 运行时 DLL：那些由 pacman 管，加载时走 MSYS2 前缀。
+    不复制 FFmpeg/SDL2/MinGW 运行时 DLL：那些由 pacman 管，加载时走 MSYS2 前缀。
 #>
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'

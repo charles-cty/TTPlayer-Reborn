@@ -17,7 +17,6 @@ pkg_check_modules(AVCODEC REQUIRED libavcodec)
 pkg_check_modules(AVUTIL REQUIRED libavutil)
 pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
 pkg_check_modules(SDL2 REQUIRED sdl2)
-pkg_check_modules(TAGLIB REQUIRED taglib)
 
 # ---------------------------------------------------------------------------
 # ttcore: Qt-free C ABI around Decoder / DspChain / Equalizer / AudioOutput.
@@ -41,7 +40,6 @@ target_include_directories(ttcore
         ${AVUTIL_INCLUDE_DIRS}
         ${SWRESAMPLE_INCLUDE_DIRS}
         ${SDL2_INCLUDE_DIRS}
-        ${TAGLIB_INCLUDE_DIRS}
 )
 target_compile_definitions(ttcore PRIVATE TTCORE_EXPORTS _USE_MATH_DEFINES)
 target_compile_options(ttcore PRIVATE
@@ -50,7 +48,6 @@ target_compile_options(ttcore PRIVATE
     ${AVUTIL_CFLAGS_OTHER}
     ${SWRESAMPLE_CFLAGS_OTHER}
     ${SDL2_CFLAGS_OTHER}
-    ${TAGLIB_CFLAGS_OTHER}
 )
 target_link_directories(ttcore PRIVATE
     ${AVFORMAT_LIBRARY_DIRS}
@@ -58,7 +55,6 @@ target_link_directories(ttcore PRIVATE
     ${AVUTIL_LIBRARY_DIRS}
     ${SWRESAMPLE_LIBRARY_DIRS}
     ${SDL2_LIBRARY_DIRS}
-    ${TAGLIB_LIBRARY_DIRS}
 )
 target_link_libraries(ttcore PRIVATE
     ${AVFORMAT_LIBRARIES}
@@ -66,10 +62,9 @@ target_link_libraries(ttcore PRIVATE
     ${SWRESAMPLE_LIBRARIES}
     ${AVUTIL_LIBRARIES}
     ${SDL2_LIBRARIES}
-    ${TAGLIB_LIBRARIES}
 )
 set(_ttcore_rpath "$ORIGIN")
-foreach(_d IN LISTS AVFORMAT_LIBRARY_DIRS AVCODEC_LIBRARY_DIRS AVUTIL_LIBRARY_DIRS SWRESAMPLE_LIBRARY_DIRS SDL2_LIBRARY_DIRS TAGLIB_LIBRARY_DIRS)
+foreach(_d IN LISTS AVFORMAT_LIBRARY_DIRS AVCODEC_LIBRARY_DIRS AVUTIL_LIBRARY_DIRS SWRESAMPLE_LIBRARY_DIRS SDL2_LIBRARY_DIRS)
     if (_d)
         list(APPEND _ttcore_rpath "${_d}")
     endif()
@@ -193,7 +188,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${AVUTIL_INCLUDE_DIRS}
     ${SWRESAMPLE_INCLUDE_DIRS}
     ${SDL2_INCLUDE_DIRS}
-    ${TAGLIB_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -203,7 +197,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ${AVUTIL_LIBRARIES}
     ${SWRESAMPLE_LIBRARIES}
     ${SDL2_LIBRARIES}
-    ${TAGLIB_LIBRARIES}
     QuaZip::QuaZip
 )
 if (X11_FOUND)
@@ -230,5 +223,4 @@ target_link_directories(${PROJECT_NAME} PRIVATE
     ${AVUTIL_LIBRARY_DIRS}
     ${SWRESAMPLE_LIBRARY_DIRS}
     ${SDL2_LIBRARY_DIRS}
-    ${TAGLIB_LIBRARY_DIRS}
 )

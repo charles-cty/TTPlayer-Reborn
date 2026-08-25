@@ -1,20 +1,12 @@
 #include "PlaylistManager.h"
+#include "audio/Metadata.h"
 #include <QDebug>
 #include <QElapsedTimer>
-#include <QFile>
 #include <QFileInfo>
 #include <QRandomGenerator>
-#include <taglib/audioproperties.h>
-#include <taglib/fileref.h>
-#include <taglib/tag.h>
 #include <algorithm>
 
 namespace {
-// 将 TagLib 字符串转换为 UTF-8 的 QString。
-QString fromTagString(const TagLib::String& value) {
-    const std::string utf8 = value.to8Bit(true);
-    return QString::fromUtf8(utf8.c_str());
-}
 
 // 将时长转换成可读的文本格式，例如 "03:45" 或 "1:02:30"。
 QString formatDurationText(int64_t durationMs) {
@@ -41,29 +33,24 @@ PlaylistEntry buildEntryForPath(const QString& path) {
     QFileInfo fi(path);
     entry.title = fi.completeBaseName();
 
-    TagLib::FileRef fileRef(QFile::encodeName(path).constData());
-    if (!fileRef.isNull()) {
-        if (auto* tag = fileRef.tag()) {
-            const QString title = fromTagString(tag->title()).trimmed();
-            const QString artist = fromTagString(tag->artist()).trimmed();
-            const QString album = fromTagString(tag->album()).trimmed();
-            if (!title.isEmpty()) {
-                entry.title = title;
-            }
-            entry.artist = artist;
-            entry.album = album;
+    AudioFileMetadata meta;
+    if (readAudioFileMetadata(path.toUtf8().constData(), meta)) {
+        const QString title = QString::fromUtf8(meta.title.c_str()).trimmed();
+        const QString artist = QString::fromUtf8(meta.artist.c_str()).trimmed();
+        const QString album = QString::fromUtf8(meta.album.c_str()).trimmed();
+        if (!title.isEmpty()) {
+            entry.title = title;
         }
-
-        if (auto* props = fileRef.audioProperties()) {
-            entry.durationMs = props->lengthInMilliseconds();
-        }
+        entry.artist = artist;
+        entry.album = album;
+        entry.durationMs = meta.duration_ms;
     }
 
     return entry;
 }
 }
 
-// 向播放列表添加单个音频文件，并通过 TagLib 提取标签元信息。
+// 向播放列表添加单个音频文件，并通过 FFmpeg 提取标签元信息。
 // 添加单个音频文件到播放列表，并提取标题、艺术家、专辑和时长等元数据。
 void PlaylistManager::addFile(const QString& path) {
     insertFile(entries_.size(), path);
