@@ -40,6 +40,16 @@ function ParseLrcFile(const FilePath: string;
   Encoding: TLrcEncoding = leAutoDetect): TLrcData;
 function CurrentLyricIndex(const Data: TLrcData; PositionMs: Int64): Integer;
 
+function LrcEncodingName(Enc: TLrcEncoding): string;
+function ApplyLyricTimeOffset(const Data: TLrcData; ExtraOffsetMs: Integer): TLrcData;
+function ReparseLyric(const Data: TBytes; Encoding: TLrcEncoding;
+  ExtraOffsetMs: Integer): TLrcData;
+
+const
+  AvailableLrcEncodings: array[0..3] of TLrcEncoding = (
+    leAutoDetect, leUTF8, leGBK, leLatin1
+  );
+
 implementation
 
 uses
@@ -310,6 +320,40 @@ begin
       Result := i
     else
       Break;
+end;
+
+function LrcEncodingName(Enc: TLrcEncoding): string;
+begin
+  case Enc of
+    leAutoDetect: Result := '自动检测';
+    leUTF8: Result := 'UTF-8';
+    leGBK: Result := 'GBK (简体中文)';
+    leLatin1: Result := 'Latin-1 (西欧)';
+  else
+    Result := '未知';
+  end;
+end;
+
+function ApplyLyricTimeOffset(const Data: TLrcData; ExtraOffsetMs: Integer): TLrcData;
+var
+  i: Integer;
+begin
+  Result := Data;
+  Result.Offset := Data.Offset + ExtraOffsetMs;
+  SetLength(Result.Lines, Length(Data.Lines));
+  for i := 0 to High(Data.Lines) do
+  begin
+    Result.Lines[i] := Data.Lines[i];
+    Result.Lines[i].TimeMs := Data.Lines[i].TimeMs + ExtraOffsetMs;
+  end;
+end;
+
+function ReparseLyric(const Data: TBytes; Encoding: TLrcEncoding;
+  ExtraOffsetMs: Integer): TLrcData;
+begin
+  Result := ParseLrc(Data, Encoding);
+  if ExtraOffsetMs <> 0 then
+    Result := ApplyLyricTimeOffset(Result, ExtraOffsetMs);
 end;
 
 end.

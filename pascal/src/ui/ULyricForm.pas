@@ -10,11 +10,11 @@ unit ULyricForm;
 interface
 
 uses
-  Classes, SysUtils, Forms, Controls, Graphics, ExtCtrls,
+  Classes, SysUtils, Forms, Controls, Graphics, ExtCtrls, Menus,
   LCLIntf, LCLType, LMessages,
   BGRABitmap, BGRABitmapTypes,
   USkinTypes, USkinRender, UPlayerBackend, ULrcParser, UPlatformWindow,
-  USkinView;
+  USkinView, UPlayerMenuSpec;
 
 type
   TLyricForm = class(TForm, ISkinViewForm)
@@ -29,6 +29,12 @@ type
     procedure LoadLrc(const APath: string);
     procedure ClearLrc;
     procedure SetTrackInfo(const ATitle, AArtist: string);
+    procedure ReparseCurrentLyric;
+    procedure SetLyricEncoding(Enc: TLrcEncoding);
+    procedure AdjustLyricOffset(DeltaMs: Integer);
+    procedure ResetLyricOffset;
+    function LyricOffsetMs: Integer;
+    function LyricEncoding: TLrcEncoding;
 
   protected
     procedure Paint; override;
@@ -40,6 +46,7 @@ type
     procedure MouseLeave; override;
     procedure CreateWnd; override;
     procedure DoShow; override;
+    procedure DoContextPopup(MousePos: TPoint; var Handled: Boolean); override;
 
     procedure WMNCHitTest(var Msg: TLMessage); message LM_NCHITTEST;
 
@@ -72,6 +79,13 @@ type
     FTrackTitle: string;
     FTrackArtist: string;
     FTimer: TTimer;
+    FRaw: TBytes;
+    FLrcPath: string;
+    FEncoding: TLrcEncoding;
+    FOffsetMs: Integer;
+    FLyricMenu: TPopupMenu;
+    FOnCloseRequested: TNotifyEvent;
+    FSkipContextPopup: Boolean;
 
     procedure BuildRegion;
     procedure RenderFrame;
@@ -89,11 +103,20 @@ type
     function AlignedButtonX(const Elem: TSkinElement): Integer;
 
     procedure FireButtonClick(const AName: string);
+    procedure BuildLyricMenu;
+    procedure HandleLyricMenuPopup(Sender: TObject);
+    procedure HandleEncodingClick(Sender: TObject);
+    procedure HandleOffsetAhead(Sender: TObject);
+    procedure HandleOffsetBehind(Sender: TObject);
+    procedure HandleOffsetReset(Sender: TObject);
+    procedure HandleLyricClose(Sender: TObject);
   public
     property OnResizeInProgress: TNotifyEvent
       read FOnResizeInProgress write FOnResizeInProgress;
     property OnResizeFinished: TNotifyEvent
       read FOnResizeFinished write FOnResizeFinished;
+    property OnCloseRequested: TNotifyEvent
+      read FOnCloseRequested write FOnCloseRequested;
     property ResizeEdgeRight: Boolean read FResizeEdgeRight;
     property ResizeEdgeBottom: Boolean read FResizeEdgeBottom;
   end;
@@ -125,11 +148,18 @@ begin
   FHoveredType := '';
   FPressedType := '';
   FResizing := False;
+  FEncoding := leAutoDetect;
+  FOffsetMs := 0;
+  FLrcPath := '';
+
+  FLyricMenu := TPopupMenu.Create(Self);
+  FLyricMenu.OnPopup := @HandleLyricMenuPopup;
 
   BorderStyle := bsNone;
   FormStyle   := fsNormal;
   Color       := clBlack;
   Caption     := 'Lyric';
+  ShowInTaskBar := stNever;
 
   FTimer := TTimer.Create(Self);
   FTimer.Interval := 100;
@@ -156,14 +186,33 @@ begin
 end;
 
 procedure TLyricForm.LoadLrc(const APath: string);
+var
+  fs: TFileStream;
 begin
-  FLrc := ParseLrcFile(APath);
-  RenderFrame;
-  Invalidate;
+  FLrcPath := APath;
+  FOffsetMs := 0;
+  FEncoding := leAutoDetect;
+  SetLength(FRaw, 0);
+  if FileExists(APath) then
+  begin
+    fs := TFileStream.Create(APath, fmOpenRead or fmShareDenyWrite);
+    try
+      SetLength(FRaw, fs.Size);
+      if fs.Size > 0 then
+        fs.ReadBuffer(FRaw[0], fs.Size);
+    finally
+      fs.Free;
+    end;
+  end;
+  ReparseCurrentLyric;
 end;
 
 procedure TLyricForm.ClearLrc;
 begin
+  FLrcPath := '';
+  SetLength(FRaw, 0);
+  FOffsetMs := 0;
+  FEncoding := leAutoDetect;
   FLrc.Title := '';
   FLrc.Artist := '';
   FLrc.Album := '';
@@ -171,6 +220,51 @@ begin
   SetLength(FLrc.Lines, 0);
   RenderFrame;
   Invalidate;
+end;
+
+procedure TLyricForm.ReparseCurrentLyric;
+begin
+  if Length(FRaw) = 0 then
+  begin
+    FLrc.Title := '';
+    FLrc.Artist := '';
+    FLrc.Album := '';
+    FLrc.Offset := 0;
+    SetLength(FLrc.Lines, 0);
+  end
+  else
+    FLrc := ReparseLyric(FRaw, FEncoding, FOffsetMs);
+  RenderFrame;
+  Invalidate;
+end;
+
+procedure TLyricForm.SetLyricEncoding(Enc: TLrcEncoding);
+begin
+  FEncoding := Enc;
+  if Length(FRaw) > 0 then
+    ReparseCurrentLyric;
+end;
+
+procedure TLyricForm.AdjustLyricOffset(DeltaMs: Integer);
+begin
+  Inc(FOffsetMs, DeltaMs);
+  ReparseCurrentLyric;
+end;
+
+procedure TLyricForm.ResetLyricOffset;
+begin
+  FOffsetMs := 0;
+  ReparseCurrentLyric;
+end;
+
+function TLyricForm.LyricOffsetMs: Integer;
+begin
+  Result := FOffsetMs;
+end;
+
+function TLyricForm.LyricEncoding: TLrcEncoding;
+begin
+  Result := FEncoding;
 end;
 
 procedure TLyricForm.SetTrackInfo(const ATitle, AArtist: string);
@@ -552,10 +646,128 @@ begin
   Result := EdgeRight or EdgeBottom;
 end;
 
+procedure TLyricForm.BuildLyricMenu;
+var
+  encMenu, offMenu: TMenuItem;
+  item: TMenuItem;
+  i: Integer;
+  enc: TLrcEncoding;
+begin
+  FLyricMenu.Items.Clear;
+  encMenu := TMenuItem.Create(FLyricMenu);
+  encMenu.Caption := LyricEncodingMenuCaption;
+  FLyricMenu.Items.Add(encMenu);
+  for i := Low(AvailableLrcEncodings) to High(AvailableLrcEncodings) do
+  begin
+    enc := AvailableLrcEncodings[i];
+    item := TMenuItem.Create(encMenu);
+    item.Caption := LrcEncodingName(enc);
+    item.Tag := Ord(enc);
+    item.RadioItem := True;
+    item.Checked := enc = FEncoding;
+    item.OnClick := @HandleEncodingClick;
+    encMenu.Add(item);
+  end;
+
+  item := TMenuItem.Create(FLyricMenu);
+  item.Caption := '-';
+  FLyricMenu.Items.Add(item);
+
+  offMenu := TMenuItem.Create(FLyricMenu);
+  offMenu.Caption := LyricOffsetMenuCaption;
+  FLyricMenu.Items.Add(offMenu);
+
+  item := TMenuItem.Create(offMenu);
+  item.Caption := CurrentOffsetCaption(FOffsetMs);
+  item.Enabled := False;
+  offMenu.Add(item);
+  item := TMenuItem.Create(offMenu);
+  item.Caption := '-';
+  offMenu.Add(item);
+  item := TMenuItem.Create(offMenu);
+  item.Caption := LyricOffsetAheadCaption;
+  item.Enabled := Length(FRaw) > 0;
+  item.OnClick := @HandleOffsetAhead;
+  offMenu.Add(item);
+  item := TMenuItem.Create(offMenu);
+  item.Caption := LyricOffsetBehindCaption;
+  item.Enabled := Length(FRaw) > 0;
+  item.OnClick := @HandleOffsetBehind;
+  offMenu.Add(item);
+  item := TMenuItem.Create(offMenu);
+  item.Caption := LyricOffsetResetCaption;
+  item.Enabled := (Length(FRaw) > 0) and (FOffsetMs <> 0);
+  item.OnClick := @HandleOffsetReset;
+  offMenu.Add(item);
+
+  item := TMenuItem.Create(FLyricMenu);
+  item.Caption := '-';
+  FLyricMenu.Items.Add(item);
+  item := TMenuItem.Create(FLyricMenu);
+  item.Caption := LyricCloseCaption;
+  item.OnClick := @HandleLyricClose;
+  FLyricMenu.Items.Add(item);
+end;
+
+procedure TLyricForm.HandleLyricMenuPopup(Sender: TObject);
+begin
+  if Sender = nil then ;
+  BuildLyricMenu;
+end;
+
+procedure TLyricForm.HandleEncodingClick(Sender: TObject);
+begin
+  SetLyricEncoding(TLrcEncoding(TMenuItem(Sender).Tag));
+end;
+
+procedure TLyricForm.HandleOffsetAhead(Sender: TObject);
+begin
+  if Sender = nil then ;
+  AdjustLyricOffset(-500);
+end;
+
+procedure TLyricForm.HandleOffsetBehind(Sender: TObject);
+begin
+  if Sender = nil then ;
+  AdjustLyricOffset(500);
+end;
+
+procedure TLyricForm.HandleOffsetReset(Sender: TObject);
+begin
+  if Sender = nil then ;
+  ResetLyricOffset;
+end;
+
+procedure TLyricForm.HandleLyricClose(Sender: TObject);
+begin
+  if Sender = nil then ;
+  Hide;
+  if Assigned(FOnCloseRequested) then
+    FOnCloseRequested(Self);
+end;
+
+procedure TLyricForm.DoContextPopup(MousePos: TPoint; var Handled: Boolean);
+begin
+  if FSkipContextPopup then
+  begin
+    FSkipContextPopup := False;
+    Handled := True;
+    Exit;
+  end;
+  if MousePos.X = 0 then ;
+  BuildLyricMenu;
+  FLyricMenu.PopUp;
+  Handled := True;
+end;
+
 procedure TLyricForm.FireButtonClick(const AName: string);
 begin
   if SameText(AName, 'close') then
-    Hide
+  begin
+    Hide;
+    if Assigned(FOnCloseRequested) then
+      FOnCloseRequested(Self);
+  end
   else if SameText(AName, 'ontop') then
   begin
     FAlwaysOnTop := not FAlwaysOnTop;
@@ -598,7 +810,13 @@ begin
   end;
   inherited MouseDown(Button, Shift, X, Y);
   if Button = mbLeft then
-    TryBeginCaptionDrag(Self, X, Y);
+    TryBeginCaptionDrag(Self, X, Y)
+  else if Button = mbRight then
+  begin
+    BuildLyricMenu;
+    FLyricMenu.PopUp;
+    FSkipContextPopup := True;
+  end;
 end;
 
 procedure TLyricForm.MouseMove(Shift: TShiftState; X, Y: Integer);
@@ -698,6 +916,12 @@ var
   er, eb: Boolean;
 begin
   pt := NcHitToSkin(Self, Msg, FLogicW, FLogicH);
+
+  if NcRightButtonDown then
+  begin
+    Msg.Result := HTCLIENT;
+    Exit;
+  end;
 
   if HitButton(pt.X, pt.Y) <> '' then
     Msg.Result := HTCLIENT
