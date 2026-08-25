@@ -11,12 +11,7 @@ if (BUILD_QT_APP)
     set(CMAKE_AUTORCC ON)
 endif()
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(AVFORMAT REQUIRED libavformat)
-pkg_check_modules(AVCODEC REQUIRED libavcodec)
-pkg_check_modules(AVUTIL REQUIRED libavutil)
-pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
-pkg_check_modules(SDL2 REQUIRED sdl2)
+include("${CMAKE_SOURCE_DIR}/cmake/TtcoreDeps.cmake")
 
 # ---------------------------------------------------------------------------
 # ttcore: Qt-free C ABI around Decoder / DspChain / Equalizer / AudioOutput.
@@ -82,6 +77,16 @@ set_target_properties(ttcore PROPERTIES
 if (WIN32)
     set_target_properties(ttcore PROPERTIES PREFIX "")
 endif()
+# Windows ship layout: FFmpeg + libgcc/libstdc++/winpthread inside ttcore.dll.
+# SDL2 stays a separate official DLL. --exclude-libs keeps av_* from leaking.
+if (WIN32 AND MINGW)
+    target_link_options(ttcore PRIVATE
+        -static-libgcc
+        -static-libstdc++
+        -Wl,-Bstatic,-lwinpthread,-Bdynamic
+        -Wl,--exclude-libs,ALL
+    )
+endif()
 
 add_executable(ttcore_probe src/ttcore/ttcore_probe.c)
 target_link_libraries(ttcore_probe PRIVATE ttcore)
@@ -103,6 +108,13 @@ add_custom_command(TARGET ttcore POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ttcore> "${_pascal_bin}/"
     COMMENT "Copy ttcore shared library to pascal/bin"
 )
+if (WIN32 AND SDL2_DLL)
+    add_custom_command(TARGET ttcore POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SDL2_DLL}" "$<TARGET_FILE_DIR:ttcore>/"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SDL2_DLL}" "${_pascal_bin}/"
+        COMMENT "Copy SDL2.dll next to ttcore.dll"
+    )
+endif()
 add_custom_command(TARGET ttcore_probe POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ttcore_probe> "${_pascal_bin}/"
     COMMENT "Copy ttcore_probe to pascal/bin"
