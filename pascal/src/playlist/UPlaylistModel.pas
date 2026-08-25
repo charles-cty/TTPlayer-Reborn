@@ -4,8 +4,8 @@ unit UPlaylistModel;
 
 // 播放列表数据模型，对应 Qt 版 src/playlist/PlaylistManager。
 // 只负责条目集合与当前索引的维护，不涉及任何渲染或 UI 状态。
-// 元数据（title/artist/album/duration）由调用方填充——Pascal 侧暂无 TagLib
-// 绑定，Step 7 接入 ttcore 后由后端回填（对应 Qt 的 PlaylistMetadataLoader）。
+// 元数据（title/artist/album/duration）由调用方填充——UPlaylistMetadataLoader
+// 通过 ttcore / TagLib 回填（对应 Qt 的 PlaylistMetadataLoader）。
 
 interface
 

@@ -5,7 +5,7 @@ unit UPlaylistForm;
 // 播放列表窗口，对应 Qt 版 src/ui/PlaylistWindow。
 // 无边框九宫格、虚拟列表、7 组工具栏、皮肤滚动条、外部拖放、双击 OpenFile。
 // TTBL 读写、列表内拖放重排、搜索对话框、多播放列表标签页。
-// 元数据加载器仍等 ttcore / TagLib。
+// 元数据由 UPlaylistMetadataLoader 经 ttcore/TagLib 回填。
 
 interface
 
@@ -14,7 +14,7 @@ uses
   LCLIntf, LCLType, LMessages, LazUTF8, Math, Types,
   BGRABitmap, BGRABitmapTypes,
   USkinTypes, USkinRender, UPlayerBackend, UPlaylistModel, UPlaylistBook,
-  UPlatformWindow, USkinView;
+  UPlaylistMetadataLoader, UPlatformWindow, USkinView;
 
 type
   TPlayFileEvent = procedure(Sender: TObject; const FilePath: string) of object;
@@ -31,9 +31,18 @@ type
     procedure Clear;
     procedure SetCurrentIndex(Index: Integer);
     function CurrentFile: string;
+    procedure PlayNext;
+    procedure PlayPrev;
+    procedure PlayCurrent;
+    procedure OpenFilesAndPlay;
     procedure SetBounds(ALeft, ATop, AWidth, AHeight: Integer); override;
     procedure LoadFromTtblDir(const Dir: string; Count, ActiveList: Integer);
     function SaveToTtblDir(const Dir: string): Integer;
+    procedure SetPlaybackMode(ARepeatMode: Integer; AShuffle: Boolean);
+    function RepeatMode: Integer;
+    function Shuffle: Boolean;
+    function DividerPosition: Integer;
+    procedure SetDividerPosition(Value: Integer);
 
   protected
     procedure Paint; override;
@@ -48,6 +57,7 @@ type
       MousePos: TPoint): Boolean; override;
     procedure CreateWnd; override;
     procedure DoShow; override;
+    procedure DoContextPopup(MousePos: TPoint; var Handled: Boolean); override;
 
     procedure WMNCHitTest(var Msg: TLMessage); message LM_NCHITTEST;
 
@@ -57,6 +67,7 @@ type
     FFrame: TBGRABitmap;
     FBook: TPlaylistBook;
     FModel: TPlaylistModel;
+    FMetaLoader: TPlaylistMetadataLoader;
 
     FLogicW, FLogicH: Integer;
     FRowHeight: Integer;
@@ -101,6 +112,9 @@ type
     FOnResizeFinished: TNotifyEvent;
 
     FMenu: TPopupMenu;
+    FRepeatMode: Integer;
+    FShuffle: Boolean;
+    FSkipContextPopup: Boolean;
 
     procedure BuildRegion;
     procedure RenderFrame;
@@ -161,6 +175,9 @@ type
     function TabListRect: TSkinRect;
     function TabAt(PX, PY: Integer): Integer;
     procedure SyncActiveModel;
+    procedure KickMetadataLoader;
+    procedure HandleMetadataReady(Sender: TObject; Index: Integer;
+      const FilePath, Title, Artist, Album: string; DurationMs: Int64);
     procedure EnsureSearchDialog;
     procedure OnSearchEditChange(Sender: TObject);
     procedure OnSearchClose(Sender: TObject);
@@ -196,6 +213,10 @@ type
     procedure ShowFindMenu;
     procedure ShowEditMenu;
     procedure ShowModeMenu;
+    procedure ShowListContextMenu;
+    procedure ShowChromeContextMenu;
+    procedure PopulatePlayModeMenu(ParentItem: TMenuItem);
+    procedure ApplyModeToModel;
 
     procedure OnAddFiles(Sender: TObject);
     procedure OnAddFolder(Sender: TObject);
@@ -232,7 +253,7 @@ type
 implementation
 
 uses
-  UFormSnap, UDpiScale;
+  UFormSnap, UDpiScale, UPlayerMenuSpec;
 
 const
   kResizeSense              = 8;
@@ -259,6 +280,8 @@ begin
   FFrame   := nil;
   FBook    := TPlaylistBook.Create;
   FModel   := FBook.ActiveModel;
+  FMetaLoader := TPlaylistMetadataLoader.Create;
+  FMetaLoader.OnMetadataReady := @HandleMetadataReady;
 
   FLogicW := 268;
   FLogicH := 165;
@@ -287,13 +310,17 @@ begin
   FHoveredTab := -1;
   FSearchForm := nil;
   FSearchEdit := nil;
+  FRepeatMode := 2;
+  FShuffle := False;
 
   FMenu := TPopupMenu.Create(Self);
+  ApplyModeToModel;
 
   BorderStyle := bsNone;
   FormStyle   := fsNormal;
   Color       := clBlack;
   Caption     := 'Playlist';
+  ShowInTaskBar := stNever;
   AllowDropFiles := True;
   OnDropFiles := @HandleDropFiles;
 
@@ -302,6 +329,7 @@ end;
 
 destructor TPlaylistForm.Destroy;
 begin
+  FreeAndNil(FMetaLoader);
   FreeScrollButtons;
   FreeAndNil(FFrame);
   FModel := nil;
@@ -1302,13 +1330,74 @@ begin
   FFrame.NoClip;
 end;
 
+procedure TPlaylistForm.ApplyModeToModel;
+begin
+  if FModel = nil then Exit;
+  FModel.RepeatMode := FRepeatMode;
+  FModel.Shuffle := FShuffle;
+end;
+
+procedure TPlaylistForm.SetPlaybackMode(ARepeatMode: Integer; AShuffle: Boolean);
+begin
+  FRepeatMode := ARepeatMode;
+  FShuffle := AShuffle;
+  ApplyModeToModel;
+end;
+
+function TPlaylistForm.RepeatMode: Integer;
+begin
+  Result := FRepeatMode;
+end;
+
+function TPlaylistForm.Shuffle: Boolean;
+begin
+  Result := FShuffle;
+end;
+
+function TPlaylistForm.DividerPosition: Integer;
+begin
+  if FDividerPos > 0 then
+    Result := FDividerPos
+  else
+    Result := FDividerSavedPos;
+end;
+
+procedure TPlaylistForm.SetDividerPosition(Value: Integer);
+begin
+  FDividerPos := Value;
+  FDividerSavedPos := Value;
+  ClampDividerPos;
+  InvalidateFrame;
+end;
+
 procedure TPlaylistForm.SyncActiveModel;
 begin
   FModel := FBook.ActiveModel;
+  ApplyModeToModel;
   SyncSelectionLength;
   RebuildVisible;
   FScroll := 0;
   ClampScroll;
+  KickMetadataLoader;
+  InvalidateFrame;
+end;
+
+procedure TPlaylistForm.KickMetadataLoader;
+begin
+  if (FMetaLoader = nil) or (FModel = nil) then Exit;
+  FMetaLoader.StartLoading(FModel);
+end;
+
+procedure TPlaylistForm.HandleMetadataReady(Sender: TObject; Index: Integer;
+  const FilePath, Title, Artist, Album: string; DurationMs: Int64);
+begin
+  if Sender = nil then ;
+  if Index < 0 then ;
+  if FilePath = '' then ;
+  if Title = '' then ;
+  if Artist = '' then ;
+  if Album = '' then ;
+  if DurationMs < 0 then ;
   InvalidateFrame;
 end;
 
@@ -1662,6 +1751,59 @@ begin
   InvalidateFrame;
 end;
 
+procedure TPlaylistForm.PlayNext;
+var
+  path: string;
+begin
+  path := FModel.NextFile;
+  if path <> '' then
+    PlaySource(FModel.CurrentIndex);
+end;
+
+procedure TPlaylistForm.PlayPrev;
+var
+  path: string;
+begin
+  path := FModel.PrevFile;
+  if path <> '' then
+    PlaySource(FModel.CurrentIndex);
+end;
+
+procedure TPlaylistForm.PlayCurrent;
+begin
+  if FModel.Count = 0 then Exit;
+  if FModel.CurrentIndex < 0 then
+    PlaySource(0)
+  else
+    PlaySource(FModel.CurrentIndex);
+end;
+
+procedure TPlaylistForm.OpenFilesAndPlay;
+var
+  dlg: TOpenDialog;
+  i, startIdx: Integer;
+  files: TStringList;
+begin
+  dlg := TOpenDialog.Create(Self);
+  files := TStringList.Create;
+  try
+    dlg.Title := '打开音频文件';
+    dlg.Options := dlg.Options + [ofAllowMultiSelect, ofFileMustExist, ofEnableSizing];
+    dlg.Filter := '音频文件|*.mp3;*.flac;*.ogg;*.wav;*.aac;*.m4a;*.wma;*.ape|' +
+                  '所有文件|*.*';
+    if not dlg.Execute then Exit;
+    startIdx := FModel.Count;
+    for i := 0 to dlg.Files.Count - 1 do
+      files.Add(dlg.Files[i]);
+    ImportPathList(files);
+    if FModel.Count > startIdx then
+      PlaySource(startIdx);
+  finally
+    files.Free;
+    dlg.Free;
+  end;
+end;
+
 procedure TPlaylistForm.SelectRow(VisIndex: Integer; Shift: TShiftState);
 var
   src, i, a, b, vis: Integer;
@@ -1744,6 +1886,7 @@ begin
   FModel.AddFiles(arr);
   SyncSelectionLength;
   RebuildVisible;
+  KickMetadataLoader;
   InvalidateFrame;
 end;
 
@@ -1895,8 +2038,13 @@ begin
          ((SourceOfVisible(row) >= Length(FSelected)) or
           not FSelected[SourceOfVisible(row)]) then
         SelectRow(row, []);
-      ShowEditMenu;
-    end;
+      ShowListContextMenu;
+    end
+    else if PtInSkinRect(X, Y, ListRect) then
+      ShowListContextMenu
+    else
+      ShowChromeContextMenu;
+    FSkipContextPopup := True;
   end;
   inherited MouseDown(Button, Shift, cx, cy);
   if Button = mbLeft then
@@ -2142,6 +2290,12 @@ var
 begin
   pt := NcHitToSkin(Self, Msg, FLogicW, FLogicH);
 
+  if NcRightButtonDown then
+  begin
+    Msg.Result := HTCLIENT;
+    Exit;
+  end;
+
   if HitButton(pt.X, pt.Y) <> '' then
     Msg.Result := HTCLIENT
   else if ToolbarGroupIndexAt(pt.X, pt.Y) >= 0 then
@@ -2254,9 +2408,8 @@ begin
   FMenu.PopUp(pt.X, pt.Y);
 end;
 
-procedure TPlaylistForm.ShowModeMenu;
+procedure TPlaylistForm.PopulatePlayModeMenu(ParentItem: TMenuItem);
 var
-  pt: TPoint;
   item: TMenuItem;
   i: Integer;
   modes: array[0..3] of record
@@ -2265,21 +2418,140 @@ var
     Shuffle: Boolean;
   end;
 begin
-  modes[0].Cap := '顺序播放'; modes[0].RepeatMode := 0; modes[0].Shuffle := False;
-  modes[1].Cap := '单曲循环'; modes[1].RepeatMode := 1; modes[1].Shuffle := False;
-  modes[2].Cap := '列表循环'; modes[2].RepeatMode := 2; modes[2].Shuffle := False;
-  modes[3].Cap := '随机播放'; modes[3].RepeatMode := 2; modes[3].Shuffle := True;
-
-  FMenu.Items.Clear;
+  modes[0].Cap := PlayModeCaptions[0]; modes[0].RepeatMode := 0; modes[0].Shuffle := False;
+  modes[1].Cap := PlayModeCaptions[1]; modes[1].RepeatMode := 1; modes[1].Shuffle := False;
+  modes[2].Cap := PlayModeCaptions[2]; modes[2].RepeatMode := 2; modes[2].Shuffle := False;
+  modes[3].Cap := PlayModeCaptions[3]; modes[3].RepeatMode := 2; modes[3].Shuffle := True;
   for i := 0 to 3 do
   begin
-    item := AddMenuItem(modes[i].Cap, @OnModeClick, i);
+    item := TMenuItem.Create(ParentItem);
+    item.Caption := modes[i].Cap;
+    item.Tag := i;
     item.RadioItem := True;
-    item.Checked := (FModel.RepeatMode = modes[i].RepeatMode) and
-                    (FModel.Shuffle = modes[i].Shuffle);
+    item.Checked := (FRepeatMode = modes[i].RepeatMode) and
+                    (FShuffle = modes[i].Shuffle);
+    item.OnClick := @OnModeClick;
+    ParentItem.Add(item);
   end;
+end;
+
+procedure TPlaylistForm.ShowModeMenu;
+var
+  pt: TPoint;
+begin
+  FMenu.Items.Clear;
+  PopulatePlayModeMenu(FMenu.Items);
   pt := ToolbarMenuAnchor(6);
   FMenu.PopUp(pt.X, pt.Y);
+end;
+
+procedure TPlaylistForm.ShowListContextMenu;
+var
+  addItem, sortItem, modeItem, item: TMenuItem;
+  pt: TPoint;
+begin
+  FMenu.Items.Clear;
+  AddMenuItem(PlaylistListCaptions[0], @OnPlaySelected);
+  item := TMenuItem.Create(FMenu);
+  item.Caption := '-';
+  FMenu.Items.Add(item);
+
+  addItem := TMenuItem.Create(FMenu);
+  addItem.Caption := PlaylistListCaptions[1];
+  FMenu.Items.Add(addItem);
+  item := TMenuItem.Create(addItem);
+  item.Caption := PlaylistAddSubCaptions[0];
+  item.OnClick := @OnAddFiles;
+  addItem.Add(item);
+  item := TMenuItem.Create(addItem);
+  item.Caption := PlaylistAddSubCaptions[1];
+  item.OnClick := @OnAddFolder;
+  addItem.Add(item);
+
+  item := TMenuItem.Create(FMenu);
+  item.Caption := '-';
+  FMenu.Items.Add(item);
+  AddMenuItem(PlaylistListCaptions[2], @OnRemoveSelected);
+  item := TMenuItem.Create(FMenu);
+  item.Caption := '-';
+  FMenu.Items.Add(item);
+  AddMenuItem(PlaylistListCaptions[3], @OnClearAll);
+  if FFilter <> '' then
+    AddMenuItem('清除搜索(&F)', @OnSearchClose);
+  item := TMenuItem.Create(FMenu);
+  item.Caption := '-';
+  FMenu.Items.Add(item);
+
+  sortItem := TMenuItem.Create(FMenu);
+  sortItem.Caption := PlaylistListCaptions[4];
+  FMenu.Items.Add(sortItem);
+  item := TMenuItem.Create(sortItem);
+  item.Caption := PlaylistSortSubCaptions[0];
+  item.OnClick := @OnSortByName;
+  sortItem.Add(item);
+  item := TMenuItem.Create(sortItem);
+  item.Caption := PlaylistSortSubCaptions[1];
+  item.OnClick := @OnSortByTitle;
+  sortItem.Add(item);
+  item := TMenuItem.Create(sortItem);
+  item.Caption := PlaylistSortSubCaptions[2];
+  item.OnClick := @OnSortRandom;
+  sortItem.Add(item);
+  item := TMenuItem.Create(sortItem);
+  item.Caption := PlaylistSortSubCaptions[3];
+  item.OnClick := @OnSortReverse;
+  sortItem.Add(item);
+
+  item := TMenuItem.Create(FMenu);
+  item.Caption := '-';
+  FMenu.Items.Add(item);
+  modeItem := TMenuItem.Create(FMenu);
+  modeItem.Caption := PlaylistListCaptions[5];
+  FMenu.Items.Add(modeItem);
+  PopulatePlayModeMenu(modeItem);
+
+  item := TMenuItem.Create(FMenu);
+  item.Caption := '-';
+  FMenu.Items.Add(item);
+  AddMenuItem(PlaylistListCaptions[6], @OnFileProps);
+
+  pt := Mouse.CursorPos;
+  FMenu.PopUp(pt.X, pt.Y);
+end;
+
+procedure TPlaylistForm.ShowChromeContextMenu;
+var
+  pt: TPoint;
+begin
+  FMenu.Items.Clear;
+  AddMenuItem(PlaylistChromeCaptions[0], @OnAddFiles);
+  AddMenuItem(PlaylistChromeCaptions[1], @OnAddFolder);
+  if FFilter <> '' then
+    AddMenuItem('清除搜索(&S)', @OnSearchClose);
+  AddMenuItem('-', nil);
+  AddMenuItem(PlaylistChromeCaptions[2], @OnClearAll);
+  pt := Mouse.CursorPos;
+  FMenu.PopUp(pt.X, pt.Y);
+end;
+
+procedure TPlaylistForm.DoContextPopup(MousePos: TPoint; var Handled: Boolean);
+var
+  x, y: Integer;
+begin
+  if FSkipContextPopup then
+  begin
+    FSkipContextPopup := False;
+    Handled := True;
+    Exit;
+  end;
+  x := MousePos.X;
+  y := MousePos.Y;
+  MapHit(x, y);
+  if PtInSkinRect(x, y, ListRect) or (RowAt(x, y) >= 0) then
+    ShowListContextMenu
+  else
+    ShowChromeContextMenu;
+  Handled := True;
 end;
 
 procedure TPlaylistForm.OnAddFiles(Sender: TObject);
@@ -2332,6 +2604,7 @@ begin
       FModel.RemoveIndex(i);
   SyncSelectionLength;
   RebuildVisible;
+  KickMetadataLoader;
   InvalidateFrame;
 end;
 
@@ -2363,6 +2636,7 @@ begin
   end;
   SyncSelectionLength;
   RebuildVisible;
+  KickMetadataLoader;
   InvalidateFrame;
 end;
 
@@ -2375,6 +2649,7 @@ begin
       FModel.RemoveIndex(i);
   SyncSelectionLength;
   RebuildVisible;
+  KickMetadataLoader;
   InvalidateFrame;
 end;
 
@@ -2416,6 +2691,7 @@ begin
   end;
   SyncSelectionLength;
   RebuildVisible;
+  KickMetadataLoader;
   InvalidateFrame;
 end;
 
@@ -2449,6 +2725,7 @@ begin
   end;
   SyncSelectionLength;
   RebuildVisible;
+  KickMetadataLoader;
   InvalidateFrame;
 end;
 
@@ -2476,6 +2753,7 @@ begin
   end;
   SyncSelectionLength;
   RebuildVisible;
+  KickMetadataLoader;
   InvalidateFrame;
 end;
 
@@ -2504,6 +2782,7 @@ begin
   end;
   SyncSelectionLength;
   RebuildVisible;
+  KickMetadataLoader;
   InvalidateFrame;
 end;
 
@@ -2524,6 +2803,7 @@ begin
   end;
   SyncSelectionLength;
   RebuildVisible;
+  KickMetadataLoader;
   InvalidateFrame;
 end;
 
@@ -2630,10 +2910,10 @@ end;
 procedure TPlaylistForm.OnModeClick(Sender: TObject);
 begin
   case TMenuItem(Sender).Tag of
-    0: begin FModel.RepeatMode := 0; FModel.Shuffle := False; end;
-    1: begin FModel.RepeatMode := 1; FModel.Shuffle := False; end;
-    2: begin FModel.RepeatMode := 2; FModel.Shuffle := False; end;
-    3: begin FModel.RepeatMode := 2; FModel.Shuffle := True; end;
+    0: SetPlaybackMode(0, False);
+    1: SetPlaybackMode(1, False);
+    2: SetPlaybackMode(2, False);
+    3: SetPlaybackMode(2, True);
   end;
 end;
 
@@ -2648,6 +2928,7 @@ begin
     FModel.SetMetadata(idx, Title, Artist, '', DurationMs);
   SyncSelectionLength;
   RebuildVisible;
+  KickMetadataLoader;
   InvalidateFrame;
 end;
 
