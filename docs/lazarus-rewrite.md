@@ -45,7 +45,7 @@ ttcore.dll / libttcore.so    ← 现有 C++ 音频核心（C ABI）
   注意：回调来自音频线程，Pascal 侧须 TThread.Queue 转主线程
 
 Lazarus 工程（全自绘）
-  src/backend/    IPlayerBackend 接口 + TStubBackend 桩（GUI 开发期使用）
+  src/backend/    IPlayerBackend + TTtcoreBackend（ttplayer FFI）+ TStubBackend（skinpreview）
   src/skin/       皮肤引擎（USkinTypes/USkinXmlParser/USkinLoader/USkinJsonDump）
   src/render/     渲染原语（USkinRender，QtPutImage 精确合成）
   src/ui/         PlayerForm/PlaylistForm/EqualizerForm/LyricForm（无边框自绘）
@@ -85,7 +85,7 @@ Lazarus 工程（全自绘）
 **Step 3（已完成）**：PlaylistWindow
 - 虚拟列表、7 组工具栏菜单、皮肤滚动条、文件拖放、双击 OpenFile
 - TTBL v3/v5 读写、列表内拖放重排、搜索对话框、多播放列表标签页
-- 未移植：元数据加载器（等 ttcore / TagLib）
+- 元数据加载器：`UPlaylistMetadataLoader` 经 ttcore/TagLib 回填 title/artist/album/duration（Step 7）
 
 **Step 4（已完成）**：EqualizerWindow
 
@@ -98,7 +98,12 @@ Lazarus 工程（全自绘）
 - Windows：`TSnapFormAdapter` 子类化原生 WndProc 收取 `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE`（LCL `WindowProc` 收不到跨进程 `SendMessage`）；DPI≠100% 时 `GetBounds`/`MoveTo` 在 LCL 逻辑像素与 `GetWindowRect` 物理像素之间换算（`UDpiScale`）
 - `src/ui/platform/`：Win `SetWindowRgn`；Linux 仅 X11 Shape + EWMH（`UGdkX11Backend` 强制 XWayland）。GTK3 用 `TryBeginCaptionDrag` + X 指针抓取对齐 Windows 的 HTCAPTION + `OnDragStarted/Finished`；`PlatformGetWindowRect` 用 GDK client 几何，避开 CSD frame_extents。DPI/GDK_SCALE：皮肤与吸附在逻辑像素；`ApplyAlphaShape` 在 native 尺寸是均匀 UI 缩放时放大 Region/XShape。禁止把 CSD 宽高比当 DPI。皮肤视图：Windows Per-Monitor V2 下 LCL 客户区 = 皮肤×DPI/96；皮肤位图最近邻拉伸，播放列表/歌词在 dest 像素栅格化文字；GTK `GDK_SCALE≥2` 时 LCL 保持 1×（cairo 已设备缩放）。跨监视器 `WM_DPICHANGED` / 移动时 `RefreshViewScale`。
 
-**Step 7（推迟）**：ttcore 抽库 + FFI 对接，替换 TStubBackend。音频核与 GUI 解耦，可等 GUI 与测试补齐后再做。
+**Step 7（已完成）**：ttcore 抽库 + FFI 对接
+- CMake 目标 `ttcore`（`BUILD_QT_APP=OFF` 可只编此库）：现有 `Decoder`/`DspChain`/`Equalizer`/`AudioOutput` + Qt-free C ABI（`src/ttcore/`）
+- ABI：open/play/pause/stop/seek/volume/mute/EQ/spectrum/metadata；UTF-8 `const char*`（C 侧生命周期）；频谱写入调用方缓冲；cdecl 回调（进度/结束/错误，可能来自音频线程）
+- Pascal：`UTtcoreAbi` dynlib + `TTtcoreBackend`（`TThread.Queue` 转主线程）。`ttplayer` 用 FFI 后端；`skinpreview` 仍用 `TStubBackend`
+- 播放列表：`UPlaylistMetadataLoader` 后台 `ttcore_read_metadata` → `TPlaylistModel.SetMetadata`
+- 独立消费者 `ttcore_probe`；FPCUnit `UTestTtcoreBackend`（`SDL_AUDIODRIVER=dummy`）
 
 ---
 
@@ -118,9 +123,9 @@ Lazarus 工程（全自绘）
 
 ---
 
-## 当前状态（2026-08-24）
+## 当前状态（2026-08-25）
 
-**已完成（Step 0–6 + GUI/测试补齐）**。四个皮肤窗口可在 `skinpreview` 中同时显示，Windows 下支持 Winamp 式吸附；音频仍为 `TStubBackend`。
+**已完成（Step 0–7）**。四个皮肤窗口可在 `skinpreview` 中同时显示（仍用 `TStubBackend`）；`ttplayer` 经 FFI 驱动 `libttcore.so`/`ttcore.dll`（FFmpeg decode + DSP/EQ + SDL2 + TagLib）。
 
 | 交付物 | 位置 |
 |---|---|
@@ -129,7 +134,9 @@ Lazarus 工程（全自绘）
 | 皮肤引擎 | `pascal/src/skin/`（USkinTypes/USkinXmlParser/USkinLoader/USkinJsonDump） |
 | 渲染原语 | `pascal/src/render/USkinRender`（QtPutImage 精确合成、九宫格、LED） |
 | 后端接口+桩 | `pascal/src/backend/UPlayerBackend`（IPlayerBackend + TStubBackend） |
-| 播放列表模型 | `pascal/src/playlist/UPlaylistModel` + `UTtbl` + `UPlaylistBook` |
+| ttcore C ABI | `src/ttcore/ttcore.{h,cpp}` + CMake `ttcore` SHARED（`BUILD_QT_APP=OFF` 可只编库）；产物 `libttcore.so` / `ttcore.dll` 复制到 `pascal/bin`。Windows 依赖留在 MSYS2 mingw64 包里（FFmpeg/SDL2/TagLib），加载时把该 `bin` 加入 PATH（`TTCORE_PREFIX` / `MSYSTEM_PREFIX` / `C:\msys64\mingw64`），不把运行时 DLL 复制进 `pascal/bin` |
+| Pascal FFI 后端 | `pascal/src/backend/UTtcoreAbi` + `UTtcoreBackend`（`ttplayer` 使用；回调 `TThread.Queue`） |
+| 播放列表模型 | `pascal/src/playlist/UPlaylistModel` + `UTtbl` + `UPlaylistBook` + `UPlaylistMetadataLoader`（TagLib via ttcore） |
 | LRC 解析 | `pascal/src/lyric/ULrcParser` |
 | PlayerForm | `pascal/src/ui/UPlayerForm`（无边框、Region、按钮交互、拖动、OnAuxToggle） |
 | PlaylistForm | `pascal/src/ui/UPlaylistForm`（虚拟列表、工具栏、滚动条、拖放、TTBL、多标签、搜索、列表内 DnD） |
@@ -144,7 +151,8 @@ Lazarus 工程（全自绘）
 | Qt SkinDumper | `src/tools/SkinDumper.{h,cpp}` + `--dump-skin` |
 | Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames`（捕帧前 `clearMask`，playlist/lyric 按 `baseSize`） |
 | Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
-| 测试（Windows 48/48；Linux FPCUnit 72/72，含 AlphaShape + DpiScale + NearestResample + snap Detach） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5）；Linux：`tools/test-gtk3-wayland.sh` |
+| 测试（Windows 48/48；Linux FPCUnit 89/89，含 AlphaShape + DpiScale + NearestResample + snap Detach + ttcore FFI + Config/Menus） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5）；Linux：`tools/test-gtk3-wayland.sh`；ttcore：`UTestTtcoreBackend` + `ttcore_probe`；配置/菜单：`UTestPlayerConfig` + `UTestPlayerMenus` |
+| 配置 / 托盘 / 右键 | `pascal/src/config/UPlayerConfig` + `UPlayerMenuSpec` + `pascal/src/ui/UTtplayerHost`：属性式 `TTPlayer.xml`（exe 目录，回退 Qt 遗留路径），系统托盘 + 播放器右键共用 Qt 命令集，`切换皮肤` 枚举 `Skin/*.skn` |
 
 **GTK3 + XWayland（WSL2/WSLg，2026-08-24）**
 
@@ -164,11 +172,12 @@ Lazarus 工程（全自绘）
 
 未做：非 WSLg 的实体 Linux 桌面；原生 Wayland 客户端。
 
-**下一步**：Step 7（ttcore 抽库 + FFI 对接，替换 `TStubBackend`）。元数据加载器随 TagLib/ttcore 一起做。
+**下一步**：封面、balance/surround DSP、MPRIS/SMTC、双 CMake+lazbuild 顶层脚本、MR-5 EQ-neutral output、原生 Wayland（均不在 Step 7 范围）。`TTPlayer.xml` 已按 Qt 属性式编解码接入（不是 TIniFile）。
+
+**换肤**：托盘或主窗口右键 → **切换皮肤**，列表来自仓库 `Skin/*.skn`；选中后四窗口立即重载，路径写入 `TTPlayer.xml`（exe 旁，下次启动恢复）。
 
 ---
 
 ## 待定决策
 
-- `Config`：QSettings 格式迁移到 FPC `TIniFile`？
 - 双构建链（CMake + lazbuild）的顶层串联脚本形式？
