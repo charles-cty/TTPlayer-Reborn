@@ -38,9 +38,9 @@ Add-Type -Namespace Win32 -Name NM -MemberDefinition @'
 '@
 [Win32.NM]::SetErrorMode(0x8003) | Out-Null
 
-$env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $failed = @()
+# Do not prepend MSYS2: ttcore.dll must load with only SDL2.dll beside it.
 
 # ── Layer 1：解析差分（Pascal ttdump vs Qt golden） ──────────────────────────
 if (-not $SkipLayer1) {
@@ -71,8 +71,16 @@ if (-not $SkipFPCUnit) {
         Write-Host "  HEAPTRC_KEEP_RELEASED=$($env:HEAPTRC_KEEP_RELEASED)  dump=$dumpPath" -ForegroundColor Yellow
         if (Test-Path $dumpPath) { Remove-Item -LiteralPath $dumpPath -Force }
     }
-    & $testsExe -a --format=plain
-    if ($LASTEXITCODE -ne 0) { $failed += 'FPCUnit' }
+    $savedPath = $env:PATH
+    $pascalBin = Join-Path $RepoRoot 'pascal\bin'
+    $env:PATH = "$pascalBin;$([Environment]::SystemDirectory)"
+    if (-not $env:SDL_AUDIODRIVER) { $env:SDL_AUDIODRIVER = 'dummy' }
+    try {
+        & $testsExe -a --format=plain
+        if ($LASTEXITCODE -ne 0) { $failed += 'FPCUnit' }
+    } finally {
+        $env:PATH = $savedPath
+    }
     if ($HeapTrace) {
         $dumpPath = Join-Path $RepoRoot 'pascal\bin\tests_heaptrc.heaptrc'
         if (-not (Test-Path $dumpPath)) {

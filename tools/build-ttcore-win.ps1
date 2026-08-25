@@ -51,3 +51,16 @@ if (Test-Path -LiteralPath $sdl2) {
 } else {
     throw "未复制 $sdl2"
 }
+
+$objdump = Join-Path 'C:\msys64\mingw64\bin' 'objdump.exe'
+if (Test-Path -LiteralPath $objdump) {
+    $allowed = @('bcrypt.dll', 'kernel32.dll', 'msvcrt.dll', 'sdl2.dll')
+    $deps = @(& $objdump -p $dll | ForEach-Object {
+        if ($_ -match 'DLL Name:\s+(\S+)') { $Matches[1] }
+    })
+    $bad = @($deps | Where-Object { $allowed -notcontains $_.ToLowerInvariant() })
+    Write-Host "[build-ttcore-win] imports: $($deps -join ', ')"
+    if ($bad.Count -gt 0) {
+        throw "ttcore.dll has extra imports (want bcrypt/KERNEL32/msvcrt/SDL2): $($bad -join ', ')"
+    }
+}
