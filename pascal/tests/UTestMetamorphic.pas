@@ -8,7 +8,7 @@ unit UTestMetamorphic;
 // 输出必须满足的关系约束。适用于"难以直接给出期望值，但能描述
 // 两次调用结果之间关系"的场景，是对 expect/snapshot 测试的补充。
 //
-// 本文件覆盖三组 MR：
+// 本文件覆盖四组 MR：
 //
 //   MR-1  滑块位置计算的数学性质（单调性、边界、对称性、往返一致）
 //         被测函数：SliderValueToPos / SliderPosToValue
@@ -25,6 +25,10 @@ unit UTestMetamorphic;
 //   MR-3  皮肤解析的缩放无关性（元素 position 以像素绝对坐标存储）
 //         对同一 Skin.xml，用两套不同分辨率的假背景图（尺寸不同）
 //         解析出的 position 值应相同（position 来自 XML，不依赖图像尺寸）。
+//
+//   MR-5  均衡器开关悬停：精灵上刻有字母时，打开态+悬停 ≡ 打开态
+//         （悬停帧是凸起的「关」，不得覆盖按下态）；无文字的图标/LED
+//         仍应用悬停。关闭态悬停不受锁定。
 
 interface
 
@@ -46,6 +50,10 @@ type
     procedure TestPositionIndependentOfImageSize;
     // 最近邻拉伸不得越界（BGRA rmSimpleStretch 在 1px 高图上会 AV）
     procedure TestNearestResampleThin;
+    // 刻字检测：带孔字母 vs 空面板 / 大空心环
+    procedure TestPixmapInscribedText;
+    // MR-5：刻字开关打开时悬停不得改外观；无文字皮肤仍悬停
+    procedure TestEqEnabledHoverLock;
   end;
 
 implementation
@@ -55,6 +63,37 @@ uses
 
 const
   Eps = 1e-9;  // 浮点比较容差
+
+var
+  RepoRoot: string;
+
+function CountPixelDiffs(A, B: TBGRABitmap): Integer;
+var
+  x, y: Integer;
+  pa, pb: TBGRAPixel;
+begin
+  if (A = nil) or (B = nil) or (A.Width <> B.Width) or (A.Height <> B.Height) then
+    Exit(-1);
+  Result := 0;
+  for y := 0 to A.Height - 1 do
+    for x := 0 to A.Width - 1 do
+    begin
+      pa := A.GetPixel(x, y);
+      pb := B.GetPixel(x, y);
+      if (pa.red <> pb.red) or (pa.green <> pb.green) or
+         (pa.blue <> pb.blue) or (pa.alpha <> pb.alpha) then
+        Inc(Result);
+    end;
+end;
+
+procedure PaintInk(Bmp: TBGRABitmap; X, Y: Integer);
+var
+  p: PBGRAPixel;
+begin
+  p := Bmp.ScanLine[Y];
+  Inc(p, X);
+  p^ := BGRA(40, 40, 40, 255);
+end;
 
 { MR-1a：单调性 }
 procedure TMetamorphicTest.TestSliderMonotonicity;
@@ -345,7 +384,113 @@ begin
   end;
 end;
 
+procedure TMetamorphicTest.TestPixmapInscribedText;
+var
+  bmp: TBGRABitmap;
+  r, c: Integer;
+begin
+  AssertFalse('nil', PixmapHasInscribedText(nil));
+
+  bmp := TBGRABitmap.Create(32, 16, BGRA(240, 240, 240, 255));
+  try
+    AssertFalse('空面板', PixmapHasInscribedText(bmp));
+
+    // 与 Winamp Modern EQ 相同的 4-连通刻字：n=26、8×7、fill=0.46、hole=2。
+    PaintInk(bmp, 10, 3); PaintInk(bmp, 11, 3); PaintInk(bmp, 12, 3);
+    PaintInk(bmp, 13, 3); PaintInk(bmp, 14, 3); PaintInk(bmp, 15, 3);
+    PaintInk(bmp, 11, 4); PaintInk(bmp, 14, 4);
+    PaintInk(bmp, 9, 5); PaintInk(bmp, 10, 5); PaintInk(bmp, 11, 5);
+    PaintInk(bmp, 12, 5); PaintInk(bmp, 13, 5); PaintInk(bmp, 14, 5);
+    PaintInk(bmp, 15, 5); PaintInk(bmp, 16, 5);
+    PaintInk(bmp, 11, 6); PaintInk(bmp, 14, 6);
+    PaintInk(bmp, 11, 7); PaintInk(bmp, 14, 7);
+    PaintInk(bmp, 10, 8); PaintInk(bmp, 11, 8); PaintInk(bmp, 14, 8);
+    PaintInk(bmp, 9, 9); PaintInk(bmp, 10, 9); PaintInk(bmp, 14, 9);
+    bmp.InvalidateBitmap;
+    AssertTrue('刻字 EQ', PixmapHasInscribedText(bmp));
+  finally
+    bmp.Free;
+  end;
+
+  bmp := TBGRABitmap.Create(32, 16, BGRA(240, 240, 240, 255));
+  try
+    // 1px 空心环：孔相对笔画过大，应拒绝（电源图标一类）。
+    for c := 8 to 15 do
+    begin
+      PaintInk(bmp, c, 4);
+      PaintInk(bmp, c, 9);
+    end;
+    for r := 5 to 8 do
+    begin
+      PaintInk(bmp, 8, r);
+      PaintInk(bmp, 15, r);
+    end;
+    bmp.InvalidateBitmap;
+    AssertFalse('大空心环', PixmapHasInscribedText(bmp));
+  finally
+    bmp.Free;
+  end;
+end;
+
+procedure TMetamorphicTest.TestEqEnabledHoverLock;
+var
+  engine: TSkinEngine;
+  elem: PSkinElement;
+  gains: array[0..9] of Double;
+  onFrame, hoverOn, offFrame, hoverOff: TBGRABitmap;
+  sknPath: string;
+
+  procedure CheckSkin(const SkinName: string; ExpectInscribed: Boolean);
+  begin
+    sknPath := RepoRoot + 'Skin' + PathDelim + SkinName + '.skn';
+    AssertTrue(SkinName + ' 存在', FileExists(sknPath));
+    engine := TSkinEngine.Create;
+    onFrame := nil;
+    hoverOn := nil;
+    offFrame := nil;
+    hoverOff := nil;
+    try
+      AssertTrue(SkinName + ' 加载', engine.LoadFromFile(sknPath));
+      elem := engine.SkinPtr^.EqualizerWindow.FindElement('enabled');
+      AssertTrue(SkinName + ' 有 enabled', elem <> nil);
+      AssertEquals(SkinName + ' 刻字', ExpectInscribed,
+        ButtonHasInscribedText(elem^));
+
+      FillChar(gains, SizeOf(gains), 0);
+      onFrame := RenderEqualizerWindow(engine.SkinData, gains, 0, 0, 0,
+        True, '', bvsNormal);
+      hoverOn := RenderEqualizerWindow(engine.SkinData, gains, 0, 0, 0,
+        True, 'enabled', bvsHover);
+      offFrame := RenderEqualizerWindow(engine.SkinData, gains, 0, 0, 0,
+        False, '', bvsNormal);
+      hoverOff := RenderEqualizerWindow(engine.SkinData, gains, 0, 0, 0,
+        False, 'enabled', bvsHover);
+
+      if ExpectInscribed then
+        AssertEquals(SkinName + ' 打开态悬停锁定', 0,
+          CountPixelDiffs(onFrame, hoverOn))
+      else
+        AssertTrue(SkinName + ' 打开态仍悬停',
+          CountPixelDiffs(onFrame, hoverOn) > 0);
+
+      AssertTrue(SkinName + ' 关闭态悬停仍变化',
+        CountPixelDiffs(offFrame, hoverOff) > 0);
+    finally
+      onFrame.Free;
+      hoverOn.Free;
+      offFrame.Free;
+      hoverOff.Free;
+      engine.Free;
+    end;
+  end;
+begin
+  CheckSkin('Winamp Modern', True);
+  CheckSkin('Classic', False);
+end;
+
 initialization
+  RepoRoot := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..' + PathDelim +
+    '..' + PathDelim);
   RegisterTest(TMetamorphicTest);
 
 end.

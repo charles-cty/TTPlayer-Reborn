@@ -94,11 +94,17 @@ function PlaylistContentRect(const Skin: TSkinData;
 // BalanceValue [-100..+100]；SurroundValue [0..100]；
 // EqEnabled: 均衡器开关（对应 btnEnabled_ 的 toggled 状态）。
 // OverrideType/OverrideState: 强制单个按钮视觉状态（测试用），'' 表示不启用。
+// enabled 已打开且精灵上刻有字母时，悬停不覆盖按下态（否则看起来像被关掉）。
 function RenderEqualizerWindow(const Skin: TSkinData;
   const EqGains: array of Double; PreampGain: Double;
   BalanceValue, SurroundValue: Double;
   EqEnabled: Boolean;
   const OverrideType: string; OverrideState: TButtonVisualState): TBGRABitmap;
+
+// 状态图是否在亮色面板上刻有字母（如 Winamp Modern 的 EQ）。
+// 空心图标的孔相对笔画过大，不会当成字母。
+function PixmapHasInscribedText(Bmp: TBGRABitmap): Boolean;
+function ButtonHasInscribedText(const Elem: TSkinElement): Boolean;
 
 // 合成整个 lyric_window（对应 LyricWindow 的渲染结果）。
 // DestW/DestH 为目标窗口像素尺寸。Layer 2 使用皮肤背景图尺寸（FrameDumper
@@ -849,6 +855,395 @@ end;
 const
   kEqButtonTypes: array[0..3] of string = ('close', 'enabled', 'profile', 'reset');
 
+function PixelLum(const P: TBGRAPixel): Integer; inline;
+begin
+  Result := (Integer(P.red) * 299 + Integer(P.green) * 587 +
+    Integer(P.blue) * 114) div 1000;
+end;
+
+function PixelUsable(const P: TBGRAPixel): Boolean; inline;
+begin
+  // 色键后品红已是 alpha=0；这里仍排除残品红与全透明。
+  Result := (P.alpha >= 16) and
+    not ((P.red = 255) and (P.green = 0) and (P.blue = 255));
+end;
+
+function PixmapHasInscribedText(Bmp: TBGRABitmap): Boolean;
+var
+  w, h, x, y, i, idx, mode, paper, target, acc, lo, hi: Integer;
+  n, lab, bestN, bestLab, plateN: Integer;
+  px0, py0, px1, py1, cx0, cy0, cx1, cy1, bw, bh, hole, sp, nx, ny, nidx: Integer;
+  p: PBGRAPixel;
+  lumv: Integer;
+  bin8: array[0..7] of Integer;
+  lumHist: array[0..255] of Integer;
+  plateMask, inkMask, visited: array of Boolean;
+  labels, stack: array of Integer;
+  area: Int64;
+
+  procedure PushIdx(AIdx: Integer);
+  begin
+    stack[sp] := AIdx;
+    Inc(sp);
+  end;
+
+  function PopIdx: Integer;
+  begin
+    Dec(sp);
+    Result := stack[sp];
+  end;
+begin
+  Result := False;
+  if Bmp = nil then Exit;
+  w := Bmp.Width;
+  h := Bmp.Height;
+  if (w < 5) or (h < 5) then Exit;
+
+  FillChar(bin8, SizeOf(bin8), 0);
+  FillChar(lumHist, SizeOf(lumHist), 0);
+  for y := 2 to h - 3 do
+  begin
+    p := Bmp.ScanLine[y];
+    Inc(p, 2);
+    for x := 2 to w - 3 do
+    begin
+      if PixelUsable(p^) then
+      begin
+        lumv := PixelLum(p^);
+        Inc(lumHist[lumv]);
+        Inc(bin8[lumv shr 5]);
+      end;
+      Inc(p);
+    end;
+  end;
+
+  mode := 0;
+  for i := 1 to 7 do
+    if bin8[i] > bin8[mode] then
+      mode := i;
+  if bin8[mode] = 0 then Exit;
+
+  // 众数 32-亮度箱内的中位亮度 = 面板「纸色」。
+  target := bin8[mode] div 2;
+  lo := mode * 32;
+  hi := lo + 31;
+  if hi > 255 then hi := 255;
+  acc := 0;
+  paper := lo;
+  for i := lo to hi do
+  begin
+    Inc(acc, lumHist[i]);
+    if acc > target then
+    begin
+      paper := i;
+      Break;
+    end;
+  end;
+
+  SetLength(plateMask, w * h);
+  FillChar(plateMask[0], Length(plateMask), 0);
+  plateN := 0;
+  for y := 2 to h - 3 do
+  begin
+    p := Bmp.ScanLine[y];
+    Inc(p, 2);
+    for x := 2 to w - 3 do
+    begin
+      if PixelUsable(p^) then
+      begin
+        lumv := PixelLum(p^);
+        if Abs(lumv - paper) <= 28 then
+        begin
+          plateMask[y * w + x] := True;
+          Inc(plateN);
+        end;
+      end;
+      Inc(p);
+    end;
+  end;
+  if plateN = 0 then Exit;
+
+  SetLength(labels, w * h);
+  SetLength(stack, w * h);
+  FillChar(labels[0], Length(labels) * SizeOf(Integer), 0);
+  lab := 0;
+  bestN := 0;
+  bestLab := 0;
+  for y := 2 to h - 3 do
+    for x := 2 to w - 3 do
+    begin
+      idx := y * w + x;
+      if (not plateMask[idx]) or (labels[idx] <> 0) then Continue;
+      Inc(lab);
+      sp := 0;
+      PushIdx(idx);
+      labels[idx] := lab;
+      n := 0;
+      while sp > 0 do
+      begin
+        idx := PopIdx;
+        Inc(n);
+        nx := idx mod w;
+        ny := idx div w;
+        if (nx + 1 < w) then
+        begin
+          nidx := idx + 1;
+          if plateMask[nidx] and (labels[nidx] = 0) then
+          begin
+            labels[nidx] := lab;
+            PushIdx(nidx);
+          end;
+        end;
+        if (nx > 0) then
+        begin
+          nidx := idx - 1;
+          if plateMask[nidx] and (labels[nidx] = 0) then
+          begin
+            labels[nidx] := lab;
+            PushIdx(nidx);
+          end;
+        end;
+        if (ny + 1 < h) then
+        begin
+          nidx := idx + w;
+          if plateMask[nidx] and (labels[nidx] = 0) then
+          begin
+            labels[nidx] := lab;
+            PushIdx(nidx);
+          end;
+        end;
+        if (ny > 0) then
+        begin
+          nidx := idx - w;
+          if plateMask[nidx] and (labels[nidx] = 0) then
+          begin
+            labels[nidx] := lab;
+            PushIdx(nidx);
+          end;
+        end;
+      end;
+      if n > bestN then
+      begin
+        bestN := n;
+        bestLab := lab;
+      end;
+    end;
+  if bestLab = 0 then Exit;
+
+  px0 := w; py0 := h; px1 := -1; py1 := -1;
+  for y := 0 to h - 1 do
+    for x := 0 to w - 1 do
+      if labels[y * w + x] = bestLab then
+      begin
+        if x < px0 then px0 := x;
+        if y < py0 then py0 := y;
+        if x > px1 then px1 := x;
+        if y > py1 then py1 := y;
+      end;
+
+  SetLength(inkMask, w * h);
+  FillChar(inkMask[0], Length(inkMask), 0);
+  n := 0;
+  for y := py0 to py1 do
+  begin
+    p := Bmp.ScanLine[y];
+    Inc(p, px0);
+    for x := px0 to px1 do
+    begin
+      if PixelUsable(p^) then
+      begin
+        lumv := PixelLum(p^);
+        if Abs(lumv - paper) >= 50 then
+        begin
+          inkMask[y * w + x] := True;
+          Inc(n);
+        end;
+      end;
+      Inc(p);
+    end;
+  end;
+  if n < 10 then Exit;
+
+  FillChar(labels[0], Length(labels) * SizeOf(Integer), 0);
+  SetLength(visited, w * h);
+  lab := 0;
+  for y := py0 to py1 do
+    for x := px0 to px1 do
+    begin
+      idx := y * w + x;
+      if (not inkMask[idx]) or (labels[idx] <> 0) then Continue;
+      Inc(lab);
+      sp := 0;
+      PushIdx(idx);
+      labels[idx] := lab;
+      n := 0;
+      while sp > 0 do
+      begin
+        idx := PopIdx;
+        Inc(n);
+        nx := idx mod w;
+        ny := idx div w;
+        if (nx + 1 < w) then
+        begin
+          nidx := idx + 1;
+          if inkMask[nidx] and (labels[nidx] = 0) then
+          begin
+            labels[nidx] := lab;
+            PushIdx(nidx);
+          end;
+        end;
+        if (nx > 0) then
+        begin
+          nidx := idx - 1;
+          if inkMask[nidx] and (labels[nidx] = 0) then
+          begin
+            labels[nidx] := lab;
+            PushIdx(nidx);
+          end;
+        end;
+        if (ny + 1 < h) then
+        begin
+          nidx := idx + w;
+          if inkMask[nidx] and (labels[nidx] = 0) then
+          begin
+            labels[nidx] := lab;
+            PushIdx(nidx);
+          end;
+        end;
+        if (ny > 0) then
+        begin
+          nidx := idx - w;
+          if inkMask[nidx] and (labels[nidx] = 0) then
+          begin
+            labels[nidx] := lab;
+            PushIdx(nidx);
+          end;
+        end;
+      end;
+      if n < 10 then Continue;
+
+      cx0 := w; cy0 := h; cx1 := -1; cy1 := -1;
+      for ny := py0 to py1 do
+        for nx := px0 to px1 do
+          if labels[ny * w + nx] = lab then
+          begin
+            if nx < cx0 then cx0 := nx;
+            if ny < cy0 then cy0 := ny;
+            if nx > cx1 then cx1 := nx;
+            if ny > cy1 then cy1 := ny;
+          end;
+      bw := cx1 - cx0 + 1;
+      bh := cy1 - cy0 + 1;
+      if (bw < 4) or (bh < 5) then Continue;
+      area := Int64(bw) * bh;
+      if (Int64(n) * 4 < area) or (Int64(n) * 4 > 3 * area) then Continue;
+
+      // 从包围盒边沿淹没非墨水；剩下的非墨水即封闭孔（字母 counter）。
+      FillChar(visited[0], Length(visited), 0);
+      sp := 0;
+      for nx := cx0 to cx1 do
+      begin
+        nidx := cy0 * w + nx;
+        if ((not inkMask[nidx]) or (labels[nidx] <> lab)) and not visited[nidx] then
+        begin
+          visited[nidx] := True;
+          PushIdx(nidx);
+        end;
+        nidx := cy1 * w + nx;
+        if ((not inkMask[nidx]) or (labels[nidx] <> lab)) and not visited[nidx] then
+        begin
+          visited[nidx] := True;
+          PushIdx(nidx);
+        end;
+      end;
+      for ny := cy0 to cy1 do
+      begin
+        nidx := ny * w + cx0;
+        if ((not inkMask[nidx]) or (labels[nidx] <> lab)) and not visited[nidx] then
+        begin
+          visited[nidx] := True;
+          PushIdx(nidx);
+        end;
+        nidx := ny * w + cx1;
+        if ((not inkMask[nidx]) or (labels[nidx] <> lab)) and not visited[nidx] then
+        begin
+          visited[nidx] := True;
+          PushIdx(nidx);
+        end;
+      end;
+      while sp > 0 do
+      begin
+        idx := PopIdx;
+        nx := idx mod w;
+        ny := idx div w;
+        if nx + 1 <= cx1 then
+        begin
+          nidx := idx + 1;
+          if not visited[nidx] and
+             ((not inkMask[nidx]) or (labels[nidx] <> lab)) then
+          begin
+            visited[nidx] := True;
+            PushIdx(nidx);
+          end;
+        end;
+        if nx - 1 >= cx0 then
+        begin
+          nidx := idx - 1;
+          if not visited[nidx] and
+             ((not inkMask[nidx]) or (labels[nidx] <> lab)) then
+          begin
+            visited[nidx] := True;
+            PushIdx(nidx);
+          end;
+        end;
+        if ny + 1 <= cy1 then
+        begin
+          nidx := idx + w;
+          if not visited[nidx] and
+             ((not inkMask[nidx]) or (labels[nidx] <> lab)) then
+          begin
+            visited[nidx] := True;
+            PushIdx(nidx);
+          end;
+        end;
+        if ny - 1 >= cy0 then
+        begin
+          nidx := idx - w;
+          if not visited[nidx] and
+             ((not inkMask[nidx]) or (labels[nidx] <> lab)) then
+          begin
+            visited[nidx] := True;
+            PushIdx(nidx);
+          end;
+        end;
+      end;
+
+      hole := 0;
+      for ny := cy0 to cy1 do
+        for nx := cx0 to cx1 do
+        begin
+          nidx := ny * w + nx;
+          if visited[nidx] then Continue;
+          if inkMask[nidx] and (labels[nidx] = lab) then Continue;
+          Inc(hole);
+        end;
+
+      if (hole >= 1) and (Int64(hole) * 5 <= Int64(n) * 2) then
+        Exit(True);
+    end;
+end;
+
+function ButtonHasInscribedText(const Elem: TSkinElement): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to 2 do
+    if (i < Elem.StateCount) and (Elem.StatePixmaps[i] <> nil) and
+       PixmapHasInscribedText(Elem.StatePixmaps[i]) then
+      Exit(True);
+end;
+
 function EqFactorRect(const Elem: TSkinElement; Band, EqInterval: Integer): TSkinRect;
 begin
   Result := Elem.Position;
@@ -893,7 +1288,15 @@ begin
 
     state := bvsNormal;
     if SameText(OverrideType, kEqButtonTypes[i]) then
-      state := OverrideState
+    begin
+      // 刻字开关的悬停帧是凸起「关」，盖住按下态会看起来像被关掉。
+      // 无文字的图标/LED 悬停仍是正常反馈。
+      if SameText(kEqButtonTypes[i], 'enabled') and EqEnabled and
+         (OverrideState = bvsHover) and ButtonHasInscribedText(elem^) then
+        state := bvsPressed
+      else
+        state := OverrideState;
+    end
     else if SameText(kEqButtonTypes[i], 'enabled') and EqEnabled then
       state := bvsPressed;  // usePressedStateForToggle
 
