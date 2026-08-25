@@ -106,7 +106,7 @@ TTPlayer-Reborn/
 | 依赖 | 用途 |
 |---|---|
 | Qt6 Widgets | GUI |
-| FFmpeg（avformat/avcodec/avutil/swresample） | 音频解码、重采样、标签读写。Linux 用发行版共享库；Windows 用 `third_party/ffmpeg` 编音频-only 静态库打进 `ttcore.dll` |
+| FFmpeg（avformat/avcodec/avutil/swresample） | 音频解码、重采样、标签读写。Linux 用发行版共享库；Windows 用 `third_party/ffmpeg`（shallow submodule，pin n8.1.2）编音频-only 静态库打进 `ttcore.dll` |
 | SDL2 | 音频输出（Windows 运行时旁放 `SDL2.dll`） |
 | QuaZip-Qt6 | 皮肤文件（ZIP）解压 |
 | Qt6 DBus（可选，Linux） | MPRIS 媒体控制 |
@@ -134,7 +134,7 @@ cmake --build build
 **运行时自包含**：只要 `ttcore.dll`（FFmpeg + MinGW CRT 已静态打进 DLL）和旁边的 `SDL2.dll`。不依赖 MSYS2、不依赖 MinGW CRT DLL、也不读 `C:\Programs` 这类硬编码路径。构建机用 `SDL2_PREFIX` 或 mingw64 的 `pkg-config sdl2` 找到 SDK，CMake 把 `SDL2.dll` 复制到输出目录。
 
 ```powershell
-git submodule update --init third_party/ffmpeg
+git submodule update --init --depth 1 third_party/ffmpeg
 pwsh tools/build-ffmpeg-win.ps1
 pwsh tools/build-ttcore-win.ps1
 # 可选：官方 MinGW SDL2 根目录（含 include/SDL2 与 bin/SDL2.dll）
@@ -150,8 +150,8 @@ pwsh tools/build-ttcore-win.ps1
 **Windows**
 
 ```powershell
-# 初始化 BGRABitmap 与 FFmpeg submodule
-git submodule update --init
+# BGRABitmap + FFmpeg（FFmpeg 在 .gitmodules 里 shallow=true，depth 1）
+git submodule update --init --depth 1
 
 # 音频-only 静态 FFmpeg + ttcore.dll（旁放 SDL2.dll）
 pwsh tools/build-ffmpeg-win.ps1
