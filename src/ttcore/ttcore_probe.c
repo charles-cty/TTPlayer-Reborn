@@ -17,12 +17,34 @@ int main(int argc, char** argv) {
     ttcore_metadata meta;
     const char* path;
     const char* title;
+    int argi = 1;
 
-    if (argc < 2) {
+    if (argc >= 6 && strcmp(argv[1], "--write") == 0) {
+        path = argv[2];
+        if (!ttcore_write_metadata(path, argv[3], argv[4], argv[5])) {
+            fprintf(stderr, "write_metadata failed path=%s\n", path);
+            return 1;
+        }
+        memset(&meta, 0, sizeof(meta));
+        if (!ttcore_read_metadata(path, &meta)) {
+            fprintf(stderr, "read_metadata failed after write path=%s\n", path);
+            return 1;
+        }
+        printf("write=1\n");
+        printf("meta_title=%s\n", meta.title);
+        printf("meta_artist=%s\n", meta.artist);
+        printf("meta_album=%s\n", meta.album);
+        printf("meta_duration_ms=%lld\n", (long long)meta.duration_ms);
+        fflush(stdout);
+        argi = 2;
+    }
+
+    if (argc - argi < 1) {
         fprintf(stderr, "usage: ttcore_probe <audio-file>\n");
+        fprintf(stderr, "       ttcore_probe --write <audio-file> <title> <artist> <album>\n");
         return 2;
     }
-    path = argv[1];
+    path = argv[argi];
 
     player = ttcore_create();
     if (!player) {
