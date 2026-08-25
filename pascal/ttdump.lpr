@@ -8,6 +8,7 @@ program ttdump;
 
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
+  UHeapTraceConfig,
   Classes, SysUtils, USkinTypes, USkinLoader, USkinJsonDump;
 
 var

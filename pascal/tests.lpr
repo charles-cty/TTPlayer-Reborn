@@ -12,6 +12,7 @@ program tests;
 
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
+  UHeapTraceConfig,
   Classes, consoletestrunner, UTestLayer2, UTestLayer3, UTestMetamorphic,
   UTestPlaylistModel, UTestWindowSnap, UTestLrcParser, UTestTtbl,
   UTestAlphaShape, UTestDpiScale, UTestTtcoreBackend;

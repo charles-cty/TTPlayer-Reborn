@@ -17,8 +17,52 @@
       </XPManifest>
       <UseDefaultCompilerOptions Value="True"/>
     </General>
-    <BuildModes Count="1">
+    <BuildModes Count="2">
       <Item1 Name="Default" Default="True"/>
+      <Item2 Name="HeapTrc">
+        <CompilerOptions>
+          <Version Value="11"/>
+          <Target>
+            <Filename Value="bin/ttplayer_heaptrc"/>
+          </Target>
+          <SearchPaths>
+            <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="src/skin;src/render;src/backend;src/ui;src/ui/platform;src/playlist;src/lyric;src/debug;src/config"/>
+            <UnitOutputDirectory Value="lib/ttplayer_heaptrc/$(TargetCPU)-$(TargetOS)"/>
+          </SearchPaths>
+          <Parsing>
+            <SyntaxOptions>
+              <IncludeAssertionCode Value="True"/>
+            </SyntaxOptions>
+          </Parsing>
+          <CodeGeneration>
+            <Checks>
+              <IOChecks Value="True"/>
+              <RangeChecks Value="True"/>
+              <OverflowChecks Value="True"/>
+              <StackChecks Value="True"/>
+            </Checks>
+            <Optimizations>
+              <OptimizationLevel Value="1"/>
+            </Optimizations>
+          </CodeGeneration>
+          <Linking>
+            <Debugging>
+              <GenerateDebugInfo Value="True"/>
+              <UseLineInfoUnit Value="True"/>
+              <UseHeaptrc Value="True"/>
+            </Debugging>
+            <Options>
+              <Win32>
+                <GraphicApplication Value="True"/>
+              </Win32>
+            </Options>
+          </Linking>
+          <Other>
+            <CustomOptions Value="-dENABLE_HEAPTRC"/>
+          </Other>
+        </CompilerOptions>
+      </Item2>
     </BuildModes>
     <PublishOptions>
       <Version Value="2"/>
@@ -52,7 +96,7 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="src/skin;src/render;src/backend;src/ui;src/ui/platform;src/playlist;src/lyric"/>
+      <OtherUnitFiles Value="src/skin;src/render;src/backend;src/ui;src/ui/platform;src/playlist;src/lyric;src/debug;src/config"/>
       <UnitOutputDirectory Value="lib/ttplayer/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <CodeGeneration>

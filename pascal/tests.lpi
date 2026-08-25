@@ -13,8 +13,47 @@
       <Title Value="tests"/>
       <UseDefaultCompilerOptions Value="True"/>
     </General>
-    <BuildModes Count="1">
+    <BuildModes Count="2">
       <Item1 Name="Default" Default="True"/>
+      <Item2 Name="HeapTrc">
+        <CompilerOptions>
+          <Version Value="11"/>
+          <Target>
+            <Filename Value="bin/tests_heaptrc"/>
+          </Target>
+          <SearchPaths>
+            <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="src/skin;src/render;src/playlist;src/lyric;src/ui;src/ui/platform;src/backend;src/debug;src/config;tests"/>
+            <UnitOutputDirectory Value="lib/tests_heaptrc/$(TargetCPU)-$(TargetOS)"/>
+          </SearchPaths>
+          <Parsing>
+            <SyntaxOptions>
+              <IncludeAssertionCode Value="True"/>
+            </SyntaxOptions>
+          </Parsing>
+          <CodeGeneration>
+            <Checks>
+              <IOChecks Value="True"/>
+              <RangeChecks Value="True"/>
+              <OverflowChecks Value="True"/>
+              <StackChecks Value="True"/>
+            </Checks>
+            <Optimizations>
+              <OptimizationLevel Value="1"/>
+            </Optimizations>
+          </CodeGeneration>
+          <Linking>
+            <Debugging>
+              <GenerateDebugInfo Value="True"/>
+              <UseLineInfoUnit Value="True"/>
+              <UseHeaptrc Value="True"/>
+            </Debugging>
+          </Linking>
+          <Other>
+            <CustomOptions Value="-dENABLE_HEAPTRC"/>
+          </Other>
+        </CompilerOptions>
+      </Item2>
     </BuildModes>
     <PublishOptions>
       <Version Value="2"/>
@@ -48,7 +87,7 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="src/skin;src/render;src/playlist;src/lyric;src/ui;src/ui/platform;src/backend;tests"/>
+      <OtherUnitFiles Value="src/skin;src/render;src/playlist;src/lyric;src/ui;src/ui/platform;src/backend;src/debug;src/config;tests"/>
       <UnitOutputDirectory Value="lib/tests/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <CodeGeneration>

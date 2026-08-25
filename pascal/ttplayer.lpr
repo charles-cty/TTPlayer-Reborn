@@ -9,6 +9,7 @@ program ttplayer;
 
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
+  UHeapTraceConfig,
   UGdkX11Backend,
   UWinDpiAware,
   Interfaces,
