@@ -1,3 +1,6 @@
 [submodule "pascal/vendor/bgrabitmap"]
 	path = pascal/vendor/bgrabitmap
 	url = https://github.com/bgrabitmap/bgrabitmap.git
+[submodule "third_party/ffmpeg"]
+	path = third_party/ffmpeg
+	url = https://github.com/FFmpeg/FFmpeg.git
