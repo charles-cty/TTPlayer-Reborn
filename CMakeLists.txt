@@ -1,28 +1,125 @@
 cmake_minimum_required(VERSION 3.20)
-project(TTPlayerReborn VERSION 0.1.0 LANGUAGES CXX)
+project(TTPlayerReborn VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
 
-# Qt6
-find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Network)
-# DBus 在 Linux 上默认可用，macOS/Windows 则可能没有，设为可选。
-find_package(Qt6 OPTIONAL_COMPONENTS DBus)
+option(BUILD_QT_APP "Build the Qt TTPlayerReborn GUI executable" ON)
 
-# FFmpeg
+if (BUILD_QT_APP)
+    set(CMAKE_AUTOMOC ON)
+    set(CMAKE_AUTORCC ON)
+endif()
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(AVFORMAT REQUIRED libavformat)
 pkg_check_modules(AVCODEC REQUIRED libavcodec)
 pkg_check_modules(AVUTIL REQUIRED libavutil)
 pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
-
-# SDL2
 pkg_check_modules(SDL2 REQUIRED sdl2)
-
-# TagLib
 pkg_check_modules(TAGLIB REQUIRED taglib)
+
+# ---------------------------------------------------------------------------
+# ttcore: Qt-free C ABI around Decoder / DspChain / Equalizer / AudioOutput.
+# ---------------------------------------------------------------------------
+add_library(ttcore SHARED
+    src/audio/Decoder.cpp
+    src/audio/DspChain.cpp
+    src/audio/Equalizer.cpp
+    src/audio/AudioOutput.cpp
+    src/ttcore/ttcore.cpp
+)
+target_include_directories(ttcore
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/src/ttcore
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/audio
+        ${AVFORMAT_INCLUDE_DIRS}
+        ${AVCODEC_INCLUDE_DIRS}
+        ${AVUTIL_INCLUDE_DIRS}
+        ${SWRESAMPLE_INCLUDE_DIRS}
+        ${SDL2_INCLUDE_DIRS}
+        ${TAGLIB_INCLUDE_DIRS}
+)
+target_compile_definitions(ttcore PRIVATE TTCORE_EXPORTS _USE_MATH_DEFINES)
+target_compile_options(ttcore PRIVATE
+    ${AVFORMAT_CFLAGS_OTHER}
+    ${AVCODEC_CFLAGS_OTHER}
+    ${AVUTIL_CFLAGS_OTHER}
+    ${SWRESAMPLE_CFLAGS_OTHER}
+    ${SDL2_CFLAGS_OTHER}
+    ${TAGLIB_CFLAGS_OTHER}
+)
+target_link_directories(ttcore PRIVATE
+    ${AVFORMAT_LIBRARY_DIRS}
+    ${AVCODEC_LIBRARY_DIRS}
+    ${AVUTIL_LIBRARY_DIRS}
+    ${SWRESAMPLE_LIBRARY_DIRS}
+    ${SDL2_LIBRARY_DIRS}
+    ${TAGLIB_LIBRARY_DIRS}
+)
+target_link_libraries(ttcore PRIVATE
+    ${AVFORMAT_LIBRARIES}
+    ${AVCODEC_LIBRARIES}
+    ${SWRESAMPLE_LIBRARIES}
+    ${AVUTIL_LIBRARIES}
+    ${SDL2_LIBRARIES}
+    ${TAGLIB_LIBRARIES}
+)
+set(_ttcore_rpath "$ORIGIN")
+foreach(_d IN LISTS AVFORMAT_LIBRARY_DIRS AVCODEC_LIBRARY_DIRS AVUTIL_LIBRARY_DIRS SWRESAMPLE_LIBRARY_DIRS SDL2_LIBRARY_DIRS TAGLIB_LIBRARY_DIRS)
+    if (_d)
+        list(APPEND _ttcore_rpath "${_d}")
+    endif()
+endforeach()
+set_target_properties(ttcore PROPERTIES
+    CXX_VISIBILITY_PRESET hidden
+    C_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
+    POSITION_INDEPENDENT_CODE ON
+    OUTPUT_NAME ttcore
+    BUILD_RPATH "${_ttcore_rpath}"
+    INSTALL_RPATH "${_ttcore_rpath}"
+)
+# MinGW would otherwise emit libttcore.dll; Pascal LoadLibrary looks for ttcore.dll.
+if (WIN32)
+    set_target_properties(ttcore PROPERTIES PREFIX "")
+endif()
+
+add_executable(ttcore_probe src/ttcore/ttcore_probe.c)
+target_link_libraries(ttcore_probe PRIVATE ttcore)
+target_include_directories(ttcore_probe PRIVATE ${CMAKE_SOURCE_DIR}/src/ttcore)
+# Probe only links ttcore; FFmpeg's optional DT_NEEDED (gme/openmpt/...) must not
+# fail the executable link when those runtime .so files are resolved via RPATH.
+if (NOT WIN32)
+    target_link_options(ttcore_probe PRIVATE "-Wl,--allow-shlib-undefined")
+endif()
+set_target_properties(ttcore_probe PROPERTIES
+    LINKER_LANGUAGE CXX
+    BUILD_RPATH "$ORIGIN;${_ttcore_rpath}"
+    INSTALL_RPATH "$ORIGIN;${_ttcore_rpath}"
+)
+
+set(_pascal_bin "${CMAKE_SOURCE_DIR}/pascal/bin")
+add_custom_command(TARGET ttcore POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${_pascal_bin}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ttcore> "${_pascal_bin}/"
+    COMMENT "Copy ttcore shared library to pascal/bin"
+)
+add_custom_command(TARGET ttcore_probe POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ttcore_probe> "${_pascal_bin}/"
+    COMMENT "Copy ttcore_probe to pascal/bin"
+)
+
+if (NOT BUILD_QT_APP)
+    return()
+endif()
+
+# Qt6
+find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Network)
+# DBus 在 Linux 上默认可用，macOS/Windows 则可能没有，设为可选。
+find_package(Qt6 OPTIONAL_COMPONENTS DBus)
 
 # libsoxr
 pkg_check_modules(SOXR REQUIRED soxr)

@@ -190,7 +190,7 @@ bool Decoder::convertCurrentFrame() {
     decodedBuf_.resize(outSamples * ch);
 
     uint8_t* outBuf = reinterpret_cast<uint8_t*>(decodedBuf_.data());
-    const uint8_t* const* inBuf = const_cast<const uint8_t* const*>(frame_->extended_data);
+    const uint8_t** inBuf = const_cast<const uint8_t**>(frame_->extended_data);
 
     const int converted = swr_convert(swrCtx_, &outBuf, outSamples, inBuf, frame_->nb_samples);
     if (converted < 0) {
