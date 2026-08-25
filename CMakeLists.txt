@@ -27,6 +27,7 @@ add_library(ttcore SHARED
     src/audio/DspChain.cpp
     src/audio/Equalizer.cpp
     src/audio/AudioOutput.cpp
+    src/audio/Metadata.cpp
     src/ttcore/ttcore.cpp
 )
 target_include_directories(ttcore
@@ -137,6 +138,7 @@ set(SOURCES
     src/audio/DspChain.cpp
     src/audio/Equalizer.cpp
     src/audio/AudioOutput.cpp
+    src/audio/Metadata.cpp
     src/skin/SkinEngine.cpp
     src/skin/SkinParser.cpp
     src/skin/SkinButton.cpp
@@ -163,6 +165,7 @@ set(HEADERS
     src/audio/DspChain.h
     src/audio/Equalizer.h
     src/audio/AudioOutput.h
+    src/audio/Metadata.h
     src/skin/SkinEngine.h
     src/skin/SkinParser.h
     src/skin/SkinButton.h

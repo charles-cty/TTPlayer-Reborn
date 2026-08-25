@@ -1,4 +1,5 @@
 #include "Decoder.h"
+#include "Metadata.h"
 #include <cstring>
 #include <algorithm>
 
@@ -297,9 +298,7 @@ bool Decoder::seek(int64_t positionMs) {
 // 返回当前音频文件的总时长（毫秒）。
 int64_t Decoder::durationMs() const {
     if (!isOpen_ || !fmtCtx_) return 0;
-    if (fmtCtx_->duration > 0)
-        return fmtCtx_->duration / (AV_TIME_BASE / 1000);
-    return 0;
+    return audioDurationMs(fmtCtx_);
 }
 
 // 返回当前解码位置时间戳（毫秒）。
@@ -309,21 +308,15 @@ int64_t Decoder::positionMs() const {
 
 // 获取当前音频文件的 title 元数据。
 std::string Decoder::title() const {
-    if (!fmtCtx_) return {};
-    AVDictionaryEntry* tag = av_dict_get(fmtCtx_->metadata, "title", nullptr, 0);
-    return tag ? tag->value : std::string{};
+    return audioMetadataField(fmtCtx_, "title");
 }
 
 // 获取当前音频文件的 artist 元数据。
 std::string Decoder::artist() const {
-    if (!fmtCtx_) return {};
-    AVDictionaryEntry* tag = av_dict_get(fmtCtx_->metadata, "artist", nullptr, 0);
-    return tag ? tag->value : std::string{};
+    return audioMetadataField(fmtCtx_, "artist");
 }
 
 // 获取当前音频文件的 album 元数据。
 std::string Decoder::album() const {
-    if (!fmtCtx_) return {};
-    AVDictionaryEntry* tag = av_dict_get(fmtCtx_->metadata, "album", nullptr, 0);
-    return tag ? tag->value : std::string{};
+    return audioMetadataField(fmtCtx_, "album");
 }
