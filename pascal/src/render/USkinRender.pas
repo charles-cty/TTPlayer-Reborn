@@ -9,7 +9,7 @@ unit USkinRender;
 interface
 
 uses
-  Classes, SysUtils, BGRABitmap, BGRABitmapTypes, USkinTypes, UDpiScale;
+  Classes, SysUtils, Types, BGRABitmap, BGRABitmapTypes, USkinTypes, UDpiScale;
 
 type
   // 按钮视觉状态（与 Qt 版 currentState 的取值一致）。
@@ -47,10 +47,19 @@ procedure DrawLedTime(Dest: TBGRABitmap; const Elem: TSkinElement;
 // ProgressValue 0-1，VolumeValue 0-100；OverrideType/OverrideState 用于
 // 强制单个按钮的视觉状态（对应测试钩子），OverrideType='' 表示不启用。
 // ToggledMute=True 时静音按钮按切换态（按下图）渲染。
+// Playing=False（默认）跳过 pause、绘制 play，与 Layer 2 默认帧一致；
+// Playing=True 跳过 play、绘制 pause。LedTimeMs 默认 0 → LED 00:00。
+// InfoText 默认空：不画 info 元素，Layer 2 默认帧不变。
+// ShowCover=False（默认）不画 visual 封面，保持金样。
 function RenderPlayerWindow(const Skin: TSkinData;
   ProgressValue, VolumeValue: Double;
   const OverrideType: string; OverrideState: TButtonVisualState;
-  ToggledMute: Boolean): TBGRABitmap;
+  ToggledMute: Boolean;
+  Playing: Boolean = False;
+  LedTimeMs: Int64 = 0;
+  const InfoText: string = '';
+  CoverArt: TBGRABitmap = nil;
+  ShowCover: Boolean = False): TBGRABitmap;
 
 // 计算第 Band 个 eqfactor 滑块的实际 Position（X 按 eqInterval 偏移）。
 // 公开供 UEqualizerForm 命中测试使用，与 RenderEqualizerWindow 保持一致。
@@ -542,16 +551,149 @@ begin
   end;
 end;
 
+procedure DrawInfoText(Dest: TBGRABitmap; const Elem: TSkinElement;
+  const Text: string);
+var
+  oldClip: TRect;
+  px, x, y: Integer;
+  sz: TSize;
+  col, bg: TBGRAPixel;
+  lowerAlign: string;
+begin
+  if (Dest = nil) or (Text = '') or Elem.Position.IsEmpty then
+    Exit;
+
+  oldClip := Dest.ClipRect;
+  Dest.ClipRect := Classes.Rect(Elem.Position.X, Elem.Position.Y,
+    Elem.Position.X + Elem.Position.W, Elem.Position.Y + Elem.Position.H);
+  try
+    if Elem.BkgndColor.Valid then
+    begin
+      bg := BGRA(Elem.BkgndColor.R, Elem.BkgndColor.G, Elem.BkgndColor.B, 255);
+      Dest.FillRect(Elem.Position.X, Elem.Position.Y,
+        Elem.Position.X + Elem.Position.W, Elem.Position.Y + Elem.Position.H,
+        bg, dmSet);
+    end;
+
+    if Elem.Color.Valid then
+      col := BGRA(Elem.Color.R, Elem.Color.G, Elem.Color.B, 255)
+    else
+      col := BGRA(255, 255, 6, 255);
+
+    try
+      if Elem.FontFamily <> '' then
+        Dest.FontName := Elem.FontFamily
+      else
+        Dest.FontName := 'SimSun';
+      px := Elem.FontSize;
+      if px <= 0 then
+        px := 12;
+      Dest.FontHeight := px;
+      Dest.FontAntialias := True;
+      sz := Dest.TextSize(Text);
+      x := Elem.Position.X;
+      lowerAlign := LowerCase(Elem.Align);
+      if Pos('right', lowerAlign) > 0 then
+      begin
+        if Elem.Position.W - sz.cx > 0 then
+          Inc(x, Elem.Position.W - sz.cx);
+      end
+      else if Pos('center', lowerAlign) > 0 then
+      begin
+        if Elem.Position.W - sz.cx > 0 then
+          Inc(x, (Elem.Position.W - sz.cx) div 2);
+      end;
+      y := Elem.Position.Y;
+      if Elem.Position.H > sz.cy then
+        Inc(y, (Elem.Position.H - sz.cy) div 2);
+      Dest.TextOut(x, y, Text, col);
+    except
+      // tests.lpi is NoLCL (no LazFreeType). Stamp the info rect so
+      // non-empty InfoText still differs in pixels from the default frame.
+      Dest.FillRect(Elem.Position.X, Elem.Position.Y,
+        Elem.Position.X + Elem.Position.W, Elem.Position.Y + Elem.Position.H,
+        col, dmSet);
+    end;
+  finally
+    Dest.ClipRect := oldClip;
+  end;
+end;
+
+procedure DrawCoverArt(Dest: TBGRABitmap; const Elem: TSkinElement;
+  Cover: TBGRABitmap);
+var
+  oldClip: TRect;
+  dw, dh, x, y: Integer;
+  sz: TSize;
+  destR: TRect;
+begin
+  if (Dest = nil) or Elem.Position.IsEmpty then
+    Exit;
+
+  oldClip := Dest.ClipRect;
+  Dest.ClipRect := Classes.Rect(Elem.Position.X, Elem.Position.Y,
+    Elem.Position.X + Elem.Position.W, Elem.Position.Y + Elem.Position.H);
+  try
+    Dest.FillRect(Elem.Position.X, Elem.Position.Y,
+      Elem.Position.X + Elem.Position.W, Elem.Position.Y + Elem.Position.H,
+      BGRA(12, 12, 12, 255), dmSet);
+    if (Cover <> nil) and (Cover.Width > 0) and (Cover.Height > 0) then
+    begin
+      if Cover.Width * Elem.Position.H <= Cover.Height * Elem.Position.W then
+      begin
+        dh := Elem.Position.H;
+        dw := Cover.Width * dh div Cover.Height;
+      end
+      else
+      begin
+        dw := Elem.Position.W;
+        dh := Cover.Height * dw div Cover.Width;
+      end;
+      if dw < 1 then dw := 1;
+      if dh < 1 then dh := 1;
+      x := Elem.Position.X + (Elem.Position.W - dw) div 2;
+      y := Elem.Position.Y + (Elem.Position.H - dh) div 2;
+      destR := Classes.Rect(x, y, x + dw, y + dh);
+      QtStretchPutImage(Dest, destR, Cover);
+    end
+    else
+    begin
+      try
+        Dest.FontName := 'SimSun';
+        Dest.FontHeight := 12;
+        Dest.FontAntialias := True;
+        sz := Dest.TextSize('No Cover');
+        Dest.TextOut(Elem.Position.X + (Elem.Position.W - sz.cx) div 2,
+          Elem.Position.Y + (Elem.Position.H - sz.cy) div 2,
+          'No Cover', BGRA(160, 200, 160, 255));
+      except
+        Dest.Rectangle(Elem.Position.X, Elem.Position.Y,
+          Elem.Position.X + Elem.Position.W - 1,
+          Elem.Position.Y + Elem.Position.H - 1,
+          BGRA(160, 200, 160, 255), dmSet);
+      end;
+    end;
+  finally
+    Dest.ClipRect := oldClip;
+  end;
+end;
+
 function RenderPlayerWindow(const Skin: TSkinData;
   ProgressValue, VolumeValue: Double;
   const OverrideType: string; OverrideState: TButtonVisualState;
-  ToggledMute: Boolean): TBGRABitmap;
+  ToggledMute: Boolean;
+  Playing: Boolean;
+  LedTimeMs: Int64;
+  const InfoText: string;
+  CoverArt: TBGRABitmap;
+  ShowCover: Boolean): TBGRABitmap;
 var
   wnd: TSkinWindow;
   i, t: Integer;
   elem: PSkinElement;
   bounds: TSkinRect;
   state: TButtonVisualState;
+  btnType: string;
 begin
   wnd := Skin.PlayerWindow;
   if wnd.BackgroundPixmap = nil then
@@ -562,13 +704,16 @@ begin
   // 背景（对应 PlayerWindow::paintEvent 的背景绘制，含预乘往返损失）
   QtPutImage(Result, 0, 0, wnd.BackgroundPixmap);
 
-  // 按钮：按 createButtons 的类型清单绘制（pause 初始隐藏，跳过）
+  // 按钮：按 createButtons 的类型清单绘制。
+  // play / pause 互斥（对应 btnPause_->hide() 初始态与 onStateChanged）。
   for t := 0 to High(kPlayerButtonTypes) do
   begin
-    if kPlayerButtonTypes[t] = 'pause' then Continue;
+    btnType := kPlayerButtonTypes[t];
+    if (btnType = 'pause') and (not Playing) then Continue;
+    if (btnType = 'play') and Playing then Continue;
     elem := nil;
     for i := 0 to High(wnd.Elements) do
-      if wnd.Elements[i].ElementType = kPlayerButtonTypes[t] then
+      if wnd.Elements[i].ElementType = btnType then
       begin
         elem := @wnd.Elements[i];
         Break;
@@ -576,9 +721,9 @@ begin
     if elem = nil then Continue;
 
     state := bvsNormal;
-    if SameText(OverrideType, kPlayerButtonTypes[t]) then
+    if SameText(OverrideType, btnType) then
       state := OverrideState
-    else if (kPlayerButtonTypes[t] = 'mute') and ToggledMute then
+    else if (btnType = 'mute') and ToggledMute then
       state := bvsPressed;  // usePressedStateForToggle
 
     bounds := ButtonBounds(elem^);
@@ -592,6 +737,20 @@ begin
       DrawSlider(Result, wnd.Elements[i], ProgressValue, 0, 1.0, bvsNormal)
     else if wnd.Elements[i].ElementType = 'volume' then
       DrawSlider(Result, wnd.Elements[i], VolumeValue, 0, 100, bvsNormal);
+  end;
+
+  // 封面：仅 ShowCover 时画在 visual 矩形（默认关闭，Layer 2 金样不变）
+  if ShowCover then
+  begin
+    elem := nil;
+    for i := 0 to High(wnd.Elements) do
+      if wnd.Elements[i].ElementType = 'visual' then
+      begin
+        elem := @wnd.Elements[i];
+        Break;
+      end;
+    if (elem <> nil) and (not elem^.Position.IsEmpty) then
+      DrawCoverArt(Result, elem^, CoverArt);
   end;
 
   // icon 元素：按 position 矩形缩放绘制（对应 paintEvent 的 drawPixmap(rect,...)）
@@ -608,7 +767,21 @@ begin
       elem^.Position.X + elem^.Position.W, elem^.Position.Y + elem^.Position.H),
       elem^.StatePixmaps[0]);
 
-  // LED 时间：初始为 00:00 已过时间（对应 currentPosMs_=0, showElapsed_=true）
+  // 曲目信息文本（InfoText 默认空 → 不绘制）
+  if InfoText <> '' then
+  begin
+    elem := nil;
+    for i := 0 to High(wnd.Elements) do
+      if wnd.Elements[i].ElementType = 'info' then
+      begin
+        elem := @wnd.Elements[i];
+        Break;
+      end;
+    if (elem <> nil) and (not elem^.Position.IsEmpty) then
+      DrawInfoText(Result, elem^, InfoText);
+  end;
+
+  // LED 时间（对应 PlayerWindow::drawLedTime；默认 0 → 00:00）
   elem := nil;
   for i := 0 to High(wnd.Elements) do
     if wnd.Elements[i].ElementType = 'led' then
@@ -617,7 +790,7 @@ begin
       Break;
     end;
   if (elem <> nil) and (not elem^.Position.IsEmpty) then
-    DrawLedTime(Result, elem^, 0, True);
+    DrawLedTime(Result, elem^, LedTimeMs, True);
 end;
 
 // 公开：滑块值→像素位置（对应 SkinSlider::valueToPosition + DrawSlider 的 thumb 定位）。

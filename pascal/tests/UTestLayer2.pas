@@ -29,6 +29,8 @@ type
       Actual: TBGRABitmap; Masks: TJSONArray);
   published
     procedure TestAllSkins;
+    procedure TestInfoTextDiffersFromEmpty;
+    procedure TestCoverRenderDiffersFromDefault;
   end;
 
 implementation
@@ -440,6 +442,115 @@ begin
     end;
   end;
   AssertTrue('Skin 目录下应有 .skn 皮肤', found);
+end;
+
+function CountPixelDiffs(A, B: TBGRABitmap): Integer;
+var
+  x, y: Integer;
+  pa, pb: PBGRAPixel;
+begin
+  Result := 0;
+  if (A = nil) or (B = nil) then
+    Exit;
+  if (A.Width <> B.Width) or (A.Height <> B.Height) then
+  begin
+    Result := A.Width * A.Height;
+    Exit;
+  end;
+  for y := 0 to A.Height - 1 do
+  begin
+    pa := A.ScanLine[y];
+    pb := B.ScanLine[y];
+    for x := 0 to A.Width - 1 do
+    begin
+      if (pa^.red <> pb^.red) or (pa^.green <> pb^.green) or
+         (pa^.blue <> pb^.blue) or (pa^.alpha <> pb^.alpha) then
+        Inc(Result);
+      Inc(pa);
+      Inc(pb);
+    end;
+  end;
+end;
+
+function LoadFirstSkinWith(const ElemType: string; out Engine: TSkinEngine): Boolean;
+var
+  rec: TSearchRec;
+  sknPath: string;
+  elem: PSkinElement;
+begin
+  Result := False;
+  Engine := nil;
+  if FindFirst(RepoRoot + 'Skin' + PathDelim + '*.skn', faAnyFile, rec) <> 0 then
+    Exit;
+  try
+    repeat
+      sknPath := RepoRoot + 'Skin' + PathDelim + rec.Name;
+      Engine := TSkinEngine.Create;
+      if Engine.LoadFromFile(sknPath) then
+      begin
+        elem := Engine.SkinData.PlayerWindow.FindElement(ElemType);
+        if (elem <> nil) and (not elem^.Position.IsEmpty) then
+        begin
+          Result := True;
+          Exit;
+        end;
+      end;
+      FreeAndNil(Engine);
+    until FindNext(rec) <> 0;
+  finally
+    FindClose(rec);
+  end;
+end;
+
+procedure TSnapshotTest.TestInfoTextDiffersFromEmpty;
+var
+  engine: TSkinEngine;
+  empty, filled: TBGRABitmap;
+  diffs: Integer;
+begin
+  AssertTrue('need skin with info', LoadFirstSkinWith('info', engine));
+  try
+    empty := RenderPlayerWindow(engine.SkinData, 0, 100, '', bvsNormal, False);
+    filled := RenderPlayerWindow(engine.SkinData, 0, 100, '', bvsNormal, False,
+      False, 0, 'ZZZ_INFO_PIXEL_PROBE');
+    try
+      diffs := CountPixelDiffs(empty, filled);
+      AssertTrue(Format('info text must change pixels, diffs=%d', [diffs]),
+        diffs > 0);
+    finally
+      empty.Free;
+      filled.Free;
+    end;
+  finally
+    engine.Free;
+  end;
+end;
+
+procedure TSnapshotTest.TestCoverRenderDiffersFromDefault;
+var
+  engine: TSkinEngine;
+  empty, covered: TBGRABitmap;
+  cover: TBGRABitmap;
+  diffs: Integer;
+begin
+  AssertTrue('need skin with visual', LoadFirstSkinWith('visual', engine));
+  cover := TBGRABitmap.Create(16, 16, BGRA(255, 0, 0, 255));
+  try
+    empty := RenderPlayerWindow(engine.SkinData, 0, 100, '', bvsNormal, False);
+    covered := RenderPlayerWindow(engine.SkinData, 0, 100, '', bvsNormal, False,
+      False, 0, '', cover, True);
+    try
+      diffs := CountPixelDiffs(empty, covered);
+      AssertTrue(Format('cover must change pixels, diffs=%d', [diffs]),
+        diffs > 0);
+    finally
+      empty.Free;
+      covered.Free;
+    end;
+  finally
+    cover.Free;
+    engine.Free;
+  end;
 end;
 
 initialization

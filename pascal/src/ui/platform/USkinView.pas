@@ -37,6 +37,8 @@ procedure SkinToClientXY(AForm: TCustomForm; SkinW, SkinH: Integer;
   var X, Y: Integer);
 function NcHitToSkin(AForm: TCustomForm; const Msg: TLMessage;
   SkinW, SkinH: Integer): TPoint;
+// Windows：背景 HTCAPTION 会把右键吞进非客户区，菜单出不来。右键按下时改走 HTCLIENT。
+function NcRightButtonDown: Boolean;
 procedure NotifySkinViewScale(AForm: TForm);
 
 implementation
@@ -254,6 +256,15 @@ begin
   if AForm <> nil then
     Result := AForm.ScreenToClient(Result);
   ClientToSkinXY(AForm, SkinW, SkinH, Result.X, Result.Y);
+end;
+
+function NcRightButtonDown: Boolean;
+begin
+  {$IFDEF WINDOWS}
+  Result := (Windows.GetAsyncKeyState(VK_RBUTTON) and $8000) <> 0;
+  {$ELSE}
+  Result := False;
+  {$ENDIF}
 end;
 
 procedure NotifySkinViewScale(AForm: TForm);

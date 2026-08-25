@@ -33,6 +33,12 @@ type
     // 应用皮肤；换肤时调用，重建 Region 并刷新。
     procedure ApplySkin(ASkin: PSkinData);
     procedure RefreshViewScale;
+    procedure ApplyEqConfig(AEnabled: Boolean; Preamp: Double;
+      const Bands: array of Double; Balance: Integer);
+    function GetPreamp: Double;
+    function GetEqEnabled: Boolean;
+    function GetEqBand(Index: Integer): Double;
+    function GetBalanceValue: Integer;
 
   protected
     procedure Paint; override;
@@ -139,6 +145,8 @@ begin
   FBalance   := 0;
   FSurround  := 0;
   FEqEnabled := False;  // 与 Qt Equalizer::enabled_ / Config.eqEnabled_ 默认一致
+  if FBackend <> nil then
+    FBalance := FBackend.GetBalance;
 
   FDrag.SliderName := '';
   FMouseCaptured   := False;
@@ -147,6 +155,7 @@ begin
   FormStyle   := fsNormal;
   Color       := clBlack;
   Caption     := 'Equalizer';
+  ShowInTaskBar := stNever;
   UpdateCaption;
 
   FProfileMenu := TPopupMenu.Create(Self);
@@ -159,6 +168,53 @@ destructor TEqualizerForm.Destroy;
 begin
   FFrame.Free;
   inherited Destroy;
+end;
+
+procedure TEqualizerForm.ApplyEqConfig(AEnabled: Boolean; Preamp: Double;
+  const Bands: array of Double; Balance: Integer);
+var
+  i: Integer;
+begin
+  FEqEnabled := AEnabled;
+  FPreamp := Preamp;
+  FBalance := Balance;
+  for i := 0 to 9 do
+    if i <= High(Bands) then
+      FEqGains[i] := Bands[i];
+  if FBackend <> nil then
+  begin
+    FBackend.SetEqEnabled(FEqEnabled);
+    FBackend.SetPreamp(FPreamp);
+    FBackend.SetBalance(Round(FBalance));
+    for i := 0 to 9 do
+      FBackend.SetEqGain(i, FEqGains[i]);
+  end;
+  UpdateCaption;
+  RenderFrame;
+  Invalidate;
+end;
+
+function TEqualizerForm.GetPreamp: Double;
+begin
+  Result := FPreamp;
+end;
+
+function TEqualizerForm.GetEqEnabled: Boolean;
+begin
+  Result := FEqEnabled;
+end;
+
+function TEqualizerForm.GetEqBand(Index: Integer): Double;
+begin
+  if (Index >= 0) and (Index <= 9) then
+    Result := FEqGains[Index]
+  else
+    Result := 0;
+end;
+
+function TEqualizerForm.GetBalanceValue: Integer;
+begin
+  Result := Round(FBalance);
 end;
 
 procedure TEqualizerForm.ApplySkin(ASkin: PSkinData);
@@ -463,6 +519,8 @@ begin
   if SameText(AName, 'enabled') then
   begin
     FEqEnabled := not FEqEnabled;
+    if FBackend <> nil then
+      FBackend.SetEqEnabled(FEqEnabled);
     UpdateCaption;
   end
   else if SameText(AName, 'close') then
@@ -580,6 +638,8 @@ begin
       if FBalance <> newVal then
       begin
         FBalance := newVal;
+        if FBackend <> nil then
+          FBackend.SetBalance(Round(FBalance));
         needRedraw := True;
       end;
     end

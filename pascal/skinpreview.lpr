@@ -46,6 +46,11 @@ type
     procedure SeedDemoPlaylist;
     procedure EnsureSnapHooked;
     procedure HandlePlayFile(Sender: TObject; const FilePath: string);
+    procedure HandlePrev(Sender: TObject);
+    procedure HandleNext(Sender: TObject);
+    procedure HandleOpen(Sender: TObject);
+    procedure HandlePlay(Sender: TObject);
+    procedure HandleTrackFinished(Sender: TObject);
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -72,6 +77,8 @@ end;
 
 destructor TPreviewMainForm.Destroy;
 begin
+  if FBackend <> nil then
+    FBackend.SetOnTrackFinished(nil);
   // 先从吸附图拿掉 ISnapWindow，避免子 Form BeforeDestruction.Hide
   // 重建图时读到已释放的 TForm。
   if FSnap <> nil then
@@ -177,6 +184,11 @@ begin
   begin
     FPlayerForm := TPlayerForm.Create(Self, FBackend);
     FPlayerForm.OnAuxToggle := @HandleAuxToggle;
+    FPlayerForm.OnPrev := @HandlePrev;
+    FPlayerForm.OnNext := @HandleNext;
+    FPlayerForm.OnOpen := @HandleOpen;
+    FPlayerForm.OnPlay := @HandlePlay;
+    FBackend.SetOnTrackFinished(@HandleTrackFinished);
     FPlayerForm.Left := 20;
     FPlayerForm.Top  := 160;
   end;
@@ -297,6 +309,53 @@ begin
     FLyricForm.ClearLrc;
   if FBackend <> nil then
     FLyricForm.SetTrackInfo(FBackend.GetTitle, FBackend.GetArtist);
+end;
+
+procedure TPreviewMainForm.HandlePrev(Sender: TObject);
+begin
+  if Sender = nil then ;
+  if FPlaylistForm <> nil then
+    FPlaylistForm.PlayPrev;
+end;
+
+procedure TPreviewMainForm.HandleNext(Sender: TObject);
+begin
+  if Sender = nil then ;
+  if FPlaylistForm <> nil then
+    FPlaylistForm.PlayNext;
+end;
+
+procedure TPreviewMainForm.HandleOpen(Sender: TObject);
+begin
+  if Sender = nil then ;
+  if FPlaylistForm <> nil then
+    FPlaylistForm.OpenFilesAndPlay;
+end;
+
+procedure TPreviewMainForm.HandlePlay(Sender: TObject);
+begin
+  if Sender = nil then ;
+  if FBackend = nil then Exit;
+  case FBackend.GetState of
+    psPaused, psStopped:
+      FBackend.Play;
+  else
+    if FPlaylistForm <> nil then
+    begin
+      FPlaylistForm.PlayCurrent;
+      if FBackend.GetState = psIdle then
+        FPlaylistForm.OpenFilesAndPlay;
+    end
+    else
+      FBackend.Play;
+  end;
+end;
+
+procedure TPreviewMainForm.HandleTrackFinished(Sender: TObject);
+begin
+  if Sender = nil then ;
+  if FPlaylistForm <> nil then
+    FPlaylistForm.PlayNext;
 end;
 
 procedure TPreviewMainForm.SeedDemoPlaylist;

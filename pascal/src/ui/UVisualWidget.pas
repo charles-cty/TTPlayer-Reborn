@@ -3,10 +3,8 @@ unit UVisualWidget;
 {$mode objfpc}{$H+}
 
 // 频谱/示波图控件，对应 Qt 版 src/ui/VisualWidget。
-// 三种模式：Spectrum（柱状频谱 + 峰值线）、BlurScope（模糊示波图）、None。
-// 数据来自 IPlayerBackend.GetSpectrum（TStubBackend 提供归一化假数据）。
-// 绘制直接用 BGRABitmap，通过 TBGRABitmap.Draw 贴到 LCL Canvas。
-// 作为 TPlayerForm 内嵌子控件，挂在 visual 元素的 position 区域。
+// 四种模式：Spectrum、BlurScope、Cover、None。Cover/None 时由 PlayerForm
+// 在 visual 矩形上自绘（控件隐藏）。点击 visual 区域循环模式。
 
 interface
 
@@ -16,12 +14,13 @@ uses
   USkinTypes, UPlayerBackend;
 
 type
-  TVisualMode = (vmSpectrum, vmBlurScope, vmNone);
+  TVisualMode = (vmSpectrum, vmBlurScope, vmCover, vmNone);
 
   TVisualWidget = class(TCustomControl)
   public
     constructor Create(AOwner: TComponent; ABackend: IPlayerBackend); reintroduce;
     destructor Destroy; override;
+    procedure AttachBackend(ABackend: IPlayerBackend);
 
     // 应用皮肤可视化配置（颜色、帧率、模式）。
     procedure ApplyConfig(const AConfig: TVisualConfig);
@@ -31,6 +30,8 @@ type
 
   protected
     procedure Paint; override;
+    procedure MouseDown(Button: TMouseButton; Shift: TShiftState;
+      X, Y: Integer); override;
 
   private
     FBackend: IPlayerBackend;
@@ -38,6 +39,7 @@ type
     FMode:    TVisualMode;
     FTimer:   TTimer;
     FFrame:   TBGRABitmap;       // 离屏缓冲
+    FOnClicked: TNotifyEvent;
 
     // 频谱数据（归一化 0..1，长度 = BandCount）
     FSpecData:  array of Single;
@@ -59,6 +61,7 @@ type
   public
     // 当前模式
     property Mode: TVisualMode read FMode write SetMode;
+    property OnClicked: TNotifyEvent read FOnClicked write FOnClicked;
   end;
 
 implementation
@@ -73,6 +76,11 @@ const
   kPeakDecay    = 0.01;   // 峰值每帧下落量
 
 { TVisualWidget }
+
+procedure TVisualWidget.AttachBackend(ABackend: IPlayerBackend);
+begin
+  FBackend := ABackend;
+end;
 
 constructor TVisualWidget.Create(AOwner: TComponent; ABackend: IPlayerBackend);
 begin
@@ -141,7 +149,8 @@ begin
   if fps < 10 then fps := 10;
   if fps > 120 then fps := 120;
   FTimer.Interval := 1000 div fps;
-  FTimer.Enabled  := (FMode <> vmNone) and Visible;
+  FTimer.Enabled  := Visible and
+    ((FMode = vmSpectrum) or (FMode = vmBlurScope));
 end;
 
 function TVisualWidget.BandCount: Integer;
@@ -329,6 +338,17 @@ procedure TVisualWidget.Paint;
 begin
   if FFrame <> nil then
     FFrame.Draw(Canvas, 0, 0, True);
+end;
+
+procedure TVisualWidget.MouseDown(Button: TMouseButton; Shift: TShiftState;
+  X, Y: Integer);
+begin
+  if Button = mbLeft then
+  begin
+    if Assigned(FOnClicked) then
+      FOnClicked(Self);
+  end;
+  inherited MouseDown(Button, Shift, X, Y);
 end;
 
 end.
