@@ -15,7 +15,8 @@ uses
   UHeapTraceConfig,
   Classes, consoletestrunner, UTestLayer2, UTestLayer3, UTestMetamorphic,
   UTestPlaylistModel, UTestWindowSnap, UTestLrcParser, UTestTtbl,
-  UTestAlphaShape, UTestDpiScale, UTestTtcoreBackend;
+  UTestAlphaShape, UTestDpiScale, UTestTtcoreBackend,
+  UTestPlayerConfig;
 
 var
   App: TTestRunner;
