@@ -14,7 +14,7 @@ uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   Classes, consoletestrunner, UTestLayer2, UTestLayer3, UTestMetamorphic,
   UTestPlaylistModel, UTestWindowSnap, UTestLrcParser, UTestTtbl,
-  UTestAlphaShape, UTestDpiScale;
+  UTestAlphaShape, UTestDpiScale, UTestTtcoreBackend;
 
 var
   App: TTestRunner;

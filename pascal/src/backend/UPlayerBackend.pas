@@ -2,17 +2,16 @@ unit UPlayerBackend;
 
 {$mode objfpc}{$H+}
 
-// 播放后端接口 + 桩实现，供 GUI 开发阶段使用（不依赖真实音频核心）。
+// 播放后端接口 + 桩实现。
 //
-// IPlayerBackend 定义了 PlayerWindow / EqualizerWindow 等 UI 单元
-// 所需的全部播放控制接口。TStubBackend 用定时器模拟进度，
-// 用固定频谱数据驱动 VisualWidget，使界面开发与音频实现完全解耦。
-// 最终用 ttcore FFI 实现替换时，UI 层无需改动。
+// IPlayerBackend 定义了 PlayerForm / EqualizerForm 等 UI 单元所需的播放控制。
+// TStubBackend 用定时器假进度，供 skinpreview / GUI 测试使用（不加载真实音频）。
+// ttplayer 使用 UTtcoreBackend（ttcore C ABI FFI）。
 
 interface
 
 uses
-  Classes, SysUtils, ExtCtrls;
+  Classes, SysUtils;
 
 type
   TPlayerState = (psIdle, psPlaying, psPaused, psStopped);
@@ -22,6 +21,7 @@ type
   TPositionChangedEvent = procedure(Sender: TObject; PositionMs: Int64) of object;
   TDurationChangedEvent = procedure(Sender: TObject; DurationMs: Int64) of object;
   TTrackFinishedEvent = procedure(Sender: TObject) of object;
+  TErrorEvent = procedure(Sender: TObject; const Message: string) of object;
 
   IPlayerBackend = interface
     ['{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}']
@@ -44,11 +44,16 @@ type
     procedure SetMuted(Muted: Boolean);
     procedure SetEqGain(Band: Integer; GainDb: Double);  // Band 0-9
     procedure SetPreamp(GainDb: Double);
+    procedure SetEqEnabled(Enabled: Boolean);
+    function GetEqEnabled: Boolean;
+    procedure SetBalance(Value: Integer);  // -100..+100
+    function GetBalance: Integer;
 
     // 元数据（当前曲目）
     function GetTitle: string;
     function GetArtist: string;
     function GetAlbum: string;
+    function GetCoverArt: TBytes;
 
     // 频谱数据（主线程拉取，由 VisualWidget 使用）
     // BandCount 为请求的频段数，写入 OutBands 数组，返回实际写入的数量。
@@ -59,6 +64,7 @@ type
     procedure SetOnPositionChanged(Handler: TPositionChangedEvent);
     procedure SetOnDurationChanged(Handler: TDurationChangedEvent);
     procedure SetOnTrackFinished(Handler: TTrackFinishedEvent);
+    procedure SetOnError(Handler: TErrorEvent);
   end;
 
   // 桩实现：定时器假进度、固定频谱数据。
@@ -72,14 +78,19 @@ type
     FMuted: Boolean;
     FEqGains: array[0..9] of Double;
     FPreamp: Double;
-    FTimer: TTimer;
+    FBalance: Integer;
+    FEqEnabled: Boolean;
+    FTicker: TThread;
+    FTickEnabled: Boolean;
     FOnStateChanged: TStateChangedEvent;
     FOnPositionChanged: TPositionChangedEvent;
     FOnDurationChanged: TDurationChangedEvent;
     FOnTrackFinished: TTrackFinishedEvent;
+    FOnError: TErrorEvent;
     FSpectrumPhase: Double;  // 用于生成逼真的假频谱动画
 
-    procedure TimerTick(Sender: TObject);
+    procedure TimerTick;
+    procedure SetTickEnabled(Enabled: Boolean);
     procedure EmitState;
     procedure EmitPosition;
     procedure EmitDuration;
@@ -102,20 +113,55 @@ type
     procedure SetMuted(Muted: Boolean);
     procedure SetEqGain(Band: Integer; GainDb: Double);
     procedure SetPreamp(GainDb: Double);
+    procedure SetEqEnabled(Enabled: Boolean);
+    function GetEqEnabled: Boolean;
+    procedure SetBalance(Value: Integer);
+    function GetBalance: Integer;
     function GetTitle: string;
     function GetArtist: string;
     function GetAlbum: string;
+    function GetCoverArt: TBytes;
     function GetSpectrum(OutBands: PDouble; BandCount: Integer): Integer;
     procedure SetOnStateChanged(Handler: TStateChangedEvent);
     procedure SetOnPositionChanged(Handler: TPositionChangedEvent);
     procedure SetOnDurationChanged(Handler: TDurationChangedEvent);
     procedure SetOnTrackFinished(Handler: TTrackFinishedEvent);
+    procedure SetOnError(Handler: TErrorEvent);
   end;
 
 implementation
 
 uses
   Math;
+
+type
+  TStubTicker = class(TThread)
+  private
+    FOwner: TStubBackend;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(AOwner: TStubBackend);
+  end;
+
+constructor TStubTicker.Create(AOwner: TStubBackend);
+begin
+  inherited Create(True);
+  FOwner := AOwner;
+  FreeOnTerminate := False;
+end;
+
+procedure TStubTicker.Execute;
+begin
+  while not Terminated do
+  begin
+    Sleep(100);
+    if Terminated then
+      Break;
+    if FOwner.FTickEnabled then
+      TThread.Queue(nil, @FOwner.TimerTick);
+  end;
+end;
 
 constructor TStubBackend.Create;
 begin
@@ -125,21 +171,33 @@ begin
   FDurationMs := 3 * 60 * 1000;  // 默认假曲目时长 3 分钟
   FVolume := 100;
   FMuted := False;
+  FEqEnabled := False;
+  FBalance := 0;
   FSpectrumPhase := 0;
-
-  FTimer := TTimer.Create(nil);
-  FTimer.Interval := 100;  // 100ms 更新，约 10fps 进度更新
-  FTimer.Enabled := False;
-  FTimer.OnTimer := @TimerTick;
+  FTickEnabled := False;
+  FTicker := TStubTicker.Create(Self);
+  FTicker.Start;
 end;
 
 destructor TStubBackend.Destroy;
 begin
-  FTimer.Free;
+  FTickEnabled := False;
+  if FTicker <> nil then
+  begin
+    FTicker.Terminate;
+    FTicker.WaitFor;
+    FreeAndNil(FTicker);
+  end;
+  TThread.RemoveQueuedEvents(@TimerTick);
   inherited Destroy;
 end;
 
-procedure TStubBackend.TimerTick(Sender: TObject);
+procedure TStubBackend.SetTickEnabled(Enabled: Boolean);
+begin
+  FTickEnabled := Enabled;
+end;
+
+procedure TStubBackend.TimerTick;
 begin
   if FState <> psPlaying then Exit;
 
@@ -151,7 +209,7 @@ begin
     FPositionMs := FDurationMs;
     FState := psStopped;
     EmitState;
-    FTimer.Enabled := False;
+    SetTickEnabled(False);
     if Assigned(FOnTrackFinished) then
       FOnTrackFinished(Self);
     Exit;
@@ -194,7 +252,7 @@ begin
   if FState <> psPlaying then
   begin
     FState := psPlaying;
-    FTimer.Enabled := True;
+    SetTickEnabled(True);
     EmitState;
   end;
 end;
@@ -204,7 +262,7 @@ begin
   if FState = psPlaying then
   begin
     FState := psPaused;
-    FTimer.Enabled := False;
+    SetTickEnabled(False);
     EmitState;
   end;
 end;
@@ -212,7 +270,7 @@ end;
 procedure TStubBackend.Stop;
 begin
   FState := psStopped;
-  FTimer.Enabled := False;
+  SetTickEnabled(False);
   FPositionMs := 0;
   EmitState;
   EmitPosition;
@@ -274,6 +332,28 @@ begin
   FPreamp := GainDb;
 end;
 
+procedure TStubBackend.SetEqEnabled(Enabled: Boolean);
+begin
+  FEqEnabled := Enabled;
+end;
+
+function TStubBackend.GetEqEnabled: Boolean;
+begin
+  Result := FEqEnabled;
+end;
+
+procedure TStubBackend.SetBalance(Value: Integer);
+begin
+  if Value < -100 then Value := -100;
+  if Value > 100 then Value := 100;
+  FBalance := Value;
+end;
+
+function TStubBackend.GetBalance: Integer;
+begin
+  Result := FBalance;
+end;
+
 function TStubBackend.GetTitle: string;
 begin
   Result := 'TTPlayer Reborn';
@@ -287,6 +367,11 @@ end;
 function TStubBackend.GetAlbum: string;
 begin
   Result := '';
+end;
+
+function TStubBackend.GetCoverArt: TBytes;
+begin
+  Result := nil;
 end;
 
 // 生成逼真的假频谱：低频大、高频衰减，叠加缓慢动画相位。
@@ -327,6 +412,11 @@ end;
 procedure TStubBackend.SetOnTrackFinished(Handler: TTrackFinishedEvent);
 begin
   FOnTrackFinished := Handler;
+end;
+
+procedure TStubBackend.SetOnError(Handler: TErrorEvent);
+begin
+  FOnError := Handler;
 end;
 
 end.
