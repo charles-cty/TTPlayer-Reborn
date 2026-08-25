@@ -109,6 +109,11 @@ function Utf8FromPChar(P: PAnsiChar): string;
 
 implementation
 
+{$IFDEF WINDOWS}
+uses
+  Windows;
+{$ENDIF}
+
 var
   GLib: TLibHandle = NilHandle;
   GTried: Boolean = False;
@@ -155,15 +160,107 @@ begin
     GError := 'missing symbol: ' + Name;
 end;
 
+{$IFDEF WINDOWS}
+function PathHasDir(const Path, Dir: string): Boolean;
+var
+  wrapped, needle: string;
+begin
+  wrapped := ';' + LowerCase(StringReplace(Path, '/', '\', [rfReplaceAll])) + ';';
+  needle := ';' + LowerCase(ExcludeTrailingPathDelimiter(
+    StringReplace(Dir, '/', '\', [rfReplaceAll]))) + ';';
+  Result := Pos(needle, wrapped) > 0;
+end;
+
+function IsMingwRuntimeDir(const Dir: string): Boolean;
+begin
+  Result := (Dir <> '') and
+    FileExists(IncludeTrailingPathDelimiter(Dir) + 'libgcc_s_seh-1.dll');
+end;
+
+function PrefixBinDir(const Prefix: string): string;
+var
+  p: string;
+begin
+  Result := '';
+  p := ExcludeTrailingPathDelimiter(Trim(Prefix));
+  if p = '' then Exit;
+  if SameText(ExtractFileName(p), 'bin') then
+    Result := p
+  else
+    Result := p + PathDelim + 'bin';
+end;
+
+procedure PrependPathDir(const Dir: string);
+var
+  d, path: string;
+  wide: UnicodeString;
+begin
+  d := ExcludeTrailingPathDelimiter(Dir);
+  if not DirectoryExists(d) then Exit;
+  path := SysUtils.GetEnvironmentVariable('PATH');
+  if PathHasDir(path, d) then Exit;
+  wide := UTF8Decode(d + ';' + path);
+  Windows.SetEnvironmentVariableW('PATH', PWideChar(wide));
+end;
+
+procedure EnsureWinRuntimeSearchPath;
+var
+  prefix, bin: string;
+begin
+  // FFmpeg/SDL2/TagLib/MinGW CRT stay in the pacman prefix. Do not vendor
+  // them next to ttcore.dll. Put that bin on PATH so LoadLibrary can see them
+  // even when the exe was copied out of pascal\bin (application dir first,
+  // then this prefix).
+  prefix := SysUtils.GetEnvironmentVariable('TTCORE_PREFIX');
+  if prefix = '' then
+    prefix := SysUtils.GetEnvironmentVariable('MSYSTEM_PREFIX');
+  if prefix = '' then
+    prefix := SysUtils.GetEnvironmentVariable('MINGW_PREFIX');
+  bin := PrefixBinDir(prefix);
+  if IsMingwRuntimeDir(bin) then
+    PrependPathDir(bin)
+  else if IsMingwRuntimeDir('C:\msys64\mingw64\bin') then
+    PrependPathDir('C:\msys64\mingw64\bin');
+end;
+{$ENDIF}
+
 function TryLoadFrom(const Path: string): Boolean;
+{$IFDEF WINDOWS}
+const
+  LOAD_WITH_ALTERED_SEARCH_PATH = $00000008;
+  ERROR_MOD_NOT_FOUND = 126;
+var
+  widePath: UnicodeString;
+  flags: DWORD;
+  err: Integer;
+{$ENDIF}
 begin
   Result := False;
   if Path = '' then Exit;
   if (ExtractFilePath(Path) <> '') and (not FileExists(Path)) then Exit;
+{$IFDEF WINDOWS}
+  widePath := UTF8Decode(Path);
+  if ExtractFilePath(Path) <> '' then
+    flags := LOAD_WITH_ALTERED_SEARCH_PATH
+  else
+    flags := 0;
+  GLib := TLibHandle(Windows.LoadLibraryExW(PWideChar(widePath), 0, flags));
+  Result := GLib <> NilHandle;
+  if not Result then
+  begin
+    err := GetLastOSError;
+    GError := Format('LoadLibrary failed: %s (Win32 %d: %s)',
+      [Path, err, SysErrorMessage(err)]);
+    if err = ERROR_MOD_NOT_FOUND then
+      GError := GError + '; missing a dependency of ' + ExtractFileName(Path) +
+        ' (need MSYS2 mingw-w64 FFmpeg/SDL2/TagLib on PATH, e.g. C:\msys64\mingw64\bin)';
+  end;
+{$ELSE}
   GLib := LoadLibrary(Path);
   Result := GLib <> NilHandle;
   if not Result then
     GError := 'LoadLibrary failed: ' + Path;
+{$ENDIF}
 end;
 
 function LoadTtcore: Boolean;
@@ -182,9 +279,12 @@ begin
   exeDir := IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0)));
   repo := ExpandFileName(exeDir + '..' + PathDelim + '..' + PathDelim);
   repo := IncludeTrailingPathDelimiter(repo);
+{$IFDEF WINDOWS}
+  EnsureWinRuntimeSearchPath;
+{$ENDIF}
 
   SetLength(paths, 8);
-  paths[0] := GetEnvironmentVariable('TTCORE_LIB');
+  paths[0] := SysUtils.GetEnvironmentVariable('TTCORE_LIB');
   paths[1] := exeDir + libName;
   paths[2] := repo + 'pascal' + PathDelim + 'bin' + PathDelim + libName;
   paths[3] := repo + 'build-ttcore' + PathDelim + libName;
