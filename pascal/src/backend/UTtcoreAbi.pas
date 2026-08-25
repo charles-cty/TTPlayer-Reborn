@@ -171,10 +171,10 @@ begin
   Result := Pos(needle, wrapped) > 0;
 end;
 
-function IsMingwRuntimeDir(const Dir: string): Boolean;
+function IsSdl2Dir(const Dir: string): Boolean;
 begin
   Result := (Dir <> '') and
-    FileExists(IncludeTrailingPathDelimiter(Dir) + 'libgcc_s_seh-1.dll');
+    FileExists(IncludeTrailingPathDelimiter(Dir) + 'SDL2.dll');
 end;
 
 function PrefixBinDir(const Prefix: string): string;
@@ -205,22 +205,23 @@ end;
 
 procedure EnsureWinRuntimeSearchPath;
 var
-  prefix, bin: string;
+  prefix, bin, exeDir: string;
 begin
-  // FFmpeg/SDL2/MinGW CRT stay in the pacman prefix. Do not vendor
-  // them next to ttcore.dll. Put that bin on PATH so LoadLibrary can see them
-  // even when the exe was copied out of pascal\bin (application dir first,
-  // then this prefix).
+  // FFmpeg and the MinGW CRT are statically linked. The only extra runtime
+  // DLL is SDL2.dll, which the Windows build copies next to ttcore.dll.
+  // If the exe was copied without it, accept TTCORE_PREFIX\bin or the
+  // official SDL2 MinGW layout — not the MSYS2 mingw64 kitchen sink.
+  exeDir := ExcludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0)));
+  if IsSdl2Dir(exeDir) then
+    Exit;
   prefix := SysUtils.GetEnvironmentVariable('TTCORE_PREFIX');
   if prefix = '' then
-    prefix := SysUtils.GetEnvironmentVariable('MSYSTEM_PREFIX');
-  if prefix = '' then
-    prefix := SysUtils.GetEnvironmentVariable('MINGW_PREFIX');
+    prefix := SysUtils.GetEnvironmentVariable('SDL2_PREFIX');
   bin := PrefixBinDir(prefix);
-  if IsMingwRuntimeDir(bin) then
+  if IsSdl2Dir(bin) then
     PrependPathDir(bin)
-  else if IsMingwRuntimeDir('C:\msys64\mingw64\bin') then
-    PrependPathDir('C:\msys64\mingw64\bin');
+  else if IsSdl2Dir('C:\Programs\SDL2\x86_64-w64-mingw32\bin') then
+    PrependPathDir('C:\Programs\SDL2\x86_64-w64-mingw32\bin');
 end;
 {$ENDIF}
 
@@ -253,7 +254,7 @@ begin
       [Path, err, SysErrorMessage(err)]);
     if err = ERROR_MOD_NOT_FOUND then
       GError := GError + '; missing a dependency of ' + ExtractFileName(Path) +
-        ' (need MSYS2 mingw-w64 FFmpeg/SDL2 on PATH, e.g. C:\msys64\mingw64\bin)';
+        ' (need SDL2.dll next to ttcore.dll)';
   end;
 {$ELSE}
   GLib := LoadLibrary(Path);
