@@ -134,7 +134,7 @@ Lazarus 工程（全自绘）
 | 皮肤引擎 | `pascal/src/skin/`（USkinTypes/USkinXmlParser/USkinLoader/USkinJsonDump） |
 | 渲染原语 | `pascal/src/render/USkinRender`（QtPutImage 精确合成、九宫格、LED） |
 | 后端接口+桩 | `pascal/src/backend/UPlayerBackend`（IPlayerBackend + TStubBackend） |
-| ttcore C ABI | `src/ttcore/ttcore.{h,cpp}` + CMake `ttcore` SHARED（`BUILD_QT_APP=OFF` 可只编库）；产物 `libttcore.so` / `ttcore.dll` 复制到 `pascal/bin`。Windows 依赖留在 MSYS2 mingw64 包里（FFmpeg/SDL2），加载时把该 `bin` 加入 PATH（`TTCORE_PREFIX` / `MSYSTEM_PREFIX` / `C:\msys64\mingw64`），不把运行时 DLL 复制进 `pascal/bin` |
+| ttcore C ABI | `src/ttcore/ttcore.{h,cpp}` + CMake `ttcore` SHARED（`BUILD_QT_APP=OFF` 可只编库）；产物 `libttcore.so` / `ttcore.dll` 复制到 `pascal/bin`。Windows：`third_party/ffmpeg` 音频-only 静态库 + MinGW CRT 打进 `ttcore.dll`，`SDL2.dll` 复制到旁边（`tools/build-ffmpeg-win.ps1` 然后 `tools/build-ttcore-win.ps1`） |
 | Pascal FFI 后端 | `pascal/src/backend/UTtcoreAbi` + `UTtcoreBackend`（`ttplayer` 使用；回调 `TThread.Queue`） |
 | 播放列表模型 | `pascal/src/playlist/UPlaylistModel` + `UTtbl` + `UPlaylistBook` + `UPlaylistMetadataLoader`（FFmpeg via ttcore） |
 | LRC 解析 | `pascal/src/lyric/ULrcParser` |

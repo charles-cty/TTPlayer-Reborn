@@ -106,8 +106,8 @@ TTPlayer-Reborn/
 | 依赖 | 用途 |
 |---|---|
 | Qt6 Widgets | GUI |
-| FFmpeg（avformat/avcodec/avutil/swresample） | 音频解码、重采样、标签读写 |
-| SDL2 | 音频输出 |
+| FFmpeg（avformat/avcodec/avutil/swresample） | 音频解码、重采样、标签读写。Linux 用发行版共享库；Windows 用 `third_party/ffmpeg` 编音频-only 静态库打进 `ttcore.dll` |
+| SDL2 | 音频输出（Windows 运行时旁放 `SDL2.dll`） |
 | QuaZip-Qt6 | 皮肤文件（ZIP）解压 |
 | Qt6 DBus（可选，Linux） | MPRIS 媒体控制 |
 | X11（可选，Linux） | 全局快捷键 |
@@ -122,12 +122,14 @@ cmake --build build
 ./build/TTPlayerReborn
 ```
 
-**Windows（MSYS2/MinGW64，PowerShell）**
+**Windows（MSYS2/MinGW64 工具链，PowerShell）**
+
+编译器仍用 MSYS2 gcc。FFmpeg 不走 pacman 共享包：先编音频-only 静态库，再编程序。运行时只要 `ttcore.dll` + `SDL2.dll`（默认从 `C:\Programs\SDL2` 复制）。
 
 ```powershell
-$env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
-cmake -B build-mingw64 -G Ninja -DCMAKE_PREFIX_PATH=C:/msys64/mingw64
-cmake --build build-mingw64
+git submodule update --init third_party/ffmpeg
+pwsh tools/build-ffmpeg-win.ps1
+pwsh tools/build-ttcore-win.ps1
 ```
 
 ---
@@ -139,8 +141,12 @@ cmake --build build-mingw64
 **Windows**
 
 ```powershell
-# 初始化 BGRABitmap submodule
+# 初始化 BGRABitmap 与 FFmpeg submodule
 git submodule update --init
+
+# 音频-only 静态 FFmpeg + ttcore.dll（旁放 SDL2.dll）
+pwsh tools/build-ffmpeg-win.ps1
+pwsh tools/build-ttcore-win.ps1
 
 # 构建全部 Pascal 工程（ttdump + tests + skinpreview）
 pwsh tools/build-pascal.ps1
