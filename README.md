@@ -116,7 +116,12 @@ TTPlayer-Reborn/
 
 **Linux / macOS**
 
+FFmpeg / SDL2 走发行版包管理（pkg-config），不要自备 kitchen-sink 前缀：
+
 ```bash
+sudo apt install cmake g++ pkg-config \
+  libavformat-dev libavcodec-dev libavutil-dev libswresample-dev libsdl2-dev
+# Qt 版另需 Qt6 Widgets 等
 cmake -B build -DCMAKE_PREFIX_PATH=/path/to/qt6
 cmake --build build
 ./build/TTPlayerReborn
@@ -124,12 +129,16 @@ cmake --build build
 
 **Windows（MSYS2/MinGW64 工具链，PowerShell）**
 
-编译器仍用 MSYS2 gcc。FFmpeg 不走 pacman 共享包：先编音频-only 静态库，再编程序。运行时只要 `ttcore.dll` + `SDL2.dll`（默认从 `C:\Programs\SDL2` 复制）。
+编译器仍用 MSYS2 gcc。FFmpeg 不走 pacman 共享包：先编音频-only 静态库，再编程序。
+
+**运行时自包含**：只要 `ttcore.dll`（FFmpeg + MinGW CRT 已静态打进 DLL）和旁边的 `SDL2.dll`。不依赖 MSYS2、不依赖 MinGW CRT DLL、也不读 `C:\Programs` 这类硬编码路径。构建机用 `SDL2_PREFIX` 或 mingw64 的 `pkg-config sdl2` 找到 SDK，CMake 把 `SDL2.dll` 复制到输出目录。
 
 ```powershell
 git submodule update --init third_party/ffmpeg
 pwsh tools/build-ffmpeg-win.ps1
 pwsh tools/build-ttcore-win.ps1
+# 可选：官方 MinGW SDL2 根目录（含 include/SDL2 与 bin/SDL2.dll）
+# $env:SDL2_PREFIX = 'D:\sdl2\x86_64-w64-mingw32'
 ```
 
 ---
@@ -155,6 +164,9 @@ pwsh tools/build-pascal.ps1
 **Linux（GTK3 + XWayland，用户目录 FPC/Lazarus）**
 
 ```bash
+sudo apt install cmake g++ pkg-config \
+  libavformat-dev libavcodec-dev libavutil-dev libswresample-dev libsdl2-dev
+bash tools/build-ttcore-linux.sh
 bash tools/build-pascal-linux.sh
 bash tools/test-gtk3-wayland.sh
 ```
@@ -176,7 +188,7 @@ pwsh tools/test-layer1.ps1
 pwsh tools/gen-golden.ps1 -SkipBuild
 ```
 
-**当前测试状态：Layer 1 11/11；Windows FPCUnit 48/48；Linux FPCUnit 70/70（含 AlphaShape + DpiScale）**
+**当前测试状态：Layer 1 11/11；Windows / Linux FPCUnit 90/90**
 
 | 层级 | 方法 | 覆盖内容 |
 |---|---|---|
