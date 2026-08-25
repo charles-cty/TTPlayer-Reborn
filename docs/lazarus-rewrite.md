@@ -10,7 +10,7 @@ TTPlayer Reborn 的 UI 本来就是**全自绘**（无边框 + `setMask` + 位�
 
 - 不依赖 Qt 样式化控件（LCL 控件库贫弱的短板影响极小）
 - 皮肤 `.skn` 格式（ZIP + BMP + XML）在 Pascal 中有完整对等实现（Zipper、fcl-xml）
-- 音频层（FFmpeg+soxr+SDL2+TagLib）与 Qt GUI 耦合极浅，可独立抽库
+- 音频层（FFmpeg+SDL2）与 Qt GUI 耦合极浅，可独立抽库
 
 估计工作量：2–4 个月（熟悉双方框架）。
 
@@ -85,7 +85,7 @@ Lazarus 工程（全自绘）
 **Step 3（已完成）**：PlaylistWindow
 - 虚拟列表、7 组工具栏菜单、皮肤滚动条、文件拖放、双击 OpenFile
 - TTBL v3/v5 读写、列表内拖放重排、搜索对话框、多播放列表标签页
-- 元数据加载器：`UPlaylistMetadataLoader` 经 ttcore/TagLib 回填 title/artist/album/duration（Step 7）
+- 元数据加载器：`UPlaylistMetadataLoader` 经 ttcore/FFmpeg 回填 title/artist/album/duration（Step 7）
 
 **Step 4（已完成）**：EqualizerWindow
 
@@ -125,7 +125,7 @@ Lazarus 工程（全自绘）
 
 ## 当前状态（2026-08-25）
 
-**已完成（Step 0–7）**。四个皮肤窗口可在 `skinpreview` 中同时显示（仍用 `TStubBackend`）；`ttplayer` 经 FFI 驱动 `libttcore.so`/`ttcore.dll`（FFmpeg decode + DSP/EQ + SDL2 + TagLib）。
+**已完成（Step 0–7）**。四个皮肤窗口可在 `skinpreview` 中同时显示（仍用 `TStubBackend`）；`ttplayer` 经 FFI 驱动 `libttcore.so`/`ttcore.dll`（FFmpeg decode + DSP/EQ + SDL2）。
 
 | 交付物 | 位置 |
 |---|---|
@@ -134,9 +134,9 @@ Lazarus 工程（全自绘）
 | 皮肤引擎 | `pascal/src/skin/`（USkinTypes/USkinXmlParser/USkinLoader/USkinJsonDump） |
 | 渲染原语 | `pascal/src/render/USkinRender`（QtPutImage 精确合成、九宫格、LED） |
 | 后端接口+桩 | `pascal/src/backend/UPlayerBackend`（IPlayerBackend + TStubBackend） |
-| ttcore C ABI | `src/ttcore/ttcore.{h,cpp}` + CMake `ttcore` SHARED（`BUILD_QT_APP=OFF` 可只编库）；产物 `libttcore.so` / `ttcore.dll` 复制到 `pascal/bin`。Windows 依赖留在 MSYS2 mingw64 包里（FFmpeg/SDL2/TagLib），加载时把该 `bin` 加入 PATH（`TTCORE_PREFIX` / `MSYSTEM_PREFIX` / `C:\msys64\mingw64`），不把运行时 DLL 复制进 `pascal/bin` |
+| ttcore C ABI | `src/ttcore/ttcore.{h,cpp}` + CMake `ttcore` SHARED（`BUILD_QT_APP=OFF` 可只编库）；产物 `libttcore.so` / `ttcore.dll` 复制到 `pascal/bin`。Windows 依赖留在 MSYS2 mingw64 包里（FFmpeg/SDL2），加载时把该 `bin` 加入 PATH（`TTCORE_PREFIX` / `MSYSTEM_PREFIX` / `C:\msys64\mingw64`），不把运行时 DLL 复制进 `pascal/bin` |
 | Pascal FFI 后端 | `pascal/src/backend/UTtcoreAbi` + `UTtcoreBackend`（`ttplayer` 使用；回调 `TThread.Queue`） |
-| 播放列表模型 | `pascal/src/playlist/UPlaylistModel` + `UTtbl` + `UPlaylistBook` + `UPlaylistMetadataLoader`（TagLib via ttcore） |
+| 播放列表模型 | `pascal/src/playlist/UPlaylistModel` + `UTtbl` + `UPlaylistBook` + `UPlaylistMetadataLoader`（FFmpeg via ttcore） |
 | LRC 解析 | `pascal/src/lyric/ULrcParser` |
 | PlayerForm | `pascal/src/ui/UPlayerForm`（无边框、Region、按钮交互、拖动、OnAuxToggle） |
 | PlaylistForm | `pascal/src/ui/UPlaylistForm`（虚拟列表、工具栏、滚动条、拖放、TTBL、多标签、搜索、列表内 DnD） |
