@@ -29,7 +29,7 @@ bool Decoder::open(const std::string& filePath) {
     close();
     lastError_.clear();
 
-    int ret = avformat_open_input(&fmtCtx_, filePath.c_str(), nullptr, nullptr);
+    int ret = avformatOpenUtf8(&fmtCtx_, filePath.c_str(), &utf8Avio_);
     if (ret < 0) {
         lastError_ = "Failed to open input: " + ffmpegErrorString(ret);
         return false;
@@ -153,8 +153,8 @@ void Decoder::close() {
     if (codecCtx_) {
         avcodec_free_context(&codecCtx_);
     }
-    if (fmtCtx_) {
-        avformat_close_input(&fmtCtx_);
+    if (fmtCtx_ || utf8Avio_.avio) {
+        avformatCloseUtf8(&fmtCtx_, &utf8Avio_);
     }
     audioStreamIndex_ = -1;
     isOpen_ = false;

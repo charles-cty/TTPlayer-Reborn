@@ -14,7 +14,7 @@ implementation
 
 {$IFDEF WINDOWS}
 uses
-  Windows;
+  Windows, ActiveX;
 
 const
   DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = HANDLE(-4);
@@ -67,5 +67,11 @@ end;
 
 initialization
   EnablePerMonitorDpiAwareness;
+{$IFDEF WINDOWS}
+  // Qt's QApplication does this; WASAPI/SDL enumerate COM MMDevices on the
+  // thread that opens the audio device. LCL may OleInitialize later — extra
+  // init returns S_FALSE.
+  OleInitialize(nil);
+{$ENDIF}
 
 end.

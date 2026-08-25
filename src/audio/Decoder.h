@@ -3,6 +3,7 @@
 #include <memory>
 #include <functional>
 #include "AudioFormat.h"
+#include "Utf8Avio.h"
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -68,4 +69,5 @@ private:
     std::vector<unsigned char> coverArtData_;
     std::string lastError_;
     bool draining_ = false;
+    Utf8Avio utf8Avio_;
 };

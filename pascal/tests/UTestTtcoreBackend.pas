@@ -47,6 +47,7 @@ type
     procedure TestBalanceRoundTrip;
     procedure TestCoverSidecarVsAbsent;
     procedure TestGettersDuringOpenStop;
+    procedure TestUnicodePathOpen;
   end;
 
 implementation
@@ -619,6 +620,31 @@ begin
     hammer.Terminate;
     hammer.WaitFor;
     hammer.Free;
+    backend := nil;
+    CheckSynchronize(0);
+  end;
+end;
+
+procedure TTtcoreBackendTest.TestUnicodePathOpen;
+var
+  backend: IPlayerBackend;
+  dir, dst: string;
+begin
+  RequireTtcore;
+  // U+6B4C U+66F2 = 歌曲, U+6D4B U+8BD5 = 测试 — built from codepoints so the
+  // .pas source encoding cannot mangle the path on CP_ACP compilers.
+  dir := FWorkDir + PathDelim + UTF8Encode(WideString(WideChar($6B4C)) + WideString(WideChar($66F2)));
+  ForceDirectories(dir);
+  dst := dir + PathDelim + UTF8Encode(WideString(WideChar($6D4B)) + WideString(WideChar($8BD5))) + '.wav';
+  AssertTrue('copy onto unicode path', CopyFileTo(FWavPath, dst));
+  backend := TTtcoreBackend.Create;
+  try
+    backend.SetOnError(@OnErr);
+    backend.OpenFile(dst);
+    PumpMs(50);
+    AssertFalse('unicode open should succeed: ' + FLastError, FGotError);
+    AssertTrue('unicode duration', backend.GetDurationMs > 0);
+  finally
     backend := nil;
     CheckSynchronize(0);
   end;

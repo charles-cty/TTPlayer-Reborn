@@ -106,6 +106,7 @@ function TtcoreAvailable: Boolean;
 function LoadTtcore: Boolean;
 function TtcoreLoadError: string;
 function Utf8FromPChar(P: PAnsiChar): string;
+function Utf8Z(const S: string): UTF8String;
 
 implementation
 
@@ -145,6 +146,16 @@ begin
   SetLength(Result, n);
   if n > 0 then
     Move(P^, Result[1], n);
+end;
+
+function Utf8Z(const S: string): UTF8String;
+var
+  raw: RawByteString;
+begin
+  // Keep the bytes; just tag them as UTF-8 so PAnsiChar() does not transcode.
+  raw := RawByteString(S);
+  SetCodePage(raw, CP_UTF8, False);
+  Result := UTF8String(raw);
 end;
 
 function Bind(const Name: string; out Proc): Boolean;

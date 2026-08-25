@@ -36,8 +36,10 @@ type
     FAuxLyric, FAuxEq, FAuxPlaylist: Boolean;
     FLastFile: string;
     FSuppressAux: Boolean;
+    FAudioErrorShown: Boolean;
     procedure HandleAuxToggle(Sender: TObject; const AType: string;
       AToggled: Boolean);
+    procedure HandleBackendError(Sender: TObject; const Message: string);
     procedure HandleLyricResize(Sender: TObject);
     procedure HandleLyricResizeFinished(Sender: TObject);
     procedure HandlePlaylistResize(Sender: TObject);
@@ -119,6 +121,7 @@ begin
   FAuxEq := FConfig.EqVisible;
   FAuxPlaylist := FConfig.PlaylistVisible;
   FLastFile := FConfig.LastFile;
+  FAudioErrorShown := False;
 
   Application.CreateForm(TPlayerForm, FPlayer);
   FPlayer.AttachBackend(FBackend);
@@ -133,6 +136,7 @@ begin
   FPlayer.OnPlay := @HandlePlay;
   FPlayer.OnContextMenu := @HandlePlayerContextMenu;
   FBackend.SetOnTrackFinished(@HandleTrackFinished);
+  FBackend.SetOnError(@HandleBackendError);
   FLyric.OnResizeInProgress := @HandleLyricResize;
   FLyric.OnResizeFinished := @HandleLyricResizeFinished;
   FLyric.OnCloseRequested := @HandleLyricClosed;
@@ -554,6 +558,68 @@ begin
   if FPlaylistWin = nil then Exit;
   FSnap.OnSubResizeFinished(FPlaylistWin,
     ResizeEdgesOf(FPlaylist.ResizeEdgeRight, FPlaylist.ResizeEdgeBottom));
+end;
+
+procedure AppendHostLog(const Path, Line: string);
+var
+  fs: TFileStream;
+  payload: RawByteString;
+  flags: Word;
+begin
+  if Path = '' then
+    Exit;
+  payload := RawByteString(Line);
+  if FileExists(Path) then
+    flags := fmOpenReadWrite or fmShareDenyNone
+  else
+    flags := fmCreate or fmShareDenyNone;
+  fs := TFileStream.Create(Path, flags);
+  try
+    fs.Seek(0, soEnd);
+    if Length(payload) > 0 then
+      fs.WriteBuffer(payload[1], Length(payload));
+  finally
+    fs.Free;
+  end;
+end;
+
+procedure TTtplayerHost.HandleBackendError(Sender: TObject; const Message: string);
+var
+  line, dir, tmp: string;
+{$IFDEF WINDOWS}
+  wideMsg: UnicodeString;
+{$ENDIF}
+begin
+  if Sender = nil then ;
+  line := FormatDateTime('yyyy-mm-dd hh:nn:ss', Now) + ' ' + Message + LineEnding;
+  dir := IncludeTrailingPathDelimiter(ExeDir) + 'ttplayer-ttcore.log';
+  try
+    AppendHostLog(dir, line);
+  except
+  end;
+  tmp := SysUtils.GetEnvironmentVariable('TEMP');
+  if tmp = '' then
+    tmp := SysUtils.GetEnvironmentVariable('TMPDIR');
+  if tmp = '' then
+    tmp := SysUtils.GetEnvironmentVariable('TMP');
+  if tmp <> '' then
+  begin
+    tmp := IncludeTrailingPathDelimiter(tmp) + 'ttplayer-ttcore.log';
+    if tmp <> dir then
+      try
+        AppendHostLog(tmp, line);
+      except
+      end;
+  end;
+  if FAudioErrorShown or (Message = '') then
+    Exit;
+  FAudioErrorShown := True;
+{$IFDEF WINDOWS}
+  wideMsg := UTF8Decode(Message);
+  Windows.MessageBoxW(0, PWideChar(wideMsg), 'TTPlayer', MB_ICONERROR or MB_OK);
+{$ELSE}
+  Application.MessageBox(PChar(Message), 'TTPlayer', MB_ICONERROR or MB_OK);
+{$ENDIF}
 end;
 
 procedure TTtplayerHost.HandlePlayFile(Sender: TObject; const FilePath: string);

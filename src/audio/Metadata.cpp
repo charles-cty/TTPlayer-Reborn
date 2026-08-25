@@ -1,4 +1,5 @@
 #include "Metadata.h"
+#include "Utf8Avio.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -244,11 +245,12 @@ bool remuxWithMetadata(const char* pathUtf8,
                        const char* artistUtf8,
                        const char* albumUtf8) {
     AVFormatContext* in = nullptr;
-    if (avformat_open_input(&in, pathUtf8, nullptr, nullptr) < 0) {
+    Utf8Avio inIo;
+    if (avformatOpenUtf8(&in, pathUtf8, &inIo) < 0) {
         return false;
     }
     if (avformat_find_stream_info(in, nullptr) < 0) {
-        avformat_close_input(&in);
+        avformatCloseUtf8(&in, &inIo);
         return false;
     }
 
@@ -261,7 +263,7 @@ bool remuxWithMetadata(const char* pathUtf8,
     AVFormatContext* out = nullptr;
     if (avformat_alloc_output_context2(&out, ofmt, ofmt ? ofmt->name : nullptr, tmp.c_str()) < 0
         || !out) {
-        avformat_close_input(&in);
+        avformatCloseUtf8(&in, &inIo);
         return false;
     }
 
@@ -339,7 +341,7 @@ cleanup:
         }
         avformat_free_context(out);
     }
-    avformat_close_input(&in);
+    avformatCloseUtf8(&in, &inIo);
     if (!ok) {
         removeUtf8(tmp.c_str());
         return false;
@@ -399,18 +401,19 @@ bool readAudioFileMetadata(const char* pathUtf8, AudioFileMetadata& out) {
         return false;
     }
     AVFormatContext* fmt = nullptr;
-    if (avformat_open_input(&fmt, pathUtf8, nullptr, nullptr) < 0) {
+    Utf8Avio io;
+    if (avformatOpenUtf8(&fmt, pathUtf8, &io) < 0) {
         return false;
     }
     if (avformat_find_stream_info(fmt, nullptr) < 0) {
-        avformat_close_input(&fmt);
+        avformatCloseUtf8(&fmt, &io);
         return false;
     }
     out.title = audioMetadataField(fmt, "title");
     out.artist = audioMetadataField(fmt, "artist");
     out.album = audioMetadataField(fmt, "album");
     out.duration_ms = audioDurationMs(fmt);
-    avformat_close_input(&fmt);
+    avformatCloseUtf8(&fmt, &io);
     return true;
 }
 

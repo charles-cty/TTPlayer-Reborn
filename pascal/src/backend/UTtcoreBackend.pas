@@ -333,8 +333,9 @@ var
   p: TTtcorePlayer;
   durCb: TDurationChangedEvent;
   posCb: TPositionChangedEvent;
+  err: string;
 begin
-  path := UTF8String(FilePath);
+  path := Utf8Z(FilePath);
   FLock.Enter;
   try
     if FTornDown then
@@ -357,7 +358,15 @@ begin
     FLock.Leave;
   end;
   if ok = 0 then
+  begin
+    err := '';
+    if Assigned(ttcore_last_error) then
+      err := Utf8FromPChar(ttcore_last_error(p));
+    if err = '' then
+      err := 'Failed to open: ' + FilePath;
+    HandleNativeError(err);
     Exit;
+  end;
   if Assigned(durCb) then
     durCb(Self, ttcore_get_duration_ms(p));
   if Assigned(posCb) then

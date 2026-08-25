@@ -41,6 +41,11 @@ begin
 end;
 
 initialization
+  // First unit in ttplayer/tests: force UTF-8 so Chinese paths stay UTF-8
+  // when passed to ttcore (FFmpeg CreateFileW / avformat). Without this,
+  // FPC treats string as CP_ACP on Windows and UTF8String() mangles them.
+  SetMultiByteConversionCodePage(CP_UTF8);
+  SetMultiByteRTLFileSystemCodePage(CP_UTF8);
   ApplyHeapTraceSettings;
 
 end.

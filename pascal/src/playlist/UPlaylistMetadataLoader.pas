@@ -103,7 +103,7 @@ begin
       stopNow := FOwner.FStop;
       if not stopNow then
       begin
-        path := UTF8String(FOwner.FPaths[i]);
+        path := Utf8Z(FOwner.FPaths[i]);
         skip := (i < Length(FOwner.FSkip)) and FOwner.FSkip[i];
       end;
     finally

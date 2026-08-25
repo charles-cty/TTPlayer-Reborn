@@ -217,12 +217,30 @@ public:
         dsp_.equalizer.setSampleRate(fmt.sampleRate);
 
         auto cb = [this](float* buf, int frames) { audioCallback(buf, frames); };
-        if (!output_.open(fmt.sampleRate, fmt.channels, cb)) {
+        // Always open stereo: many devices reject mono (the test fixture and some
+        // MP3s) when SDL is not allowed to change the channel count.
+        const int outChannels = 2;
+        if (fmt.sampleRate < 8000 || fmt.sampleRate > 384000) {
+            decoder_.close();
+            hasFile_ = false;
+            currentFile_.clear();
+            cover_.clear();
+            lastError_ = "Invalid sample rate: " + std::to_string(fmt.sampleRate);
+            const std::string err = lastError_;
+            lock.unlock();
+            fireError(err.c_str());
+            return false;
+        }
+
+        if (!output_.open(fmt.sampleRate, outChannels, cb)) {
             decoder_.close();
             hasFile_ = false;
             currentFile_.clear();
             cover_.clear();
             lastError_ = "Failed to open audio output";
+            if (!output_.lastError().empty()) {
+                lastError_ += ": " + output_.lastError();
+            }
             const std::string err = lastError_;
             lock.unlock();
             fireError(err.c_str());
@@ -391,6 +409,44 @@ private:
         }
     }
 
+    static void remixFrames(const float* src, int srcCh, int frames,
+                            float* dst, int dstCh, int dstFrames) {
+        const int n = std::min(frames, dstFrames);
+        if (srcCh <= 0) {
+            srcCh = 1;
+        }
+        if (dstCh <= 0) {
+            dstCh = 1;
+        }
+        for (int i = 0; i < n; ++i) {
+            if (srcCh == dstCh) {
+                std::memcpy(dst + i * dstCh, src + i * srcCh,
+                            static_cast<size_t>(dstCh) * sizeof(float));
+                continue;
+            }
+            if (srcCh == 1) {
+                const float s = src[i];
+                for (int c = 0; c < dstCh; ++c) {
+                    dst[i * dstCh + c] = s;
+                }
+                continue;
+            }
+            if (dstCh == 1) {
+                dst[i] = 0.5f * (src[i * srcCh] + src[i * srcCh + 1]);
+                continue;
+            }
+            dst[i * dstCh] = src[i * srcCh];
+            dst[i * dstCh + 1] = src[i * srcCh + 1];
+            for (int c = 2; c < dstCh; ++c) {
+                dst[i * dstCh + c] = 0.0f;
+            }
+        }
+        if (n < dstFrames) {
+            std::memset(dst + n * dstCh, 0,
+                        static_cast<size_t>(dstFrames - n) * dstCh * sizeof(float));
+        }
+    }
+
     void audioCallback(float* buffer, int frames) {
         std::unique_lock<std::mutex> lock(mutex_);
         const int ch = output_.channels();
@@ -416,22 +472,18 @@ private:
             return;
         }
 
-        dsp_.process(abuf.data.data(), read, abuf.channels);
-
-        const int samplesToWrite = read * ch;
-        const int toCopy = std::min(samplesToWrite, outputSamples);
-        std::memcpy(buffer, abuf.data.data(), static_cast<size_t>(toCopy) * sizeof(float));
-        if (toCopy < outputSamples) {
-            std::memset(buffer + toCopy, 0, static_cast<size_t>(outputSamples - toCopy) * sizeof(float));
-        }
-
         {
             std::lock_guard<std::mutex> slock(spectrumMutex_);
             const int n = std::min(read, static_cast<int>(spectrumBuf_.size()));
+            const int srcCh = std::max(1, abuf.channels);
             for (int i = 0; i < n; ++i) {
-                spectrumBuf_[static_cast<size_t>(i)] = buffer[i * ch];
+                spectrumBuf_[static_cast<size_t>(i)] = abuf.data[static_cast<size_t>(i * srcCh)];
             }
         }
+
+        dsp_.process(abuf.data.data(), read, abuf.channels);
+
+        remixFrames(abuf.data.data(), abuf.channels, read, buffer, ch, frames);
 
         const int64_t pos = decoder_.positionMs();
         auto cb = progressCb_;
