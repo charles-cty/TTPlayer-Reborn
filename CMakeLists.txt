@@ -83,9 +83,12 @@ if (WIN32 AND MINGW)
     target_link_options(ttcore PRIVATE
         -static-libgcc
         -static-libstdc++
-        -Wl,-Bstatic,-lwinpthread,-Bdynamic
         -Wl,--exclude-libs,ALL
     )
+    # Full-path .a at the end so libstdc++'s pthread refs do not pull the DLL.
+    if (TTCORE_WINPTHREAD_STATIC)
+        target_link_libraries(ttcore PRIVATE "${TTCORE_WINPTHREAD_STATIC}")
+    endif()
 endif()
 
 add_executable(ttcore_probe src/ttcore/ttcore_probe.c)
