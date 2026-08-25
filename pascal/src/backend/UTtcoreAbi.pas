@@ -209,8 +209,9 @@ var
 begin
   // FFmpeg and the MinGW CRT are statically linked. The only extra runtime
   // DLL is SDL2.dll, which the Windows build copies next to ttcore.dll.
-  // If the exe was copied without it, accept TTCORE_PREFIX\bin or the
-  // official SDL2 MinGW layout — not the MSYS2 mingw64 kitchen sink.
+  // LoadLibraryEx(LOAD_WITH_ALTERED_SEARCH_PATH) then finds it beside the
+  // DLL. Optional TTCORE_PREFIX / SDL2_PREFIX is a build-machine override,
+  // not a ship-layout path.
   exeDir := ExcludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0)));
   if IsSdl2Dir(exeDir) then
     Exit;
@@ -219,9 +220,7 @@ begin
     prefix := SysUtils.GetEnvironmentVariable('SDL2_PREFIX');
   bin := PrefixBinDir(prefix);
   if IsSdl2Dir(bin) then
-    PrependPathDir(bin)
-  else if IsSdl2Dir('C:\Programs\SDL2\x86_64-w64-mingw32\bin') then
-    PrependPathDir('C:\Programs\SDL2\x86_64-w64-mingw32\bin');
+    PrependPathDir(bin);
 end;
 {$ENDIF}
 
