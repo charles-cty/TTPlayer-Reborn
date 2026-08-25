@@ -21,7 +21,7 @@
 
 ## 功能
 
-- 🎵 音频播放（FFmpeg 解码 + SDL2 输出，libsoxr 高质量重采样）
+- 🎵 音频播放（FFmpeg 解码 + SDL2 输出）
 - 🎨 原版千千静听皮肤格式（`.skn`）解析与渲染，兼容上百套皮肤
 - 📋 播放列表，兼容原版 TTBL 格式
 - 📝 歌词显示（LRC）
@@ -105,11 +105,10 @@ TTPlayer-Reborn/
 
 | 依赖 | 用途 |
 |---|---|
-| Qt6 Widgets / Multimedia / Network | GUI 与媒体基础 |
+| Qt6 Widgets | GUI |
 | FFmpeg（avformat/avcodec/avutil/swresample） | 音频解码 |
 | SDL2 | 音频输出 |
 | TagLib | 音频标签读取 |
-| libsoxr | 高质量重采样 |
 | QuaZip-Qt6 | 皮肤文件（ZIP）解压 |
 | Qt6 DBus（可选，Linux） | MPRIS 媒体控制 |
 | X11（可选，Linux） | 全局快捷键 |

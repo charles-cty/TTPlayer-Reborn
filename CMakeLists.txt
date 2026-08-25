@@ -117,12 +117,9 @@ if (NOT BUILD_QT_APP)
 endif()
 
 # Qt6
-find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Network)
+find_package(Qt6 REQUIRED COMPONENTS Widgets)
 # DBus 在 Linux 上默认可用，macOS/Windows 则可能没有，设为可选。
 find_package(Qt6 OPTIONAL_COMPONENTS DBus)
-
-# libsoxr
-pkg_check_modules(SOXR REQUIRED soxr)
 
 # QuaZip
 find_package(QuaZip-Qt6 REQUIRED)
@@ -194,20 +191,16 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${SWRESAMPLE_INCLUDE_DIRS}
     ${SDL2_INCLUDE_DIRS}
     ${TAGLIB_INCLUDE_DIRS}
-    ${SOXR_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Widgets
-    Qt6::Multimedia
-    Qt6::Network
     ${AVFORMAT_LIBRARIES}
     ${AVCODEC_LIBRARIES}
     ${AVUTIL_LIBRARIES}
     ${SWRESAMPLE_LIBRARIES}
     ${SDL2_LIBRARIES}
     ${TAGLIB_LIBRARIES}
-    ${SOXR_LIBRARIES}
     QuaZip::QuaZip
 )
 if (X11_FOUND)
@@ -235,5 +228,4 @@ target_link_directories(${PROJECT_NAME} PRIVATE
     ${SWRESAMPLE_LIBRARY_DIRS}
     ${SDL2_LIBRARY_DIRS}
     ${TAGLIB_LIBRARY_DIRS}
-    ${SOXR_LIBRARY_DIRS}
 )
