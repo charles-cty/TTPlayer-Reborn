@@ -5,6 +5,8 @@ unit UVisualWidget;
 // 频谱/示波图控件，对应 Qt 版 src/ui/VisualWidget。
 // 四种模式：Spectrum、BlurScope、Cover、None。Cover/None 时由 PlayerForm
 // 在 visual 矩形上自绘（控件隐藏）。点击 visual 区域循环模式。
+// TGraphicControl：不占 HWND。主窗是 WS_CLIPCHILDREN 异形窗，子 HWND
+// 会在父窗客户区挖洞，InvalidateRect(erase) 先把洞铺成 Color（clBlack）。
 
 interface
 
@@ -16,7 +18,7 @@ uses
 type
   TVisualMode = (vmSpectrum, vmBlurScope, vmCover, vmNone);
 
-  TVisualWidget = class(TCustomControl)
+  TVisualWidget = class(TGraphicControl)
   public
     constructor Create(AOwner: TComponent; ABackend: IPlayerBackend); reintroduce;
     destructor Destroy; override;
@@ -28,7 +30,7 @@ type
     // 设置可视化区域矩形（在父窗口 canvas 上的位置/尺寸）。
     procedure SetVisualRect(const R: TSkinRect);
 
-    // 拷贝主窗皮肤在 visual 矩形上的像素，避免独立 HWND 盖住皮肤凹槽。
+    // 拷贝主窗皮肤在 visual 矩形上的像素，频谱画在皮肤凹槽上。
     procedure SetSkinBackground(ABg: TBGRABitmap);
 
     procedure SetVisualVisible(AValue: Boolean);
@@ -99,7 +101,7 @@ begin
   FFrame   := nil;
   FBg      := nil;
   FSkinRect := TSkinRect.Zero;
-  Color := clBlack;
+  ControlStyle := ControlStyle + [csOpaque];
 
   FTimer          := TTimer.Create(Self);
   FTimer.Interval := 33;   // ~30 fps
@@ -222,10 +224,16 @@ var
 begin
   w := Width;
   h := Height;
-  FreeAndNil(FFrame);
   if (w <= 0) or (h <= 0) then
+  begin
+    FreeAndNil(FFrame);
     Exit;
-  FFrame := TBGRABitmap.Create(w, h, BGRABlack);
+  end;
+  if (FFrame = nil) or (FFrame.Width <> w) or (FFrame.Height <> h) then
+  begin
+    FreeAndNil(FFrame);
+    FFrame := TBGRABitmap.Create(w, h);
+  end;
   if FBg = nil then
     Exit;
   if (FBg.Width = w) and (FBg.Height = h) then
@@ -402,7 +410,9 @@ end;
 procedure TVisualWidget.Paint;
 begin
   if FFrame <> nil then
-    FFrame.Draw(Canvas, 0, 0, True);
+    FFrame.Draw(Canvas, 0, 0, True)
+  else if FBg <> nil then
+    FBg.Draw(Canvas, 0, 0, True);
 end;
 
 procedure TVisualWidget.MouseDown(Button: TMouseButton; Shift: TShiftState;

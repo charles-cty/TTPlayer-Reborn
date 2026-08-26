@@ -39,6 +39,7 @@ type
 
   protected
     procedure Paint; override;
+    procedure WMEraseBkgnd(var Message: TLMEraseBkgnd); message LM_ERASEBKGND;
     procedure MouseMove(Shift: TShiftState; X, Y: Integer); override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState;
       X, Y: Integer); override;
@@ -152,6 +153,8 @@ begin
   BorderStyle := bsNone;
   FormStyle   := fsNormal;
   Color       := clBlack;
+  Brush.Style := bsClear;
+  ControlStyle := ControlStyle + [csOpaque];
   Caption     := 'TTPlayer';
   ShowInTaskBar := stAlways;
   OnClose := @HandleFormClose;
@@ -335,6 +338,10 @@ begin
   if Sender = nil then ;
   if PositionMs < 0 then ;
   if FDragKind = 'progress' then Exit;
+  // 播放中 FUiTimer 已 100ms 刷 LED/进度。音频回调每个 buffer 整窗
+  // Invalidate 时，Win32 InvalidateRect(..., True) 会先 WM_ERASEBKGND 铺黑。
+  if (FUiTimer <> nil) and FUiTimer.Enabled then
+    Exit;
   RefreshFrame;
 end;
 
@@ -479,10 +486,9 @@ var
   dur, ledMs: Int64;
   info: string;
   showCover: Boolean;
+  composed, old: TBGRABitmap;
 begin
   if FSkin = nil then Exit;
-
-  FreeAndNil(FFrame);
 
   // 确定 override 状态（悬停/按下最多作用于一个按钮）
   overrideType := '';
@@ -534,16 +540,26 @@ begin
   if showCover then
     SyncCover;
 
-  FFrame := RenderPlayerWindow(FSkin^,
+  composed := RenderPlayerWindow(FSkin^,
     progress, volume,
     overrideType, overrideState, toggledMute,
     IsPlaying, ledMs, info, FCoverBmp, showCover);
-  if FVisual <> nil then
-    FVisual.SetSkinBackground(FFrame);
+  old := FFrame;
+  FFrame := composed;
+  old.Free;
+end;
+
+procedure TPlayerForm.WMEraseBkgnd(var Message: TLMEraseBkgnd);
+begin
+  // 必须 Result=1。只覆盖 EraseBackground 不够：LCL 在 flag 未置位时
+  // 把 WM_ERASEBKGND 交给 DefWindowProc，用 Color（clBlack）填客户区。
+  Message.Result := 1;
 end;
 
 procedure TPlayerForm.Paint;
 begin
+  if FFrame = nil then
+    RenderFrame;
   if FFrame = nil then Exit;
   DrawSkinFrame(Canvas, FFrame, ClientWidth, ClientHeight);
 end;
