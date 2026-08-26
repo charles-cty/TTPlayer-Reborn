@@ -316,6 +316,7 @@ var
   backend: IPlayerBackend;
   dur, pos: Int64;
   bands: array[0..7] of Double;
+  wave: array[0..255] of Single;
   i, n: Integer;
 begin
   RequireTtcore;
@@ -354,6 +355,12 @@ begin
       AssertTrue('spectrum written', bands[i] >= 0);
       AssertTrue('spectrum clamped', bands[i] <= 1.0001);
     end;
+
+    n := backend.GetWaveform(@wave[0], Length(wave));
+    AssertTrue('waveform count', n >= 0);
+    AssertTrue('waveform not longer than asked', n <= Length(wave));
+    for i := 0 to High(wave) do
+      AssertTrue('waveform in range', (wave[i] >= -1.5) and (wave[i] <= 1.5));
 
     backend.Seek(200);
     PumpMs(30);

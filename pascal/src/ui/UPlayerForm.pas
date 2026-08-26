@@ -194,6 +194,8 @@ end;
 destructor TPlayerForm.Destroy;
 begin
   UnhookBackend;
+  if FVisual <> nil then
+    FVisual.SetSkinBackground(nil);
   FreeAndNil(FCoverBmp);
   FFrame.Free;
   inherited Destroy;
@@ -232,6 +234,8 @@ begin
     FVisual.ApplyConfig(ASkin^.VisualConfig);
   end;
   ApplyVisualMode;
+  if FVisual <> nil then
+    FVisual.SetSkinBackground(FFrame);
 
   Invalidate;
   if HandleAllocated then
@@ -282,7 +286,10 @@ begin
   visualElem := FSkin^.PlayerWindow.FindElement('visual');
   if (visualElem <> nil) and (not visualElem^.Position.IsEmpty) and
      (FVisual <> nil) then
+  begin
     FVisual.SetVisualRect(visualElem^.Position);
+    FVisual.SetSkinBackground(FFrame);
+  end;
   ApplyVisualMode;
   Invalidate;
 end;
@@ -357,22 +364,22 @@ begin
   end;
   if not hasVisual then
   begin
-    FVisual.Visible := False;
+    FVisual.SetVisualVisible(False);
     Exit;
   end;
   case FVisualMode of
     vmSpectrum:
       begin
         FVisual.Mode := vmSpectrum;
-        FVisual.Visible := True;
+        FVisual.SetVisualVisible(True);
       end;
     vmBlurScope:
       begin
         FVisual.Mode := vmBlurScope;
-        FVisual.Visible := True;
+        FVisual.SetVisualVisible(True);
       end;
   else
-    FVisual.Visible := False;
+    FVisual.SetVisualVisible(False);
   end;
 end;
 
@@ -531,6 +538,8 @@ begin
     progress, volume,
     overrideType, overrideState, toggledMute,
     IsPlaying, ledMs, info, FCoverBmp, showCover);
+  if FVisual <> nil then
+    FVisual.SetSkinBackground(FFrame);
 end;
 
 procedure TPlayerForm.Paint;

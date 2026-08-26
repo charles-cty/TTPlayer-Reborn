@@ -8,7 +8,7 @@ unit UTtcoreBackend;
 interface
 
 uses
-  Classes, SysUtils, SyncObjs, UPlayerBackend, UTtcoreAbi;
+  Classes, SysUtils, SyncObjs, UPlayerBackend, UTtcoreAbi, USpectrumAnalyze;
 
 type
   TTtcoreBackend = class(TInterfacedObject, IPlayerBackend)
@@ -63,6 +63,7 @@ type
     function GetAlbum: string;
     function GetCoverArt: TBytes;
     function GetSpectrum(OutBands: PDouble; BandCount: Integer): Integer;
+    function GetWaveform(OutSamples: PSingle; SampleCount: Integer): Integer;
     procedure SetOnStateChanged(Handler: TStateChangedEvent);
     procedure SetOnPositionChanged(Handler: TPositionChangedEvent);
     procedure SetOnDurationChanged(Handler: TDurationChangedEvent);
@@ -680,9 +681,7 @@ end;
 function TTtcoreBackend.GetSpectrum(OutBands: PDouble; BandCount: Integer): Integer;
 var
   raw: array of Single;
-  n, i, startIdx, endIdx, j: Integer;
-  peak: Double;
-  sample: Single;
+  n: Integer;
 begin
   if (OutBands = nil) or (BandCount <= 0) or (FLock = nil) then
     Exit(0);
@@ -698,33 +697,34 @@ begin
   end;
   if n < 0 then
     n := 0;
-  for i := 0 to BandCount - 1 do
-  begin
-    if n <= 0 then
-    begin
-      OutBands[i] := 0;
-      Continue;
-    end;
-    startIdx := (i * n) div BandCount;
-    endIdx := ((i + 1) * n) div BandCount;
-    if endIdx <= startIdx then
-      endIdx := startIdx + 1;
-    if endIdx > n then
-      endIdx := n;
-    peak := 0;
-    for j := startIdx to endIdx - 1 do
-    begin
-      sample := raw[j];
-      if sample < 0 then
-        sample := -sample;
-      if sample > peak then
-        peak := sample;
-    end;
-    if peak > 1 then
-      peak := 1;
-    OutBands[i] := peak;
-  end;
+  if n = 0 then
+    ComputeSpectrumBands(nil, 0, OutBands, BandCount)
+  else
+    ComputeSpectrumBands(@raw[0], n, OutBands, BandCount);
   Result := BandCount;
+end;
+
+function TTtcoreBackend.GetWaveform(OutSamples: PSingle; SampleCount: Integer): Integer;
+var
+  n: Integer;
+begin
+  if (OutSamples = nil) or (SampleCount <= 0) or (FLock = nil) then
+    Exit(0);
+  FillChar(OutSamples^, SampleCount * SizeOf(Single), 0);
+  n := 0;
+  FLock.Enter;
+  try
+    if FTornDown or (FPlayer = nil) then
+      Exit(0);
+    n := ttcore_get_spectrum(FPlayer, OutSamples, SampleCount);
+  finally
+    FLock.Leave;
+  end;
+  if n < 0 then
+    n := 0;
+  if n > SampleCount then
+    n := SampleCount;
+  Result := n;
 end;
 
 procedure TTtcoreBackend.SetOnStateChanged(Handler: TStateChangedEvent);

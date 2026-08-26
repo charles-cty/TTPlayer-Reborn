@@ -58,6 +58,8 @@ type
     // 频谱数据（主线程拉取，由 VisualWidget 使用）
     // BandCount 为请求的频段数，写入 OutBands 数组，返回实际写入的数量。
     function GetSpectrum(OutBands: PDouble; BandCount: Integer): Integer;
+    // 左声道 PCM（float，约 -1..1），供示波图使用。返回实际写入的样点数。
+    function GetWaveform(OutSamples: PSingle; SampleCount: Integer): Integer;
 
     // 事件注册（各 UI 组件注册自己的回调）
     procedure SetOnStateChanged(Handler: TStateChangedEvent);
@@ -122,6 +124,7 @@ type
     function GetAlbum: string;
     function GetCoverArt: TBytes;
     function GetSpectrum(OutBands: PDouble; BandCount: Integer): Integer;
+    function GetWaveform(OutSamples: PSingle; SampleCount: Integer): Integer;
     procedure SetOnStateChanged(Handler: TStateChangedEvent);
     procedure SetOnPositionChanged(Handler: TPositionChangedEvent);
     procedure SetOnDurationChanged(Handler: TDurationChangedEvent);
@@ -392,6 +395,17 @@ begin
     if OutBands[i] > 1 then OutBands[i] := 1;
   end;
   Result := BandCount;
+end;
+
+function TStubBackend.GetWaveform(OutSamples: PSingle; SampleCount: Integer): Integer;
+var
+  i: Integer;
+begin
+  if (OutSamples = nil) or (SampleCount <= 0) then
+    Exit(0);
+  for i := 0 to SampleCount - 1 do
+    OutSamples[i] := Sin(FSpectrumPhase + i * 0.08) * 0.7;
+  Result := SampleCount;
 end;
 
 procedure TStubBackend.SetOnStateChanged(Handler: TStateChangedEvent);

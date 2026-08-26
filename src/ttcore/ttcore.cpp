@@ -212,6 +212,11 @@ public:
             loadSidecarCover(currentFile_, cover_);
         }
 
+        {
+            std::lock_guard<std::mutex> slock(spectrumMutex_);
+            std::fill(spectrumBuf_.begin(), spectrumBuf_.end(), 0.0f);
+        }
+
         const auto fmt = decoder_.format();
         dsp_.setSampleRate(fmt.sampleRate);
         dsp_.equalizer.setSampleRate(fmt.sampleRate);
@@ -474,10 +479,25 @@ private:
 
         {
             std::lock_guard<std::mutex> slock(spectrumMutex_);
-            const int n = std::min(read, static_cast<int>(spectrumBuf_.size()));
+            const int cap = static_cast<int>(spectrumBuf_.size());
             const int srcCh = std::max(1, abuf.channels);
-            for (int i = 0; i < n; ++i) {
-                spectrumBuf_[static_cast<size_t>(i)] = abuf.data[static_cast<size_t>(i * srcCh)];
+            if (read >= cap) {
+                const int off = read - cap;
+                for (int i = 0; i < cap; ++i) {
+                    spectrumBuf_[static_cast<size_t>(i)] =
+                        abuf.data[static_cast<size_t>((off + i) * srcCh)];
+                }
+            } else if (read > 0 && cap > 0) {
+                const int keep = cap - read;
+                if (keep > 0) {
+                    std::memmove(spectrumBuf_.data(),
+                                 spectrumBuf_.data() + read,
+                                 static_cast<size_t>(keep) * sizeof(float));
+                }
+                for (int i = 0; i < read; ++i) {
+                    spectrumBuf_[static_cast<size_t>(keep + i)] =
+                        abuf.data[static_cast<size_t>(i * srcCh)];
+                }
             }
         }
 

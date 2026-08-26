@@ -28,6 +28,11 @@ type
     // 设置可视化区域矩形（在父窗口 canvas 上的位置/尺寸）。
     procedure SetVisualRect(const R: TSkinRect);
 
+    // 拷贝主窗皮肤在 visual 矩形上的像素，避免独立 HWND 盖住皮肤凹槽。
+    procedure SetSkinBackground(ABg: TBGRABitmap);
+
+    procedure SetVisualVisible(AValue: Boolean);
+
   protected
     procedure Paint; override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState;
@@ -39,6 +44,8 @@ type
     FMode:    TVisualMode;
     FTimer:   TTimer;
     FFrame:   TBGRABitmap;       // 离屏缓冲
+    FBg:      TBGRABitmap;       // 皮肤 visual 矩形拷贝
+    FSkinRect: TSkinRect;
     FOnClicked: TNotifyEvent;
 
     // 频谱数据（归一化 0..1，长度 = BandCount）
@@ -52,6 +59,7 @@ type
     procedure SetMode(AMode: TVisualMode);
     procedure UpdateTimer;
     function  BandCount: Integer;
+    procedure EnsureFrame;
     procedure RenderSpectrum;
     procedure RenderBlurScope;
 
@@ -89,6 +97,9 @@ begin
   FBackend := ABackend;
   FMode    := vmSpectrum;
   FFrame   := nil;
+  FBg      := nil;
+  FSkinRect := TSkinRect.Zero;
+  Color := clBlack;
 
   FTimer          := TTimer.Create(Self);
   FTimer.Interval := 33;   // ~30 fps
@@ -109,7 +120,8 @@ end;
 destructor TVisualWidget.Destroy;
 begin
   FTimer.Enabled := False;
-  FFrame.Free;
+  FreeAndNil(FFrame);
+  FreeAndNil(FBg);
   inherited Destroy;
 end;
 
@@ -125,9 +137,43 @@ var
   s: Double;
   f: TCustomForm;
 begin
+  FSkinRect := R;
   f := GetParentForm(Self);
   s := FormViewScale(f);
   SetBounds(ScalePx(R.X, s), ScalePx(R.Y, s), ScalePx(R.W, s), ScalePx(R.H, s));
+  UpdateTimer;
+end;
+
+procedure TVisualWidget.SetSkinBackground(ABg: TBGRABitmap);
+var
+  r: TRect;
+begin
+  FreeAndNil(FBg);
+  if (ABg = nil) or FSkinRect.IsEmpty then
+    Exit;
+  r := Classes.Rect(FSkinRect.X, FSkinRect.Y,
+    FSkinRect.X + FSkinRect.W, FSkinRect.Y + FSkinRect.H);
+  if r.Left < 0 then
+    r.Left := 0;
+  if r.Top < 0 then
+    r.Top := 0;
+  if r.Right > ABg.Width then
+    r.Right := ABg.Width;
+  if r.Bottom > ABg.Height then
+    r.Bottom := ABg.Height;
+  if (r.Right <= r.Left) or (r.Bottom <= r.Top) then
+    Exit;
+  FBg := ABg.GetPart(r);
+  if FMode = vmSpectrum then
+    RenderSpectrum
+  else if FMode = vmBlurScope then
+    RenderBlurScope;
+  Invalidate;
+end;
+
+procedure TVisualWidget.SetVisualVisible(AValue: Boolean);
+begin
+  Visible := AValue;
   UpdateTimer;
 end;
 
@@ -170,14 +216,31 @@ begin
     Result := BGRA(128, 128, 128, 255);
 end;
 
+procedure TVisualWidget.EnsureFrame;
+var
+  w, h: Integer;
+begin
+  w := Width;
+  h := Height;
+  FreeAndNil(FFrame);
+  if (w <= 0) or (h <= 0) then
+    Exit;
+  FFrame := TBGRABitmap.Create(w, h, BGRABlack);
+  if FBg = nil then
+    Exit;
+  if (FBg.Width = w) and (FBg.Height = h) then
+    FFrame.PutImage(0, 0, FBg, dmSet)
+  else
+    FFrame.StretchPutImage(Classes.Rect(0, 0, w, h), FBg, dmSet);
+end;
+
 // ── 定时器：拉取频谱数据并刷新 ─────────────────────────────────────
 procedure TVisualWidget.TimerTick(Sender: TObject);
 var
-  bands, i: Integer;
+  bands, i, n, nHist: Integer;
   newVal: Single;
   wave: array of Double;
   waveF: array of Single;
-  n: Integer;
 begin
   if FMode = vmNone then Exit;
 
@@ -186,8 +249,11 @@ begin
   begin
     SetLength(FSpecData, bands);
     SetLength(FPeakData, bands);
-    FillChar(FSpecData[0], bands * SizeOf(Single), 0);
-    FillChar(FPeakData[0], bands * SizeOf(Single), 0);
+    if bands > 0 then
+    begin
+      FillChar(FSpecData[0], bands * SizeOf(Single), 0);
+      FillChar(FPeakData[0], bands * SizeOf(Single), 0);
+    end;
   end;
 
   if (FBackend = nil) or (FBackend.GetState <> psPlaying) then
@@ -201,7 +267,6 @@ begin
   end
   else if FMode = vmSpectrum then
   begin
-    // 频谱模式：从 Backend 拉取 bands 个归一化值
     SetLength(wave, bands);
     n := FBackend.GetSpectrum(@wave[0], bands);
     for i := 0 to n - 1 do
@@ -219,26 +284,22 @@ begin
   end
   else if FMode = vmBlurScope then
   begin
-    // 示波图模式：拉取一个时间域样本帧（用频谱 slot 作缓冲）
-    SetLength(wave, kScopeLen);
-    n := FBackend.GetSpectrum(@wave[0], kScopeLen);
     SetLength(waveF, kScopeLen);
-    for i := 0 to kScopeLen - 1 do
-      waveF[i] := wave[i] * 2.0 - 1.0;  // 归一化 0-1 → -1..1
+    n := FBackend.GetWaveform(@waveF[0], kScopeLen);
+    if n < 0 then
+      n := 0;
 
-    // 追加到历史
-    SetLength(FScopeHistory, Length(FScopeHistory) + 1);
-    FScopeHistory[High(FScopeHistory)] := waveF;
+    nHist := Length(FScopeHistory);
+    SetLength(FScopeHistory, nHist + 1);
+    FScopeHistory[nHist] := Copy(waveF);
     if Length(FScopeHistory) > kScopeHistMax then
     begin
-      Move(FScopeHistory[1], FScopeHistory[0],
-        (Length(FScopeHistory) - 1) * SizeOf(FScopeHistory[0]));
+      for i := 0 to kScopeHistMax - 1 do
+        FScopeHistory[i] := FScopeHistory[i + 1];
       SetLength(FScopeHistory, kScopeHistMax);
     end;
   end;
 
-  // 重绘
-  FreeAndNil(FFrame);
   if FMode = vmSpectrum then RenderSpectrum
   else if FMode = vmBlurScope then RenderBlurScope;
   Invalidate;
@@ -256,10 +317,16 @@ begin
   h := Height;
   if (w <= 0) or (h <= 0) then Exit;
 
-  FreeAndNil(FFrame);
-  FFrame := TBGRABitmap.Create(w, h, BGRAPixelTransparent);
+  EnsureFrame;
+  if FFrame = nil then Exit;
 
-  bands := Max(1, Length(FSpecData));
+  // Empty until the first timer tick. Max(1, Length) used to index nil [0].
+  bands := Length(FSpecData);
+  if (bands <= 0) or (Length(FPeakData) < bands) then
+  begin
+    FFrame.InvalidateBitmap;
+    Exit;
+  end;
   gap   := IfThen(FConfig.SpectrumWide > 0, 2, 1);
   barW  := Max(2, (w - (bands - 1) * gap) div bands);
 
@@ -280,10 +347,8 @@ begin
     begin
       ratio := 1.0 - (py / h);  // 0 = bottom, 1 = top
       if ratio < 0.5 then
-        // btm → mid: weight = ratio*2 → 0=btm, 1=mid
         barColor := MergeBGRA(btmC, 255 - Round(ratio * 2 * 255), midC, Round(ratio * 2 * 255))
       else
-        // mid → top: weight = (ratio-0.5)*2 → 0=mid, 1=top
         barColor := MergeBGRA(midC, 255 - Round((ratio - 0.5) * 2 * 255), topC, Round((ratio - 0.5) * 2 * 255));
       FFrame.DrawHorizLine(x, py, x + barW - 1, barColor);
     end;
@@ -311,8 +376,8 @@ begin
   h := Height;
   if (w <= 0) or (h <= 0) then Exit;
 
-  FreeAndNil(FFrame);
-  FFrame := TBGRABitmap.Create(w, h, BGRAPixelTransparent);
+  EnsureFrame;
+  if FFrame = nil then Exit;
   midY := h div 2;
 
   for t := 0 to High(FScopeHistory) do
