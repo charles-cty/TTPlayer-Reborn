@@ -17,6 +17,8 @@ type
     procedure TestFullyOpaque;
     procedure TestSinglePixel;
     procedure TestRowSplit;
+    procedure TestMergeVerticalRuns;
+    procedure TestMergeEmpty;
   end;
 
 implementation
@@ -97,6 +99,32 @@ begin
   finally
     bmp.Free;
   end;
+end;
+
+procedure TAlphaShapeTest.TestMergeVerticalRuns;
+var
+  src, merged: TShapeRectArray;
+begin
+  SetLength(src, 4);
+  src[0].X := 0; src[0].Y := 0; src[0].W := 10; src[0].H := 1;
+  src[1].X := 0; src[1].Y := 1; src[1].W := 10; src[1].H := 1;
+  src[2].X := 0; src[2].Y := 2; src[2].W := 10; src[2].H := 1;
+  src[3].X := 2; src[3].Y := 3; src[3].W := 5;  src[3].H := 1;
+  merged := MergeShapeRects(src);
+  AssertEquals('竖向同宽 run 合成一条', 2, Length(merged));
+  AssertEquals(0, merged[0].X);
+  AssertEquals(0, merged[0].Y);
+  AssertEquals(10, merged[0].W);
+  AssertEquals(3, merged[0].H);
+  AssertEquals(2, merged[1].X);
+  AssertEquals(3, merged[1].Y);
+  AssertEquals(5, merged[1].W);
+  AssertEquals(1, merged[1].H);
+end;
+
+procedure TAlphaShapeTest.TestMergeEmpty;
+begin
+  AssertEquals(0, Length(MergeShapeRects(nil)));
 end;
 
 initialization

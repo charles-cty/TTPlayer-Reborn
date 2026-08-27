@@ -32,6 +32,8 @@ type
     procedure TestNinePatchResizeIsNotMagnify;
     procedure TestLivePaintShouldRebuildChrome;
     procedure TestSampleDoesNotRebuildNinePatch;
+    procedure TestMergeAfterMapLiveShape;
+    procedure TestNinePatchUsesLogicSizeNotDestScale;
   end;
 
 implementation
@@ -587,6 +589,78 @@ begin
   finally
     session.Free;
   end;
+end;
+
+procedure TLiveResizeTest.TestMergeAfterMapLiveShape;
+var
+  src, mapped, merged: TShapeRectArray;
+begin
+  SetLength(src, 3);
+  src[0].X := 2; src[0].Y := 0; src[0].W := 6; src[0].H := 1;
+  src[1].X := 2; src[1].Y := 1; src[1].W := 6; src[1].H := 1;
+  src[2].X := 2; src[2].Y := 2; src[2].W := 6; src[2].H := 1;
+  mapped := MapLiveShapeRects(src, 10, 3, 20, 6);
+  merged := MergeShapeRects(mapped);
+  AssertTrue('映射后仍可竖向合并', Length(merged) < Length(mapped));
+  AssertEquals(1, Length(merged));
+  AssertEquals(4, merged[0].X);
+  AssertEquals(0, merged[0].Y);
+  AssertEquals(12, merged[0].W);
+  AssertEquals(6, merged[0].H);
+end;
+
+procedure TLiveResizeTest.TestNinePatchUsesLogicSizeNotDestScale;
+var
+  base, dest: TBGRABitmap;
+  rr: TSkinRect;
+  x, y: Integer;
+  root, path, playlistSrc, lyricSrc: string;
+  sl: TStringList;
+begin
+  base := TBGRABitmap.Create(40, 30, BGRA(80, 80, 80, 255));
+  dest := nil;
+  try
+    for y := 0 to 5 do
+      for x := 0 to 5 do
+        base.DrawPixel(x, y, BGRA(255, 0, 0, 255));
+    rr := PatchRect(6, 6, 28, 18);
+    dest := TBGRABitmap.Create(80, 60, BGRAPixelTransparent);
+    DrawNinePatch(dest, base, rr, True, 80, 60, True);
+    AssertEquals('四角原样贴，不随 Dest 放大', 255, dest.GetPixel(3, 3).red);
+    AssertTrue('角外中段不是角红', dest.GetPixel(10, 3).red < 200);
+  finally
+    dest.Free;
+    base.Free;
+  end;
+
+  root := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..' + PathDelim +
+    '..' + PathDelim);
+  sl := TStringList.Create;
+  try
+    path := root + 'pascal' + PathDelim + 'src' + PathDelim + 'ui' +
+      PathDelim + 'UPlaylistForm.pas';
+    AssertTrue(FileExists(path));
+    sl.LoadFromFile(path);
+    playlistSrc := sl.Text;
+    path := root + 'pascal' + PathDelim + 'src' + PathDelim + 'ui' +
+      PathDelim + 'ULyricForm.pas';
+    sl.LoadFromFile(path);
+    lyricSrc := sl.Text;
+  finally
+    sl.Free;
+  end;
+  AssertTrue('播放列表九宫格用逻辑尺寸',
+    Pos('FLogicW, FLogicH, True)', playlistSrc) > 0);
+  AssertTrue('歌词九宫格用逻辑尺寸',
+    Pos('FLogicW, FLogicH, True)', lyricSrc) > 0);
+  AssertTrue('播放列表 HiDPI 用 BlitNearest',
+    Pos('BlitNearest(FFrame, tmp)', playlistSrc) > 0);
+  AssertTrue('歌词 HiDPI 用 BlitNearest',
+    Pos('BlitNearest(FFrame, tmp)', lyricSrc) > 0);
+  AssertTrue('播放列表仍画列表内容',
+    Pos('DrawListRows;', playlistSrc) > 0);
+  AssertTrue('歌词仍画歌词',
+    Pos('DrawLyrics;', lyricSrc) > 0);
 end;
 
 initialization

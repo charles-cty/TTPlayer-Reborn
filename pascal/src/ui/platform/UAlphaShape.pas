@@ -17,6 +17,7 @@ type
   TShapeRectArray = array of TShapeRect;
 
 function AlphaRunRects(Bitmap: TBGRABitmap): TShapeRectArray;
+function MergeShapeRects(const Rects: TShapeRectArray): TShapeRectArray;
 
 // live 缩放：把上一帧的不透明 run 映到新尺寸。贴着源右/下边的 run
 // 对齐到 Dest 右/下边，放大时 Region 跟手，缩小则由 HWND 裁切。
@@ -76,6 +77,30 @@ begin
       Inc(n);
     end;
   end;
+end;
+
+function MergeShapeRects(const Rects: TShapeRectArray): TShapeRectArray;
+var
+  i, n, o: Integer;
+begin
+  Result := nil;
+  n := Length(Rects);
+  if n = 0 then Exit;
+  SetLength(Result, n);
+  o := 0;
+  Result[0] := Rects[0];
+  for i := 1 to n - 1 do
+  begin
+    if (Rects[i].X = Result[o].X) and (Rects[i].W = Result[o].W) and
+       (Rects[i].Y = Result[o].Y + Result[o].H) then
+      Inc(Result[o].H, Rects[i].H)
+    else
+    begin
+      Inc(o);
+      Result[o] := Rects[i];
+    end;
+  end;
+  SetLength(Result, o + 1);
 end;
 
 function MapLiveShapeRects(const Src: TShapeRectArray;

@@ -66,8 +66,8 @@ function RenderPlayerWindow(const Skin: TSkinData;
 function EqFactorRect(const Elem: TSkinElement; Band, EqInterval: Integer): TSkinRect;
 
 // 九宫格背景绘制（公开供 ULyricForm 等使用）。
-// Tile=True: 各边/中心平铺；Tile=False: 双线性缩放。
-// 绘制范围为 DestW × DestH（已在 Dest 上直接合成）。
+// Tile=True: 各边/中心平铺；Tile=False: 双线性缩放（对应 Qt SmoothTransformation）。
+// 绘制范围为 DestW × DestH（皮肤逻辑像素；四角原样贴、不随 DPI 单独放大）。
 // ExclusiveMids=True：边/中心不伸进四角（与 Qt PlaylistWindow / LyricWindow
 // rebuildBackground 的 width()-left-right 矩形一致）。False：topMid/bottomMid
 // 先铺到 DestW，再由角片覆盖，透明角会透出中段瓦片。

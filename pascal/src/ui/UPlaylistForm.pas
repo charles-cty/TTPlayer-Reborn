@@ -448,8 +448,8 @@ var
     UiPhaseBegin(kUiPhaseRectRegion);
     try
       ApplyShapeRects(Handle,
-        MapLiveShapeRects(FShapeRects, FShapeW, FShapeH, D.LogicW, D.LogicH),
-        D.LogicW, D.LogicH, False);
+        MergeShapeRects(MapLiveShapeRects(FShapeRects, FShapeW, FShapeH, fw, fh)),
+        fw, fh, False);
     finally
       UiPhaseEnd;
     end;
@@ -560,6 +560,14 @@ var
   own: Boolean;
 begin
   if (FSkin = nil) or (not HandleAllocated) then Exit;
+  if (FFrame <> nil) and (FFrame.Width > 0) and (FFrame.Height > 0) then
+  begin
+    FShapeRects := MergeShapeRects(AlphaRunRects(FFrame));
+    FShapeW := FFrame.Width;
+    FShapeH := FFrame.Height;
+    ApplyShapeRects(Handle, FShapeRects, FFrame.Width, FFrame.Height);
+    Exit;
+  end;
   src := FSkin^.PlaylistWindow.BackgroundPixmap;
   if src = nil then Exit;
 
@@ -574,7 +582,7 @@ begin
       FSkin^.PlaylistWindow.ResizeTile, FLogicW, FLogicH, True);
   end;
   try
-    FShapeRects := AlphaRunRects(bmp);
+    FShapeRects := MergeShapeRects(AlphaRunRects(bmp));
     FShapeW := FLogicW;
     FShapeH := FLogicH;
     ApplyShapeRects(Handle, FShapeRects, bmp.Width, bmp.Height);
