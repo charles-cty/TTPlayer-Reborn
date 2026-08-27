@@ -14,7 +14,7 @@ uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   UHeapTraceConfig,
   Classes, consoletestrunner, UTestLayer2, UTestLayer3, UTestMetamorphic,
-  UTestPlaylistModel, UTestWindowSnap, UTestLrcParser, UTestTtbl,
+  UTestPlaylistModel, UTestWindowSnap, UTestLiveResize, UTestLrcParser, UTestTtbl,
   UTestAlphaShape, UTestDpiScale, UTestTtcoreBackend, UTestSpectrumAnalyze,
   UTestPlayerConfig, UTestPlayerMenus;
 

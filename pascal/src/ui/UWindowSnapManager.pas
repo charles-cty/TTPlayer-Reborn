@@ -941,6 +941,8 @@ begin
 end;
 
 procedure TWindowSnapManager.OnSubResized(ASub: ISnapWindow; Edges: TSnapEdges);
+// 会改窗口尺寸。live 缩放不要每拍调用，否则边缘吸附会把尺寸拽离指针；
+// 松手走 OnSubResizeFinished。
 var
   movingIndex, i, bestDistance, distance: Integer;
   movingRect, bestRect, snappedRect, groupRect: TSnapRect;

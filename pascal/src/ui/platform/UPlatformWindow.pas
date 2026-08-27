@@ -32,6 +32,9 @@ function PlatformShapeSupported: Boolean;
 function PlatformAlwaysOnTopNative: Boolean;
 
 procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);
+procedure ApplyShapeRects(AHandle: HWND; const Rects: TShapeRectArray;
+  LogicalW, LogicalH: Integer; Redraw: Boolean = True);
+procedure ApplyRectShape(AHandle: HWND; AWidth, AHeight: Integer);
 procedure ClearWindowShape(AHandle: HWND);
 procedure SetWindowAlwaysOnTop(AForm: TCustomForm; Enable: Boolean);
 procedure ConfigurePlatformWindow(AForm: TCustomForm);
@@ -43,6 +46,8 @@ procedure RaiseWindowKeepFocus(AForm: TCustomForm);
 procedure RaiseOwnedGroup(AOwner, AKeepFocus: TCustomForm);
 function PlatformGetWindowRect(AHandle: HWND; out R: TRect): Boolean;
 procedure PlatformMoveWindow(AHandle: HWND; AX, AY: Integer);
+procedure PlatformBeginLiveSize(AHandle: HWND);
+procedure PlatformEndLiveSize(AHandle: HWND);
 // GTK3：X 指针抓取（异形窗外仍能收到运动/松开）。Win32 无需，HTCAPTION 已抓鼠标。
 function PlatformGrabPointer(AHandle: HWND): Boolean;
 procedure PlatformUngrabPointer;
@@ -105,30 +110,107 @@ begin
   Result := True;
 end;
 
-procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);
+procedure ApplyShapeRects(AHandle: HWND; const Rects: TShapeRectArray;
+  LogicalW, LogicalH: Integer; Redraw: Boolean = True);
+const
+  RDH_RECTANGLES = 1;
 var
-  rects: TShapeRectArray;
-  totalRgn, rowRgn, segRgn: HRGN;
-  i: Integer;
+  scaled: TShapeRectArray;
   scale: Double;
+  n, i, bytes: Integer;
+  data: PRGNDATA;
+  pr: PRect;
+  rgn, totalRgn, segRgn, rowRgn: HRGN;
+  minX, minY, maxX, maxY: Integer;
+begin
+  if AHandle = 0 then Exit;
+  scaled := Rects;
+  if (LogicalW > 0) and (LogicalH > 0) then
+  begin
+    scale := PlatformWindowScale(AHandle, LogicalW, LogicalH);
+    if scale > 1.0001 then
+      scaled := ScaleShapeRects(Rects, scale, scale);
+  end;
+  n := Length(scaled);
+  if n <= 0 then
+  begin
+    SetWindowRgn(AHandle, CreateRectRgn(0, 0, 0, 0), True);
+    Exit;
+  end;
+  bytes := SizeOf(RGNDATAHEADER) + n * SizeOf(TRect);
+  GetMem(data, bytes);
+  try
+    FillChar(data^, bytes, 0);
+    data^.rdh.dwSize := SizeOf(RGNDATAHEADER);
+    data^.rdh.iType := RDH_RECTANGLES;
+    data^.rdh.nCount := DWORD(n);
+    data^.rdh.nRgnSize := DWORD(n * SizeOf(TRect));
+    minX := scaled[0].X;
+    minY := scaled[0].Y;
+    maxX := scaled[0].X + scaled[0].W;
+    maxY := scaled[0].Y + scaled[0].H;
+    pr := PRect(@data^.Buffer);
+    for i := 0 to n - 1 do
+    begin
+      pr^.Left := scaled[i].X;
+      pr^.Top := scaled[i].Y;
+      pr^.Right := scaled[i].X + scaled[i].W;
+      pr^.Bottom := scaled[i].Y + scaled[i].H;
+      if scaled[i].X < minX then minX := scaled[i].X;
+      if scaled[i].Y < minY then minY := scaled[i].Y;
+      if scaled[i].X + scaled[i].W > maxX then maxX := scaled[i].X + scaled[i].W;
+      if scaled[i].Y + scaled[i].H > maxY then maxY := scaled[i].Y + scaled[i].H;
+      Inc(pr);
+    end;
+    data^.rdh.rcBound.Left := minX;
+    data^.rdh.rcBound.Top := minY;
+    data^.rdh.rcBound.Right := maxX;
+    data^.rdh.rcBound.Bottom := maxY;
+    rgn := ExtCreateRegion(nil, bytes, data^);
+  finally
+    FreeMem(data);
+  end;
+  if rgn = 0 then
+  begin
+    totalRgn := CreateRectRgn(0, 0, 0, 0);
+    for i := 0 to n - 1 do
+    begin
+      segRgn := CreateRectRgn(scaled[i].X, scaled[i].Y,
+        scaled[i].X + scaled[i].W, scaled[i].Y + scaled[i].H);
+      rowRgn := CreateRectRgn(0, 0, 0, 0);
+      CombineRgn(rowRgn, totalRgn, segRgn, RGN_OR);
+      DeleteObject(totalRgn);
+      DeleteObject(segRgn);
+      totalRgn := rowRgn;
+    end;
+    rgn := totalRgn;
+  end;
+  SetWindowRgn(AHandle, rgn, Redraw);
+end;
+
+procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);
 begin
   if (AHandle = 0) or (Bitmap = nil) then Exit;
-  rects := AlphaRunRects(Bitmap);
-  scale := PlatformWindowScale(AHandle, Bitmap.Width, Bitmap.Height);
+  ApplyShapeRects(AHandle, AlphaRunRects(Bitmap), Bitmap.Width, Bitmap.Height);
+end;
+
+procedure ApplyRectShape(AHandle: HWND; AWidth, AHeight: Integer);
+var
+  scale: Double;
+  rw, rh: Integer;
+begin
+  if (AHandle = 0) or (AWidth < 1) or (AHeight < 1) then Exit;
+  scale := PlatformWindowScale(AHandle, AWidth, AHeight);
+  rw := AWidth;
+  rh := AHeight;
   if scale > 1.0001 then
-    rects := ScaleShapeRects(rects, scale, scale);
-  totalRgn := CreateRectRgn(0, 0, 0, 0);
-  for i := 0 to High(rects) do
   begin
-    segRgn := CreateRectRgn(rects[i].X, rects[i].Y,
-      rects[i].X + rects[i].W, rects[i].Y + rects[i].H);
-    rowRgn := CreateRectRgn(0, 0, 0, 0);
-    CombineRgn(rowRgn, totalRgn, segRgn, RGN_OR);
-    DeleteObject(totalRgn);
-    DeleteObject(segRgn);
-    totalRgn := rowRgn;
+    rw := Round(AWidth * scale);
+    rh := Round(AHeight * scale);
+    if rw < 1 then rw := 1;
+    if rh < 1 then rh := 1;
   end;
-  SetWindowRgn(AHandle, totalRgn, True);
+  SetWindowRgn(AHandle, CreateRectRgn(0, 0, rw, rh), True);
 end;
 
 procedure ClearWindowShape(AHandle: HWND);
@@ -215,6 +297,18 @@ begin
   if AHandle = 0 then Exit;
   Windows.SetWindowPos(AHandle, 0, AX, AY, 0, 0,
     SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
+end;
+
+procedure PlatformBeginLiveSize(AHandle: HWND);
+begin
+  if AHandle = 0 then Exit;
+  SendMessage(AHandle, WM_SETREDRAW, 0, 0);
+end;
+
+procedure PlatformEndLiveSize(AHandle: HWND);
+begin
+  if AHandle = 0 then Exit;
+  SendMessage(AHandle, WM_SETREDRAW, 1, 0);
 end;
 
 function PlatformGrabPointer(AHandle: HWND): Boolean;
@@ -962,6 +1056,16 @@ begin
     XFlushFn(dpy);
 end;
 
+procedure PlatformBeginLiveSize(AHandle: HWND);
+begin
+  if AHandle = 0 then ;
+end;
+
+procedure PlatformEndLiveSize(AHandle: HWND);
+begin
+  if AHandle = 0 then ;
+end;
+
 function CurrentEventTime: LongWord;
 begin
   Result := 0;
@@ -1178,13 +1282,14 @@ begin
     Result := Round(res);
 end;
 
-procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);
+procedure ApplyShapeRects(AHandle: HWND; const Rects: TShapeRectArray;
+  LogicalW, LogicalH: Integer; Redraw: Boolean = True);
 const
   ShapeBounding = 0;
   ShapeSet = 0;
   Unsorted = 0;
 var
-  rects: TShapeRectArray;
+  scaled: TShapeRectArray;
   xrects: array of TXRectangle;
   i, n: Integer;
   dpy: PDisplay;
@@ -1193,25 +1298,70 @@ var
 begin
   if not PlatformShapeSupported then Exit;
   win := XidFromHandle(AHandle, dpy);
-  if (win = 0) or (dpy = nil) or (Bitmap = nil) then Exit;
-  rects := AlphaRunRects(Bitmap);
-  scale := PlatformWindowScale(AHandle, Bitmap.Width, Bitmap.Height);
-  if scale > 1.0001 then
-    rects := ScaleShapeRects(rects, scale, scale);
-  n := Length(rects);
+  if (win = 0) or (dpy = nil) then Exit;
+  scaled := Rects;
+  if (LogicalW > 0) and (LogicalH > 0) then
+  begin
+    scale := PlatformWindowScale(AHandle, LogicalW, LogicalH);
+    if scale > 1.0001 then
+      scaled := ScaleShapeRects(Rects, scale, scale);
+  end;
+  n := Length(scaled);
   SetLength(xrects, n);
   for i := 0 to n - 1 do
   begin
-    xrects[i].x := SmallInt(rects[i].X);
-    xrects[i].y := SmallInt(rects[i].Y);
-    xrects[i].width := Word(rects[i].W);
-    xrects[i].height := Word(rects[i].H);
+    xrects[i].x := SmallInt(scaled[i].X);
+    xrects[i].y := SmallInt(scaled[i].Y);
+    xrects[i].width := Word(scaled[i].W);
+    xrects[i].height := Word(scaled[i].H);
   end;
   if n = 0 then
     XShapeCombineRectanglesFn(dpy, win, ShapeBounding, 0, 0, nil, 0, ShapeSet, Unsorted)
   else
     XShapeCombineRectanglesFn(dpy, win, ShapeBounding, 0, 0, @xrects[0], n,
       ShapeSet, Unsorted);
+  if Assigned(XFlushFn) then
+    XFlushFn(dpy);
+  if Redraw then ;
+end;
+
+procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);
+begin
+  if (AHandle = 0) or (Bitmap = nil) then Exit;
+  ApplyShapeRects(AHandle, AlphaRunRects(Bitmap), Bitmap.Width, Bitmap.Height);
+end;
+
+procedure ApplyRectShape(AHandle: HWND; AWidth, AHeight: Integer);
+const
+  ShapeBounding = 0;
+  ShapeSet = 0;
+  Unsorted = 0;
+var
+  dpy: PDisplay;
+  win: TXID;
+  r: TXRectangle;
+  scale: Double;
+  rw, rh: Integer;
+begin
+  if not PlatformShapeSupported then Exit;
+  if (AWidth < 1) or (AHeight < 1) then Exit;
+  win := XidFromHandle(AHandle, dpy);
+  if (win = 0) or (dpy = nil) then Exit;
+  scale := PlatformWindowScale(AHandle, AWidth, AHeight);
+  rw := AWidth;
+  rh := AHeight;
+  if scale > 1.0001 then
+  begin
+    rw := Round(AWidth * scale);
+    rh := Round(AHeight * scale);
+    if rw < 1 then rw := 1;
+    if rh < 1 then rh := 1;
+  end;
+  r.x := 0;
+  r.y := 0;
+  r.width := Word(rw);
+  r.height := Word(rh);
+  XShapeCombineRectanglesFn(dpy, win, ShapeBounding, 0, 0, @r, 1, ShapeSet, Unsorted);
   if Assigned(XFlushFn) then
     XFlushFn(dpy);
 end;

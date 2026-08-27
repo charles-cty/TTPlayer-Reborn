@@ -14,7 +14,7 @@ uses
   LCLIntf, LCLType, LMessages,
   BGRABitmap, BGRABitmapTypes,
   USkinTypes, USkinRender, UPlayerBackend, UVisualWidget, UPlatformWindow,
-  USkinView;
+  USkinView, USkinErase;
 
 type
   TAuxToggleEvent = procedure(Sender: TObject; const AType: string;
@@ -551,9 +551,7 @@ end;
 
 procedure TPlayerForm.WMEraseBkgnd(var Message: TLMEraseBkgnd);
 begin
-  // 必须 Result=1。只覆盖 EraseBackground 不够：LCL 在 flag 未置位时
-  // 把 WM_ERASEBKGND 交给 DefWindowProc，用 Color（clBlack）填客户区。
-  Message.Result := 1;
+  SwallowSkinEraseBkgnd(Message.Result);
 end;
 
 procedure TPlayerForm.Paint;

@@ -14,7 +14,8 @@ interface
 uses
   Classes, SysUtils, Forms, Controls, Graphics, LCLIntf, LCLType, LMessages,
   Menus, BGRABitmap, BGRABitmapTypes,
-  USkinTypes, USkinRender, UPlayerBackend, UPlatformWindow, USkinView;
+  USkinTypes, USkinRender, UPlayerBackend, UPlatformWindow, USkinView,
+  USkinErase;
 
 type
   // 正在拖动的滑块的完整状态（'' = 无拖动）。
@@ -42,6 +43,7 @@ type
 
   protected
     procedure Paint; override;
+    procedure WMEraseBkgnd(var Message: TLMEraseBkgnd); message LM_ERASEBKGND;
     procedure MouseMove(Shift: TShiftState; X, Y: Integer); override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState;
       X, Y: Integer); override;
@@ -342,6 +344,11 @@ procedure TEqualizerForm.Paint;
 begin
   if FFrame = nil then Exit;
   DrawSkinFrame(Canvas, FFrame, ClientWidth, ClientHeight);
+end;
+
+procedure TEqualizerForm.WMEraseBkgnd(var Message: TLMEraseBkgnd);
+begin
+  SwallowSkinEraseBkgnd(Message.Result);
 end;
 
 procedure TEqualizerForm.BuildProfileMenu;

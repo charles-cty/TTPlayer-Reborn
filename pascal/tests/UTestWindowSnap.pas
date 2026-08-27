@@ -37,6 +37,7 @@ type
     procedure TestInPlaceRebuildDoesNotMove;
     procedure TestGroupFollowThenDetach;
     procedure TestResizeSnapToMain;
+    procedure TestResizeSnapScreenAndCommitSequence;
   end;
 
 implementation
@@ -480,6 +481,40 @@ begin
     lyric.ResizeTo(280, 60); // 右边缘超出主窗口 5px
     mgr.OnSubResized(lyric, [seRight]);
     AssertEquals('右边缘对齐主窗口', 275, lyric.GetBounds.W);
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestResizeSnapScreenAndCommitSequence;
+var
+  mgr: TWindowSnapManager;
+  main, lyric: ISnapWindow;
+  moving, screen, snapped: TSnapRect;
+  dist, i: Integer;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    screen := SnapRectXYWH(0, 0, 1920, 1080);
+    mgr.SetScreenRect(screen);
+    main := MakeWin('player', 100, 100, 275, 116);
+    lyric := MakeWin('lyric', 100, 216, 268, 200);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(lyric);
+    mgr.RebuildSnapGraph;
+
+    for i := 1 to 8 do
+      lyric.ResizeTo(268, 200 + i * 10);
+    AssertEquals('中间尺寸不吸附', 280, lyric.GetBounds.H);
+
+    moving := SnapRectXYWH(1900, 100, 30, 80);
+    AssertTrue('右边缘贴屏幕',
+      TrySnapResizeToScreen(moving, [seRight], screen, 10, snapped, dist));
+    AssertEquals(1920 - 1900, snapped.W);
+
+    lyric.ResizeTo(280, 60);
+    mgr.OnSubResizeFinished(lyric, [seRight]);
+    AssertEquals('松手缩放吸附', 275, lyric.GetBounds.W);
   finally
     mgr.Free;
   end;

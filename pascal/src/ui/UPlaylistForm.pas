@@ -11,10 +11,11 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, Menus, StdCtrls,
-  LCLIntf, LCLType, LMessages, LazUTF8, Math, Types,
+  ExtCtrls, LCLIntf, LCLType, LMessages, LazUTF8, Math, Types,
   BGRABitmap, BGRABitmapTypes,
   USkinTypes, USkinRender, UPlayerBackend, UPlaylistModel, UPlaylistBook,
-  UPlaylistMetadataLoader, UPlatformWindow, USkinView;
+  UPlaylistMetadataLoader, UPlatformWindow, USkinView, ULiveResizeSession,
+  UUiPerf, USkinErase, UAlphaShape;
 
 type
   TPlayFileEvent = procedure(Sender: TObject; const FilePath: string) of object;
@@ -46,6 +47,7 @@ type
 
   protected
     procedure Paint; override;
+    procedure WMEraseBkgnd(var Message: TLMEraseBkgnd); message LM_ERASEBKGND;
     procedure MouseMove(Shift: TShiftState; X, Y: Integer); override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState;
       X, Y: Integer); override;
@@ -82,6 +84,13 @@ type
     FResizeEdgeRight: Boolean;
     FResizeEdgeBottom: Boolean;
     FResizeStartX, FResizeStartY, FResizeStartW, FResizeStartH: Integer;
+    FResizeSession: TLiveResizeSession;
+    FResizeCoalesce: TTimer;
+    FDeferLiveChrome: Boolean;
+    FLivePaintLocked: Boolean;
+    FLastPaintChromeUs: Int64;
+    FShapeRects: TShapeRectArray;
+    FShapeW, FShapeH: Integer;
 
     FDividerPos, FDividerSavedPos: Integer;
     FDividerDragging, FDividerHandlePressed: Boolean;
@@ -120,6 +129,9 @@ type
     procedure RenderFrame;
     procedure InvalidateFrame;
     procedure MapHit(var X, Y: Integer);
+    procedure ApplyResizeDecision(const D: TLiveResizeDecision);
+    procedure HandleResizeCoalesce(Sender: TObject);
+    procedure DumpZoomPhasesIfRequested;
     procedure ApplyListFont;
     function SX(V: Integer): Integer;
     procedure RebuildVisible;
@@ -293,6 +305,12 @@ begin
   FHoveredToolbar  := -1;
   FPressedToolbar  := -1;
   FResizing        := False;
+  FDeferLiveChrome := False;
+  FResizeSession   := TLiveResizeSession.Create;
+  FResizeCoalesce  := TTimer.Create(Self);
+  FResizeCoalesce.Enabled := False;
+  FResizeCoalesce.Interval := 16;
+  FResizeCoalesce.OnTimer := @HandleResizeCoalesce;
 
   FDividerPos           := kDefaultDividerPos;
   FDividerSavedPos      := kDefaultDividerPos;
@@ -329,6 +347,9 @@ end;
 
 destructor TPlaylistForm.Destroy;
 begin
+  if FResizeCoalesce <> nil then
+    FResizeCoalesce.Enabled := False;
+  FreeAndNil(FResizeSession);
   FreeAndNil(FMetaLoader);
   FreeScrollButtons;
   FreeAndNil(FFrame);
@@ -382,6 +403,21 @@ var
   s: Double;
 begin
   sizeChanged := (AWidth <> Width) or (AHeight <> Height);
+  if FDeferLiveChrome and HandleAllocated then
+  begin
+    FLivePaintLocked := True;
+    try
+      PlatformBeginLiveSize(Handle);
+      inherited SetBounds(ALeft, ATop, AWidth, AHeight);
+      PlatformEndLiveSize(Handle);
+    finally
+      FLivePaintLocked := False;
+    end;
+    ClampDividerPos;
+    ClampScroll;
+    Invalidate;
+    Exit;
+  end;
   inherited SetBounds(ALeft, ATop, AWidth, AHeight);
   if sizeChanged and (FSkin <> nil) then
   begin
@@ -396,6 +432,109 @@ begin
       BuildRegion;
     Invalidate;
   end;
+end;
+
+procedure TPlaylistForm.ApplyResizeDecision(const D: TLiveResizeDecision);
+var
+  s: Double;
+  fw, fh: Integer;
+  growing: Boolean;
+
+  procedure ApplyMappedShape;
+  begin
+    if not D.ApplyScaledShape then Exit;
+    if (not HandleAllocated) or (Length(FShapeRects) = 0) then Exit;
+    if (FShapeW < 1) or (FShapeH < 1) then Exit;
+    UiPhaseBegin(kUiPhaseRectRegion);
+    try
+      ApplyShapeRects(Handle,
+        MapLiveShapeRects(FShapeRects, FShapeW, FShapeH, D.LogicW, D.LogicH),
+        D.LogicW, D.LogicH, False);
+    finally
+      UiPhaseEnd;
+    end;
+  end;
+
+begin
+  if D.Kind = lrkIdle then Exit;
+  s := FormViewScale(Self);
+  if s < 0.01 then s := 1.0;
+  fw := ScalePx(D.LogicW, s);
+  fh := ScalePx(D.LogicH, s);
+  if fw < 1 then fw := 1;
+  if fh < 1 then fh := 1;
+  growing := (fw > Width) or (fh > Height);
+
+  // 放大：先把 Region 撑到新尺寸，再 SetBounds，避免旧 HRGN 裁掉新边。
+  if growing then
+    ApplyMappedShape;
+
+  FDeferLiveChrome := True;
+  try
+    if (Width <> fw) or (Height <> fh) then
+      SetBounds(Left, Top, fw, fh)
+    else
+    begin
+      FLogicW := Max(1, D.LogicW);
+      FLogicH := Max(1, D.LogicH);
+      ClampDividerPos;
+      ClampScroll;
+    end;
+  finally
+    FDeferLiveChrome := False;
+  end;
+  FLogicW := Max(1, D.LogicW);
+  FLogicH := Max(1, D.LogicH);
+  ClampDividerPos;
+  ClampScroll;
+
+  if D.RebuildNinePatch then
+  begin
+    UiPhaseBegin(kUiPhaseNinePatch);
+    try
+      RenderFrame;
+    finally
+      UiPhaseEnd;
+    end;
+    if D.ApplyAlphaShape then
+    begin
+      UiPhaseBegin(kUiPhaseAlphaShape);
+      try
+        if HandleAllocated then
+          BuildRegion;
+      finally
+        UiPhaseEnd;
+      end;
+    end;
+    Invalidate;
+  end
+  else if D.Kind = lrkLiveFill then
+  begin
+    if not growing then
+      ApplyMappedShape;
+    Invalidate;
+  end;
+end;
+
+procedure TPlaylistForm.HandleResizeCoalesce(Sender: TObject);
+begin
+  if Sender = nil then ;
+  if (FResizeSession = nil) or (not FResizeSession.Active) then
+  begin
+    if FResizeCoalesce <> nil then
+      FResizeCoalesce.Enabled := False;
+    Exit;
+  end;
+  Invalidate;
+end;
+
+procedure TPlaylistForm.DumpZoomPhasesIfRequested;
+var
+  path: string;
+begin
+  path := GetEnvironmentVariable('TTPLAYER_ZOOM_PHASES_LOG');
+  if (path <> '') and (FResizeSession <> nil) then
+    FResizeSession.DumpReport(SharedUiPhaseLog, path);
 end;
 
 procedure TPlaylistForm.MapHit(var X, Y: Integer);
@@ -435,7 +574,10 @@ begin
       FSkin^.PlaylistWindow.ResizeTile, FLogicW, FLogicH, True);
   end;
   try
-    ApplyAlphaShape(Handle, bmp);
+    FShapeRects := AlphaRunRects(bmp);
+    FShapeW := FLogicW;
+    FShapeH := FLogicH;
+    ApplyShapeRects(Handle, FShapeRects, bmp.Width, bmp.Height);
   finally
     if own then bmp.Free;
   end;
@@ -1684,11 +1826,32 @@ begin
 end;
 
 procedure TPlaylistForm.Paint;
+var
+  matches: Boolean;
 begin
-  if FFrame = nil then
+  if FLivePaintLocked then Exit;
+  matches := not SkinFrameNeedsRebuild(FFrame, ClientWidth, ClientHeight);
+  if LivePaintShouldRebuildChrome(FResizing, matches, FLastPaintChromeUs,
+    UiNowUs, kLiveResizeCoalesceUs) then
+  begin
     RenderFrame;
+    FLastPaintChromeUs := UiNowUs;
+    if FResizing and HandleAllocated then
+      BuildRegion;
+  end
+  else if not matches then
+  begin
+    if FFrame <> nil then
+      FFrame.Draw(Canvas, 0, 0, True);
+    Exit;
+  end;
   if FFrame = nil then Exit;
   DrawSkinFrame(Canvas, FFrame, ClientWidth, ClientHeight);
+end;
+
+procedure TPlaylistForm.WMEraseBkgnd(var Message: TLMEraseBkgnd);
+begin
+  SwallowSkinEraseBkgnd(Message.Result);
 end;
 
 function TPlaylistForm.HitButton(PX, PY: Integer): string;
@@ -2003,6 +2166,8 @@ begin
           FResizeStartY     := Mouse.CursorPos.Y;
           FResizeStartW     := FLogicW;
           FResizeStartH     := FLogicH;
+          FResizeSession.BeginGesture(FLogicW, FLogicH);
+          FResizeCoalesce.Enabled := True;
           SetCapture(Handle);
         end
         else
@@ -2080,12 +2245,7 @@ begin
     if FResizeEdgeBottom then
       newH := Max(kPlaylistMinH, FResizeStartH + Round(dy / s));
     if (newW <> FLogicW) or (newH <> FLogicH) then
-    begin
-      SetBounds(Left, Top, ScalePx(newW, s), ScalePx(newH, s));
-      RenderFrame;
-      if Assigned(FOnResizeInProgress) then
-        FOnResizeInProgress(Self);
-    end;
+      ApplyResizeDecision(FResizeSession.Sample(newW, newH, UiNowUs));
   end
   else
   begin
@@ -2228,6 +2388,10 @@ begin
     begin
       ReleaseCapture;
       FResizing := False;
+      FResizeCoalesce.Enabled := False;
+      ApplyResizeDecision(FResizeSession.Commit(UiNowUs));
+      DumpZoomPhasesIfRequested;
+      FResizeSession.EndGesture;
       if Assigned(FOnResizeFinished) then
         FOnResizeFinished(Self);
     end

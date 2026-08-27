@@ -79,6 +79,12 @@ procedure DrawNinePatch(Dest: TBGRABitmap;
 // 它对 1px 高/宽图和一般上采样会读越界 ScanLine，Windows DPI≠100% 即 AV。
 function NearestResample(Src: TBGRABitmap; DestW, DestH: Integer): TBGRABitmap;
 
+// 窗口客户区尺寸变了就要按新尺寸九宫格重绘，不能把旧帧当放大镜拉伸。
+function SkinFrameNeedsRebuild(Frame: TBGRABitmap; DestW, DestH: Integer): Boolean;
+
+// 仅位图拉伸（测试/备用）。播放列表/歌词 live 缩放不要走这条路径。
+procedure LiveFillFrame(var Frame: TBGRABitmap; DestW, DestH: Integer);
+
 // Qt alignedRect：按 align 把内容矩形放到当前窗口中。
 // ContentW/H<=0 时退回 BaseRect 的宽高。
 function AlignedRect(const BaseRect: TSkinRect;
@@ -255,6 +261,41 @@ begin
     end;
   end;
   Result.InvalidateBitmap;
+end;
+
+function SkinFrameNeedsRebuild(Frame: TBGRABitmap; DestW, DestH: Integer): Boolean;
+begin
+  Result := (Frame = nil) or (DestW < 1) or (DestH < 1) or
+    (Frame.Width <> DestW) or (Frame.Height <> DestH);
+end;
+
+procedure LiveFillFrame(var Frame: TBGRABitmap; DestW, DestH: Integer);
+var
+  next, scaled: TBGRABitmap;
+begin
+  if DestW < 1 then DestW := 1;
+  if DestH < 1 then DestH := 1;
+  if Frame = nil then
+  begin
+    Frame := TBGRABitmap.Create(DestW, DestH, BGRAPixelTransparent);
+    Exit;
+  end;
+  if (Frame.Width = DestW) and (Frame.Height = DestH) then
+    Exit;
+  next := TBGRABitmap.Create(DestW, DestH, BGRAPixelTransparent);
+  try
+    scaled := NearestResample(Frame, DestW, DestH);
+    try
+      next.PutImage(0, 0, scaled, dmSet);
+    finally
+      scaled.Free;
+    end;
+    Frame.Free;
+    Frame := next;
+    next := nil;
+  finally
+    next.Free;
+  end;
 end;
 
 // 等价于 QPainter::drawPixmap(destRect, pixmap)（无平滑变换）：

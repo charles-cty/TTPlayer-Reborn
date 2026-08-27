@@ -14,7 +14,8 @@ uses
   LCLIntf, LCLType, LMessages,
   BGRABitmap, BGRABitmapTypes,
   USkinTypes, USkinRender, UPlayerBackend, ULrcParser, UPlatformWindow,
-  USkinView, UPlayerMenuSpec;
+  USkinView, UPlayerMenuSpec, ULiveResizeSession, UUiPerf, USkinErase,
+  UAlphaShape;
 
 type
   TLyricForm = class(TForm, ISkinViewForm)
@@ -38,6 +39,7 @@ type
 
   protected
     procedure Paint; override;
+    procedure WMEraseBkgnd(var Message: TLMEraseBkgnd); message LM_ERASEBKGND;
     procedure MouseMove(Shift: TShiftState; X, Y: Integer); override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState;
       X, Y: Integer); override;
@@ -71,6 +73,13 @@ type
     FResizeStartY: Integer;
     FResizeStartW: Integer;
     FResizeStartH: Integer;
+    FResizeSession: TLiveResizeSession;
+    FResizeCoalesce: TTimer;
+    FDeferLiveChrome: Boolean;
+    FLivePaintLocked: Boolean;
+    FLastPaintChromeUs: Int64;
+    FShapeRects: TShapeRectArray;
+    FShapeW, FShapeH: Integer;
 
     FOnResizeInProgress: TNotifyEvent;
     FOnResizeFinished: TNotifyEvent;
@@ -90,6 +99,9 @@ type
     procedure BuildRegion;
     procedure RenderFrame;
     procedure MapHit(var X, Y: Integer);
+    procedure ApplyResizeDecision(const D: TLiveResizeDecision);
+    procedure HandleResizeCoalesce(Sender: TObject);
+    procedure DumpZoomPhasesIfRequested;
     procedure OnLyricTick(Sender: TObject);
     function LyricArea: TSkinRect;
     procedure DrawLyrics;
@@ -148,6 +160,12 @@ begin
   FHoveredType := '';
   FPressedType := '';
   FResizing := False;
+  FDeferLiveChrome := False;
+  FResizeSession := TLiveResizeSession.Create;
+  FResizeCoalesce := TTimer.Create(Self);
+  FResizeCoalesce.Enabled := False;
+  FResizeCoalesce.Interval := 16;
+  FResizeCoalesce.OnTimer := @HandleResizeCoalesce;
   FEncoding := leAutoDetect;
   FOffsetMs := 0;
   FLrcPath := '';
@@ -172,6 +190,9 @@ end;
 destructor TLyricForm.Destroy;
 begin
   FTimer.Enabled := False;
+  if FResizeCoalesce <> nil then
+    FResizeCoalesce.Enabled := False;
+  FreeAndNil(FResizeSession);
   FFrame.Free;
   inherited Destroy;
 end;
@@ -343,6 +364,19 @@ var
   s: Double;
 begin
   sizeChanged := (AWidth <> Width) or (AHeight <> Height);
+  if FDeferLiveChrome and HandleAllocated then
+  begin
+    FLivePaintLocked := True;
+    try
+      PlatformBeginLiveSize(Handle);
+      inherited SetBounds(ALeft, ATop, AWidth, AHeight);
+      PlatformEndLiveSize(Handle);
+    finally
+      FLivePaintLocked := False;
+    end;
+    Invalidate;
+    Exit;
+  end;
   inherited SetBounds(ALeft, ATop, AWidth, AHeight);
   if sizeChanged and (FSkin <> nil) then
   begin
@@ -356,6 +390,104 @@ begin
     RenderFrame;
     Invalidate;
   end;
+end;
+
+procedure TLyricForm.ApplyResizeDecision(const D: TLiveResizeDecision);
+var
+  s: Double;
+  fw, fh: Integer;
+  growing: Boolean;
+
+  procedure ApplyMappedShape;
+  begin
+    if not D.ApplyScaledShape then Exit;
+    if (not HandleAllocated) or (Length(FShapeRects) = 0) then Exit;
+    if (FShapeW < 1) or (FShapeH < 1) then Exit;
+    UiPhaseBegin(kUiPhaseRectRegion);
+    try
+      ApplyShapeRects(Handle,
+        MapLiveShapeRects(FShapeRects, FShapeW, FShapeH, D.LogicW, D.LogicH),
+        D.LogicW, D.LogicH, False);
+    finally
+      UiPhaseEnd;
+    end;
+  end;
+
+begin
+  if D.Kind = lrkIdle then Exit;
+  s := FormViewScale(Self);
+  if s < 0.01 then s := 1.0;
+  fw := ScalePx(D.LogicW, s);
+  fh := ScalePx(D.LogicH, s);
+  if fw < 1 then fw := 1;
+  if fh < 1 then fh := 1;
+  growing := (fw > Width) or (fh > Height);
+
+  if growing then
+    ApplyMappedShape;
+
+  FDeferLiveChrome := True;
+  try
+    if (Width <> fw) or (Height <> fh) then
+      SetBounds(Left, Top, fw, fh)
+    else
+    begin
+      FLogicW := Max(1, D.LogicW);
+      FLogicH := Max(1, D.LogicH);
+    end;
+  finally
+    FDeferLiveChrome := False;
+  end;
+  FLogicW := Max(1, D.LogicW);
+  FLogicH := Max(1, D.LogicH);
+
+  if D.RebuildNinePatch then
+  begin
+    UiPhaseBegin(kUiPhaseNinePatch);
+    try
+      RenderFrame;
+    finally
+      UiPhaseEnd;
+    end;
+    if D.ApplyAlphaShape then
+    begin
+      UiPhaseBegin(kUiPhaseAlphaShape);
+      try
+        if HandleAllocated then
+          BuildRegion;
+      finally
+        UiPhaseEnd;
+      end;
+    end;
+    Invalidate;
+  end
+  else if D.Kind = lrkLiveFill then
+  begin
+    if not growing then
+      ApplyMappedShape;
+    Invalidate;
+  end;
+end;
+
+procedure TLyricForm.HandleResizeCoalesce(Sender: TObject);
+begin
+  if Sender = nil then ;
+  if (FResizeSession = nil) or (not FResizeSession.Active) then
+  begin
+    if FResizeCoalesce <> nil then
+      FResizeCoalesce.Enabled := False;
+    Exit;
+  end;
+  Invalidate;
+end;
+
+procedure TLyricForm.DumpZoomPhasesIfRequested;
+var
+  path: string;
+begin
+  path := GetEnvironmentVariable('TTPLAYER_ZOOM_PHASES_LOG');
+  if (path <> '') and (FResizeSession <> nil) then
+    FResizeSession.DumpReport(SharedUiPhaseLog, path);
 end;
 
 procedure TLyricForm.MapHit(var X, Y: Integer);
@@ -394,7 +526,10 @@ begin
       FSkin^.LyricWindow.ResizeTile, FLogicW, FLogicH, True);
   end;
   try
-    ApplyAlphaShape(Handle, bmp);
+    FShapeRects := AlphaRunRects(bmp);
+    FShapeW := FLogicW;
+    FShapeH := FLogicH;
+    ApplyShapeRects(Handle, FShapeRects, bmp.Width, bmp.Height);
   finally
     if own then bmp.Free;
   end;
@@ -579,11 +714,32 @@ begin
 end;
 
 procedure TLyricForm.Paint;
+var
+  matches: Boolean;
 begin
-  if FFrame = nil then
+  if FLivePaintLocked then Exit;
+  matches := not SkinFrameNeedsRebuild(FFrame, ClientWidth, ClientHeight);
+  if LivePaintShouldRebuildChrome(FResizing, matches, FLastPaintChromeUs,
+    UiNowUs, kLiveResizeCoalesceUs) then
+  begin
     RenderFrame;
+    FLastPaintChromeUs := UiNowUs;
+    if FResizing and HandleAllocated then
+      BuildRegion;
+  end
+  else if not matches then
+  begin
+    if FFrame <> nil then
+      FFrame.Draw(Canvas, 0, 0, True);
+    Exit;
+  end;
   if FFrame = nil then Exit;
   DrawSkinFrame(Canvas, FFrame, ClientWidth, ClientHeight);
+end;
+
+procedure TLyricForm.WMEraseBkgnd(var Message: TLMEraseBkgnd);
+begin
+  SwallowSkinEraseBkgnd(Message.Result);
 end;
 
 // Qt alignedRect('right') 的等价计算：
@@ -805,6 +961,8 @@ begin
       FResizeStartY := Mouse.CursorPos.Y;
       FResizeStartW := FLogicW;
       FResizeStartH := FLogicH;
+      FResizeSession.BeginGesture(FLogicW, FLogicH);
+      FResizeCoalesce.Enabled := True;
       SetCapture(Handle);
     end;
   end;
@@ -837,11 +995,7 @@ begin
     if FResizeEdgeRight  then newW := Max(200, FResizeStartW + Round(dx / s));
     if FResizeEdgeBottom then newH := Max(50,  FResizeStartH + Round(dy / s));
     if (newW <> FLogicW) or (newH <> FLogicH) then
-    begin
-      SetBounds(Left, Top, ScalePx(newW, s), ScalePx(newH, s));
-      if Assigned(FOnResizeInProgress) then
-        FOnResizeInProgress(Self);
-    end;
+      ApplyResizeDecision(FResizeSession.Sample(newW, newH, UiNowUs));
   end
   else
   begin
@@ -878,6 +1032,10 @@ begin
     begin
       ReleaseCapture;
       FResizing := False;
+      FResizeCoalesce.Enabled := False;
+      ApplyResizeDecision(FResizeSession.Commit(UiNowUs));
+      DumpZoomPhasesIfRequested;
+      FResizeSession.EndGesture;
       if Assigned(FOnResizeFinished) then
         FOnResizeFinished(Self);
     end

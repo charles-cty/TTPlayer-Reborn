@@ -41,9 +41,7 @@ type
     procedure HandleAuxToggle(Sender: TObject; const AType: string;
       AToggled: Boolean);
     procedure HandleBackendError(Sender: TObject; const Message: string);
-    procedure HandleLyricResize(Sender: TObject);
     procedure HandleLyricResizeFinished(Sender: TObject);
-    procedure HandlePlaylistResize(Sender: TObject);
     procedure HandlePlaylistResizeFinished(Sender: TObject);
     procedure HandlePlayFile(Sender: TObject; const FilePath: string);
     procedure HandlePrev(Sender: TObject);
@@ -147,12 +145,10 @@ begin
   FPlayer.OnContextMenu := @HandlePlayerContextMenu;
   FBackend.SetOnTrackFinished(@HandleTrackFinished);
   FBackend.SetOnError(@HandleBackendError);
-  FLyric.OnResizeInProgress := @HandleLyricResize;
   FLyric.OnResizeFinished := @HandleLyricResizeFinished;
   FLyric.OnCloseRequested := @HandleLyricClosed;
   FLyric.OnHide := @HandleAuxHide;
   FEq.OnHide := @HandleAuxHide;
-  FPlaylist.OnResizeInProgress := @HandlePlaylistResize;
   FPlaylist.OnResizeFinished := @HandlePlaylistResizeFinished;
   FPlaylist.OnHide := @HandleAuxHide;
 
@@ -650,25 +646,11 @@ begin
   SyncTrayChecks;
 end;
 
-procedure TTtplayerHost.HandleLyricResize(Sender: TObject);
-begin
-  if FLyricWin = nil then Exit;
-  FSnap.OnSubResized(FLyricWin,
-    ResizeEdgesOf(FLyric.ResizeEdgeRight, FLyric.ResizeEdgeBottom));
-end;
-
 procedure TTtplayerHost.HandleLyricResizeFinished(Sender: TObject);
 begin
   if FLyricWin = nil then Exit;
   FSnap.OnSubResizeFinished(FLyricWin,
     ResizeEdgesOf(FLyric.ResizeEdgeRight, FLyric.ResizeEdgeBottom));
-end;
-
-procedure TTtplayerHost.HandlePlaylistResize(Sender: TObject);
-begin
-  if FPlaylistWin = nil then Exit;
-  FSnap.OnSubResized(FPlaylistWin,
-    ResizeEdgesOf(FPlaylist.ResizeEdgeRight, FPlaylist.ResizeEdgeBottom));
 end;
 
 procedure TTtplayerHost.HandlePlaylistResizeFinished(Sender: TObject);
