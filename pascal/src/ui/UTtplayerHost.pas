@@ -37,6 +37,7 @@ type
     FLastFile: string;
     FSuppressAux: Boolean;
     FAudioErrorShown: Boolean;
+    FGrouping: Boolean;
     procedure HandleAuxToggle(Sender: TObject; const AType: string;
       AToggled: Boolean);
     procedure HandleBackendError(Sender: TObject; const Message: string);
@@ -64,6 +65,14 @@ type
     procedure SyncTrayChecks;
     procedure PopupPlayerMenu;
     procedure ShowMainWindow;
+    procedure BindAuxWindowsToMain;
+    procedure RestoreVisibleAux;
+    procedure BringGroupForward(AKeepFocus: TForm);
+    procedure HandlePlayerActivate(Sender: TObject);
+    procedure HandleAuxActivate(Sender: TObject);
+    procedure HandlePlayerWindowState(Sender: TObject);
+    procedure HandleAppActivate(Sender: TObject);
+    procedure HandleAppRestore(Sender: TObject);
     procedure ApplyAlwaysOnTop(Enabled: Boolean);
     procedure ApplySkinFile(const SknPath: string);
     procedure ApplyLoadedConfig;
@@ -117,6 +126,7 @@ begin
   FEngine := TSkinEngine.Create;
   FSnap := TWindowSnapManager.Create;
   FSuppressAux := False;
+  FGrouping := False;
   FAuxLyric := FConfig.LyricVisible;
   FAuxEq := FConfig.EqVisible;
   FAuxPlaylist := FConfig.PlaylistVisible;
@@ -146,6 +156,17 @@ begin
   FPlaylist.OnResizeFinished := @HandlePlaylistResizeFinished;
   FPlaylist.OnHide := @HandleAuxHide;
 
+  PrepareAuxOwnedWindow(FEq, FPlayer);
+  PrepareAuxOwnedWindow(FLyric, FPlayer);
+  PrepareAuxOwnedWindow(FPlaylist, FPlayer);
+  FPlayer.OnActivate := @HandlePlayerActivate;
+  FPlayer.OnWindowStateChange := @HandlePlayerWindowState;
+  FEq.OnActivate := @HandleAuxActivate;
+  FLyric.OnActivate := @HandleAuxActivate;
+  FPlaylist.OnActivate := @HandleAuxActivate;
+  Application.OnActivate := @HandleAppActivate;
+  Application.OnRestore := @HandleAppRestore;
+
   // 托盘与窗口右键必须用两份菜单：GTK3 AppIndicator 会独占 PopUpMenu 的 GtkMenu，
   // 再对同一份调用 gtk_menu_popup 会没有任何反应。
   FPlayerMenu := TPopupMenu.Create(FPlayer);
@@ -173,6 +194,8 @@ end;
 destructor TTtplayerHost.Destroy;
 begin
   SaveState;
+  Application.OnActivate := nil;
+  Application.OnRestore := nil;
   if FBackend <> nil then
     FBackend.SetOnTrackFinished(nil);
   if FSnap <> nil then
@@ -446,15 +469,104 @@ begin
   PopupPlayerMenu;
 end;
 
+procedure TTtplayerHost.BindAuxWindowsToMain;
+begin
+  PrepareAuxOwnedWindow(FEq, FPlayer);
+  PrepareAuxOwnedWindow(FLyric, FPlayer);
+  PrepareAuxOwnedWindow(FPlaylist, FPlayer);
+end;
+
+procedure TTtplayerHost.RestoreVisibleAux;
+begin
+  FSuppressAux := True;
+  try
+    if FAuxPlaylist then
+    begin
+      if FPlaylist.WindowState = wsMinimized then
+        FPlaylist.WindowState := wsNormal;
+      if not FPlaylist.Visible then
+        FPlaylist.Show;
+    end;
+    if FAuxLyric then
+    begin
+      if FLyric.WindowState = wsMinimized then
+        FLyric.WindowState := wsNormal;
+      if not FLyric.Visible then
+        FLyric.Show;
+    end;
+    if FAuxEq then
+    begin
+      if FEq.WindowState = wsMinimized then
+        FEq.WindowState := wsNormal;
+      if not FEq.Visible then
+        FEq.Show;
+    end;
+  finally
+    FSuppressAux := False;
+  end;
+  BindAuxWindowsToMain;
+end;
+
+procedure TTtplayerHost.BringGroupForward(AKeepFocus: TForm);
+begin
+  if FGrouping then Exit;
+  FGrouping := True;
+  try
+    RestoreVisibleAux;
+    if AKeepFocus = nil then
+      AKeepFocus := FPlayer;
+    RaiseOwnedGroup(FPlayer, AKeepFocus);
+  finally
+    FGrouping := False;
+  end;
+end;
+
+procedure TTtplayerHost.HandlePlayerActivate(Sender: TObject);
+begin
+  if Sender = nil then ;
+  BringGroupForward(FPlayer);
+end;
+
+procedure TTtplayerHost.HandleAuxActivate(Sender: TObject);
+begin
+  if (Sender = nil) or not (Sender is TForm) then Exit;
+  BringGroupForward(TForm(Sender));
+end;
+
+procedure TTtplayerHost.HandlePlayerWindowState(Sender: TObject);
+begin
+  if Sender = nil then ;
+  if FPlayer.WindowState = wsMinimized then Exit;
+  BringGroupForward(FPlayer);
+end;
+
+procedure TTtplayerHost.HandleAppActivate(Sender: TObject);
+var
+  keep: TForm;
+begin
+  if Sender = nil then ;
+  keep := FPlayer;
+  if (Screen.ActiveCustomForm is TForm) and
+     (Screen.ActiveCustomForm.PopupParent = FPlayer) then
+    keep := TForm(Screen.ActiveCustomForm);
+  BringGroupForward(keep);
+end;
+
+procedure TTtplayerHost.HandleAppRestore(Sender: TObject);
+begin
+  if Sender = nil then ;
+  if FPlayer.WindowState = wsMinimized then
+    FPlayer.WindowState := wsNormal;
+  BringGroupForward(FPlayer);
+end;
+
 procedure TTtplayerHost.ShowMainWindow;
 begin
   if FPlayer.WindowState = wsMinimized then
     FPlayer.WindowState := wsNormal;
   FPlayer.Show;
+  BringGroupForward(FPlayer);
   FPlayer.BringToFront;
-  if FAuxPlaylist then FPlaylist.Show;
-  if FAuxLyric then FLyric.Show;
-  if FAuxEq then FEq.Show;
 end;
 
 procedure TTtplayerHost.ApplyAlwaysOnTop(Enabled: Boolean);
@@ -464,6 +576,7 @@ begin
   SetWindowAlwaysOnTop(FEq, Enabled);
   SetWindowAlwaysOnTop(FLyric, Enabled);
   SetWindowAlwaysOnTop(FPlaylist, Enabled);
+  BindAuxWindowsToMain;
 end;
 
 procedure TTtplayerHost.SetAuxVisible(const AType: string; AToggled: Boolean);
@@ -489,6 +602,8 @@ begin
   finally
     FSuppressAux := False;
   end;
+  if AToggled then
+    BindAuxWindowsToMain;
   SyncTrayChecks;
 end;
 
@@ -513,7 +628,10 @@ end;
 
 procedure TTtplayerHost.HandleAuxHide(Sender: TObject);
 begin
-  if FSuppressAux then Exit;
+  if FSuppressAux or FGrouping then Exit;
+  if (FPlayer <> nil) and
+     ((FPlayer.WindowState = wsMinimized) or not FPlayer.Visible) then
+    Exit;
   if Sender = FLyric then
   begin
     FAuxLyric := False;
@@ -879,6 +997,7 @@ begin
   finally
     FSuppressAux := False;
   end;
+  BindAuxWindowsToMain;
   FSnap.RebuildSnapGraph;
 
   try

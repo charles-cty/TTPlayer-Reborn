@@ -8,6 +8,8 @@ unit UWindowSnapManager;
 //   - 子窗口可吸附到主窗口，或吸附到已连接主窗口的子窗口。
 //   - 主窗口移动时，仅移动“直接或间接连接到主窗口”的吸附窗口。
 //   - 子窗口手动拖动只影响自身位置与后续吸附关系，不带动其他窗口。
+//   - 任务栏激活/Z 序成组不在本单元：宿主把辅助窗口绑成主窗口的
+//     owned/transient 子窗口（见 PrepareAuxOwnedWindow），与是否吸附无关。
 //
 // 本单元不依赖 LCL：窗口通过 ISnapWindow 抽象，测试用 TMemorySnapWindow，
 // 真实 Form 由 UFormSnap.TFormSnapWindow 包装。

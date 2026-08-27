@@ -223,6 +223,9 @@ begin
   FPlayerForm.SetAuxToggle('lyric', True);
   FPlayerForm.SetAuxToggle('equalizer', True);
   FPlayerForm.SetAuxToggle('playlist', True);
+  PrepareAuxOwnedWindow(FEqForm, FPlayerForm);
+  PrepareAuxOwnedWindow(FLyricForm, FPlayerForm);
+  PrepareAuxOwnedWindow(FPlaylistForm, FPlayerForm);
   EnsureSnapHooked;
   Caption := 'Skin Preview — ' + FEngine.SkinData.Name;
 

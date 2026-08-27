@@ -399,6 +399,9 @@ begin
   Result := CallWindowProc(WNDPROC(orig), Wnd, uMsg, wParam, lParam);
   if uMsg = WM_EXITSIZEMOVE then
     A.HandleExitSizeMove;
+  // 任务栏把主窗口拉到前台时，owned 子窗口有时不会一起抬升（无边框+Region）。
+  if (uMsg = Windows.WM_ACTIVATE) and A.FIsMain and ((wParam and $FFFF) <> 0) then
+    RaiseOwnedGroup(A.FForm, A.FForm);
 end;
 {$ENDIF}
 

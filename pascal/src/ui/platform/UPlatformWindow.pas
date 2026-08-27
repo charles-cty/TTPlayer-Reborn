@@ -35,6 +35,12 @@ procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);
 procedure ClearWindowShape(AHandle: HWND);
 procedure SetWindowAlwaysOnTop(AForm: TCustomForm; Enable: Boolean);
 procedure ConfigurePlatformWindow(AForm: TCustomForm);
+// 辅助窗口挂到主窗口：Win 为 HWND owner，GTK/X11 为 transient parent。
+// 任务栏激活/最小化时操作系统会把 owned 窗口当一组处理。
+procedure PrepareAuxOwnedWindow(AForm, AOwner: TCustomForm);
+procedure BindWindowToOwner(AForm, AOwner: TCustomForm);
+procedure RaiseWindowKeepFocus(AForm: TCustomForm);
+procedure RaiseOwnedGroup(AOwner, AKeepFocus: TCustomForm);
 function PlatformGetWindowRect(AHandle: HWND; out R: TRect): Boolean;
 procedure PlatformMoveWindow(AHandle: HWND; AX, AY: Integer);
 // GTK3：X 指针抓取（异形窗外仍能收到运动/松开）。Win32 无需，HTCAPTION 已抓鼠标。
@@ -56,6 +62,9 @@ uses
   {$IFDEF WINDOWS}, Windows{$ENDIF}
   {$IFDEF UNIX}, dynlibs{$ENDIF}
   {$IFDEF LCLGTK3}, Gtk3Widgets{$ENDIF};
+
+var
+  RaisingOwnedGroup: Boolean = False;
 
 function BackendToName(B: TPlatformWindowBackend): string;
 begin
@@ -128,9 +137,71 @@ begin
     SetWindowRgn(AHandle, 0, True);
 end;
 
+procedure BindWindowToOwner(AForm, AOwner: TCustomForm);
+const
+  HWNDPARENT_INDEX = -8;
+var
+  styleEx: LONG_PTR;
+begin
+  if (AForm = nil) or (AOwner = nil) or (AForm = AOwner) then Exit;
+  if not AForm.HandleAllocated or not AOwner.HandleAllocated then Exit;
+  if GetWindowLongPtr(AForm.Handle, HWNDPARENT_INDEX) <> LONG_PTR(AOwner.Handle) then
+    SetWindowLongPtr(AForm.Handle, HWNDPARENT_INDEX, LONG_PTR(AOwner.Handle));
+  styleEx := GetWindowLongPtr(AForm.Handle, GWL_EXSTYLE);
+  styleEx := (styleEx or WS_EX_TOOLWINDOW) and not WS_EX_APPWINDOW;
+  SetWindowLongPtr(AForm.Handle, GWL_EXSTYLE, styleEx);
+  SetWindowPos(AForm.Handle, 0, 0, 0, 0, 0,
+    SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE or SWP_FRAMECHANGED);
+end;
+
+procedure PrepareAuxOwnedWindow(AForm, AOwner: TCustomForm);
+begin
+  if (AForm = nil) or (AOwner = nil) or (AForm = AOwner) then Exit;
+  AForm.ShowInTaskBar := stNever;
+  AForm.PopupMode := pmExplicit;
+  AForm.PopupParent := AOwner;
+  if AForm.HandleAllocated then
+    BindWindowToOwner(AForm, AOwner);
+end;
+
+procedure RaiseWindowKeepFocus(AForm: TCustomForm);
+begin
+  if (AForm = nil) or not AForm.Visible then Exit;
+  if not AForm.HandleAllocated then Exit;
+  if AForm.WindowState = wsMinimized then
+    ShowWindow(AForm.Handle, SW_RESTORE);
+  SetWindowPos(AForm.Handle, HWND_TOP, 0, 0, 0, 0,
+    SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
+end;
+
+procedure RaiseOwnedGroup(AOwner, AKeepFocus: TCustomForm);
+var
+  i: Integer;
+  f: TCustomForm;
+begin
+  if (AOwner = nil) or RaisingOwnedGroup then Exit;
+  RaisingOwnedGroup := True;
+  try
+    RaiseWindowKeepFocus(AOwner);
+    for i := 0 to Screen.CustomFormCount - 1 do
+    begin
+      f := Screen.CustomForms[i];
+      if (f = nil) or (f = AOwner) then Continue;
+      if f.PopupParent = AOwner then
+        RaiseWindowKeepFocus(f);
+    end;
+    if (AKeepFocus <> nil) and (AKeepFocus <> AOwner) then
+      RaiseWindowKeepFocus(AKeepFocus);
+  finally
+    RaisingOwnedGroup := False;
+  end;
+end;
+
 procedure ConfigurePlatformWindow(AForm: TCustomForm);
 begin
   if AForm = nil then Exit;
+  if AForm.PopupParent <> nil then
+    BindWindowToOwner(AForm, AForm.PopupParent);
 end;
 
 function PlatformGetWindowRect(AHandle: HWND; out R: TRect): Boolean;
@@ -262,6 +333,8 @@ type
   TGtkWidgetGetWindow = function(Widget: Pointer): TGdkWindow; cdecl;
   TGtkWidgetRealize = procedure(Widget: Pointer); cdecl;
   TGtkWindowSetDecorated = procedure(Window: Pointer; Decorated: LongInt); cdecl;
+  TGtkWindowSetTransientFor = procedure(Window, Parent: Pointer); cdecl;
+  TGtkWindowSetSkipTaskbarHint = procedure(Window: Pointer; Setting: LongInt); cdecl;
   TGtkWindowGetDecorated = function(Window: Pointer): LongInt; cdecl;
   TGtkWindowGetTitlebar = function(Window: Pointer): Pointer; cdecl;
   TGtkWindowMove = procedure(Window: Pointer; X, Y: LongInt); cdecl;
@@ -281,6 +354,7 @@ type
     Time: LongWord): Integer; cdecl;
   TGdkPointerUngrab = procedure(Time: LongWord); cdecl;
   TGdkWindowSetDecorations = procedure(Window: TGdkWindow; Decorations: LongWord); cdecl;
+  TGdkWindowRaise = procedure(Window: TGdkWindow); cdecl;
   TGdkWindowGetOrigin = function(Window: TGdkWindow; out X, Y: LongInt): Integer; cdecl;
   TGdkWindowGetWidth = function(Window: TGdkWindow): Integer; cdecl;
   TGdkWindowGetHeight = function(Window: TGdkWindow): Integer; cdecl;
@@ -299,6 +373,7 @@ type
     OnlyIfExists: Integer): Cardinal; cdecl;
   TXFlush = procedure(Display: PDisplay); cdecl;
   TXMoveWindow = procedure(Display: PDisplay; W: TXID; X, Y: Integer); cdecl;
+  TXSetTransientForHint = function(Display: PDisplay; W, PropWindow: TXID): Integer; cdecl;
   TXChangeProperty = function(Display: PDisplay; W: TXID;
     Prop, AType: Cardinal; Format, Mode: Integer; Data: Pointer;
     NElements: Integer): Integer; cdecl;
@@ -317,6 +392,8 @@ var
   GtkWidgetGetWindow: TGtkWidgetGetWindow;
   GtkWidgetRealize: TGtkWidgetRealize;
   GtkWindowSetDecorated: TGtkWindowSetDecorated;
+  GtkWindowSetTransientFor: TGtkWindowSetTransientFor;
+  GtkWindowSetSkipTaskbarHint: TGtkWindowSetSkipTaskbarHint;
   GtkWindowGetDecorated: TGtkWindowGetDecorated;
   GtkWindowGetTitlebar: TGtkWindowGetTitlebar;
   GtkWindowMove: TGtkWindowMove;
@@ -332,6 +409,7 @@ var
   GdkPointerGrabFn: TGdkPointerGrab;
   GdkPointerUngrabFn: TGdkPointerUngrab;
   GdkWindowSetDecorations: TGdkWindowSetDecorations;
+  GdkWindowRaiseFn: TGdkWindowRaise;
   GdkWindowGetOrigin: TGdkWindowGetOrigin;
   GdkWindowGetWidth: TGdkWindowGetWidth;
   GdkWindowGetHeight: TGdkWindowGetHeight;
@@ -349,6 +427,7 @@ var
   XInternAtomFn: TXInternAtom;
   XFlushFn: TXFlush;
   XMoveWindowFn: TXMoveWindow;
+  XSetTransientForHintFn: TXSetTransientForHint;
   XChangePropertyFn: TXChangeProperty;
   XGetWindowPropertyFn: TXGetWindowProperty;
   XFreeFn: TXFree;
@@ -376,6 +455,8 @@ begin
   Pointer(GtkWidgetGetWindow) := GetProcedureAddress(GtkLib, 'gtk_widget_get_window');
   Pointer(GtkWidgetRealize) := GetProcedureAddress(GtkLib, 'gtk_widget_realize');
   Pointer(GtkWindowSetDecorated) := GetProcedureAddress(GtkLib, 'gtk_window_set_decorated');
+  Pointer(GtkWindowSetTransientFor) := GetProcedureAddress(GtkLib, 'gtk_window_set_transient_for');
+  Pointer(GtkWindowSetSkipTaskbarHint) := GetProcedureAddress(GtkLib, 'gtk_window_set_skip_taskbar_hint');
   Pointer(GtkWindowGetDecorated) := GetProcedureAddress(GtkLib, 'gtk_window_get_decorated');
   Pointer(GtkWindowGetTitlebar) := GetProcedureAddress(GtkLib, 'gtk_window_get_titlebar');
   Pointer(GtkWindowMove) := GetProcedureAddress(GtkLib, 'gtk_window_move');
@@ -391,6 +472,7 @@ begin
   Pointer(GdkPointerGrabFn) := GetProcedureAddress(GdkLib, 'gdk_pointer_grab');
   Pointer(GdkPointerUngrabFn) := GetProcedureAddress(GdkLib, 'gdk_pointer_ungrab');
   Pointer(GdkWindowSetDecorations) := GetProcedureAddress(GdkLib, 'gdk_window_set_decorations');
+  Pointer(GdkWindowRaiseFn) := GetProcedureAddress(GdkLib, 'gdk_window_raise');
   Pointer(GdkWindowGetOrigin) := GetProcedureAddress(GdkLib, 'gdk_window_get_origin');
   Pointer(GdkWindowGetWidth) := GetProcedureAddress(GdkLib, 'gdk_window_get_width');
   Pointer(GdkWindowGetHeight) := GetProcedureAddress(GdkLib, 'gdk_window_get_height');
@@ -423,6 +505,7 @@ begin
   Pointer(XInternAtomFn) := GetProcedureAddress(X11Lib, 'XInternAtom');
   Pointer(XFlushFn) := GetProcedureAddress(X11Lib, 'XFlush');
   Pointer(XMoveWindowFn) := GetProcedureAddress(X11Lib, 'XMoveWindow');
+  Pointer(XSetTransientForHintFn) := GetProcedureAddress(X11Lib, 'XSetTransientForHint');
   Pointer(XChangePropertyFn) := GetProcedureAddress(X11Lib, 'XChangeProperty');
   Pointer(XGetWindowPropertyFn) := GetProcedureAddress(X11Lib, 'XGetWindowProperty');
   Pointer(XFreeFn) := GetProcedureAddress(X11Lib, 'XFree');
@@ -656,6 +739,86 @@ begin
   ApplyMotifNoDecorations(AForm.Handle);
   if Assigned(GtkWindowResize) and (AForm.Width > 0) and (AForm.Height > 0) then
     GtkWindowResize(Widget, AForm.Width, AForm.Height);
+  if AForm.PopupParent <> nil then
+    BindWindowToOwner(AForm, AForm.PopupParent);
+end;
+
+procedure BindWindowToOwner(AForm, AOwner: TCustomForm);
+var
+  childW, ownerW: Pointer;
+  dpy: PDisplay;
+  childX, ownerX: TXID;
+begin
+  if (AForm = nil) or (AOwner = nil) or (AForm = AOwner) then Exit;
+  if not AForm.HandleAllocated or not AOwner.HandleAllocated then Exit;
+  if not EnsureGdk then Exit;
+  childW := GtkWidgetFromLCLHandle(AForm.Handle);
+  ownerW := GtkWidgetFromLCLHandle(AOwner.Handle);
+  if (childW <> nil) and (ownerW <> nil) then
+  begin
+    if Assigned(GtkWindowSetTransientFor) then
+      GtkWindowSetTransientFor(childW, ownerW);
+    if Assigned(GtkWindowSetSkipTaskbarHint) then
+      GtkWindowSetSkipTaskbarHint(childW, 1);
+  end;
+  if QueryPlatformWindowBackend = pwbX11 then
+  begin
+    childX := XidFromHandle(AForm.Handle, dpy);
+    ownerX := XidFromHandle(AOwner.Handle, dpy);
+    if (childX <> 0) and (ownerX <> 0) and Assigned(XSetTransientForHintFn) then
+    begin
+      XSetTransientForHintFn(dpy, childX, ownerX);
+      if Assigned(XFlushFn) then
+        XFlushFn(dpy);
+    end;
+  end;
+end;
+
+procedure PrepareAuxOwnedWindow(AForm, AOwner: TCustomForm);
+begin
+  if (AForm = nil) or (AOwner = nil) or (AForm = AOwner) then Exit;
+  AForm.ShowInTaskBar := stNever;
+  AForm.PopupMode := pmExplicit;
+  AForm.PopupParent := AOwner;
+  if AForm.HandleAllocated then
+    BindWindowToOwner(AForm, AOwner);
+end;
+
+procedure RaiseWindowKeepFocus(AForm: TCustomForm);
+var
+  gw: TGdkWindow;
+begin
+  if (AForm = nil) or not AForm.Visible then Exit;
+  if not AForm.HandleAllocated then Exit;
+  if AForm.WindowState = wsMinimized then
+    AForm.WindowState := wsNormal;
+  if not EnsureGdk then Exit;
+  gw := GdkWindowFromLCLHandle(AForm.Handle);
+  if (gw <> nil) and Assigned(GdkWindowRaiseFn) then
+    GdkWindowRaiseFn(gw);
+end;
+
+procedure RaiseOwnedGroup(AOwner, AKeepFocus: TCustomForm);
+var
+  i: Integer;
+  f: TCustomForm;
+begin
+  if (AOwner = nil) or RaisingOwnedGroup then Exit;
+  RaisingOwnedGroup := True;
+  try
+    RaiseWindowKeepFocus(AOwner);
+    for i := 0 to Screen.CustomFormCount - 1 do
+    begin
+      f := Screen.CustomForms[i];
+      if (f = nil) or (f = AOwner) then Continue;
+      if f.PopupParent = AOwner then
+        RaiseWindowKeepFocus(f);
+    end;
+    if (AKeepFocus <> nil) and (AKeepFocus <> AOwner) then
+      RaiseWindowKeepFocus(AKeepFocus);
+  finally
+    RaisingOwnedGroup := False;
+  end;
 end;
 
 function PlatformWindowIsDecorated(AHandle: HWND): Boolean;
