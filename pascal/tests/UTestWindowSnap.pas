@@ -6,7 +6,7 @@ unit UTestWindowSnap;
 //
 // MR-4：A 向 B 吸附的相对几何 ≡ B 向 A 吸附（角色互换）。
 // 其余用例覆盖阈值边界、主窗口联动、子窗口独立拖动、
-// 松手吸附、隐藏窗口、就地重建不移动、缩放吸附。
+// 拖动中磁吸、按轴脱离、沿边滑动、松手吸附、隐藏窗口、就地重建、缩放。
 
 interface
 
@@ -31,6 +31,12 @@ type
     procedure TestMainDragSkipsUnconnected;
     procedure TestSubDragDoesNotMoveOthers;
     procedure TestSubDragAwayDetaches;
+    procedure TestSubDragNearSnapsDuringMove;
+    procedure TestMainDragSnapsToStaticDuringMove;
+    procedure TestLiveAttachDisabledWaitsUntilFinish;
+    procedure TestLiveSnapHoldsUntilReleaseThreshold;
+    procedure TestConnectedSubBreakawayUsesReleaseThreshold;
+    procedure TestSlideAlongEdgeKeepsDock;
     procedure TestSubDragNearSnapsOnFinish;
     procedure TestHiddenWindowIgnored;
     procedure TestRemoveSubWindowThenRebuild;
@@ -332,6 +338,173 @@ begin
     AssertFalse('拖远后应断开', mgr.ConnectedToMain(eq));
     AssertEquals(600, eq.GetBounds.X);
     AssertEquals(500, eq.GetBounds.Y);
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestSubDragNearSnapsDuringMove;
+var
+  mgr: TWindowSnapManager;
+  main, eq: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     400, 400, 275, 80);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.RebuildSnapGraph;
+    AssertFalse(mgr.ConnectedToMain(eq));
+
+    mgr.OnDragStarted(eq);
+    eq.MoveTo(100, 220); // 间隙 4
+    mgr.OnSubMoved(eq, -300, -180);
+    AssertEquals('拖动中就应吸到 player 下沿', 216, eq.GetBounds.Y);
+    mgr.OnDragFinished(eq);
+    AssertTrue(mgr.ConnectedToMain(eq));
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestMainDragSnapsToStaticDuringMove;
+var
+  mgr: TWindowSnapManager;
+  main, lyric: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main  := MakeWin('player', 100, 100, 275, 116);
+    lyric := MakeWin('lyric',  100, 400, 268, 60);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(lyric);
+    mgr.RebuildSnapGraph;
+    AssertFalse(mgr.ConnectedToMain(lyric));
+
+    mgr.OnDragStarted(main);
+    main.MoveTo(100, 276); // 与 lyric 间隙 8
+    mgr.OnMainMoved(0, 176);
+    AssertEquals('主窗拖动中应贴到静止 lyric 上沿', 284, main.GetBounds.Y);
+    AssertEquals('静止 lyric 不应被带走', 400, lyric.GetBounds.Y);
+    mgr.OnDragFinished(main);
+    AssertTrue(mgr.ConnectedToMain(lyric));
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestLiveAttachDisabledWaitsUntilFinish;
+var
+  mgr: TWindowSnapManager;
+  main, eq: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    mgr.LiveAttachOnMainDragEnabled := False;
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     400, 400, 275, 80);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.RebuildSnapGraph;
+
+    mgr.OnDragStarted(eq);
+    eq.MoveTo(100, 220);
+    mgr.OnSubMoved(eq, -300, -180);
+    AssertEquals('关闭实时磁吸时拖动中不吸', 220, eq.GetBounds.Y);
+    mgr.OnDragFinished(eq);
+    AssertEquals('松手才吸', 216, eq.GetBounds.Y);
+    AssertTrue(mgr.ConnectedToMain(eq));
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestLiveSnapHoldsUntilReleaseThreshold;
+var
+  mgr: TWindowSnapManager;
+  main, eq: ISnapWindow;
+  releasePx: Integer;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     400, 400, 275, 80);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.RebuildSnapGraph;
+    releasePx := mgr.SnapReleaseThreshold;
+    AssertEquals('默认脱离阈值是吸入的 2 倍', 20, releasePx);
+
+    mgr.OnDragStarted(eq);
+    eq.MoveTo(100, 220);
+    mgr.OnSubMoved(eq, -300, -180);
+    AssertEquals('吸入后贴边', 216, eq.GetBounds.Y);
+
+    eq.MoveTo(100, 216 + 12);
+    mgr.OnSubMoved(eq, 0, 12);
+    AssertEquals('小于脱离阈值应仍吸住', 216, eq.GetBounds.Y);
+
+    eq.MoveTo(100, 216 + releasePx + 1);
+    mgr.OnSubMoved(eq, 0, releasePx + 1);
+    AssertEquals('超过脱离阈值应跟着光标走', 216 + releasePx + 1, eq.GetBounds.Y);
+    mgr.OnDragFinished(eq);
+    AssertFalse('拉开后松手应断开', mgr.ConnectedToMain(eq));
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestConnectedSubBreakawayUsesReleaseThreshold;
+var
+  mgr: TWindowSnapManager;
+  main, eq: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     100, 216, 275, 80);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.RebuildSnapGraph;
+    AssertTrue(mgr.ConnectedToMain(eq));
+
+    mgr.OnDragStarted(eq);
+    eq.MoveTo(100, 228);
+    mgr.OnSubMoved(eq, 0, 12);
+    AssertEquals('已吸附子窗小幅拖动仍粘住', 216, eq.GetBounds.Y);
+
+    eq.MoveTo(100, 250);
+    mgr.OnSubMoved(eq, 0, 22);
+    AssertEquals('拉开后跟着走', 250, eq.GetBounds.Y);
+    mgr.OnDragFinished(eq);
+    AssertFalse(mgr.ConnectedToMain(eq));
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestSlideAlongEdgeKeepsDock;
+var
+  mgr: TWindowSnapManager;
+  main, eq: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     100, 216, 275, 80);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.RebuildSnapGraph;
+    AssertTrue(mgr.ConnectedToMain(eq));
+
+    mgr.OnDragStarted(eq);
+    eq.MoveTo(180, 216);
+    mgr.OnSubMoved(eq, 80, 0);
+    AssertEquals('沿贴边滑动应保持 Y 吸住', 216, eq.GetBounds.Y);
+    AssertEquals('X 超过脱离阈值后跟着走', 180, eq.GetBounds.X);
+    mgr.OnDragFinished(eq);
+    AssertTrue('松手时 Y 仍贴着，应保持连接', mgr.ConnectedToMain(eq));
   finally
     mgr.Free;
   end;

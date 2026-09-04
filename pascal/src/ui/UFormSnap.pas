@@ -9,8 +9,10 @@ unit UFormSnap;
 //                      同一原点；不要把 CSD 尺寸比当成 DPI）。
 //   TSnapFormAdapter — Windows：子类化原生 WndProc 收 WM_ENTER/EXITSIZEMOVE
 //                      GTK3/X11：TryBeginCaptionDrag 模拟 HTCAPTION 拖动
-//                      （gdk_seat_grab 指针抓取 + gtk_window_move），
-//                      松手走 OnDragFinished（与 Windows 吸附同一套）
+//                      （gdk_seat_grab 指针抓取 + gtk_window_move）。
+//                      拖动中按「起点 + 光标位移」写入逻辑位置（Win32 覆盖
+//                      HTCAPTION，避免吸住后拖动原点被重定、窗口拉不开），
+//                      再 OnMainMoved/OnSubMoved；松手 OnDragFinished 重建图。
 // Linux 只支持 X11（见 UGdkX11Backend）。探测：tools/test-gtk3-wayland.sh。
 
 interface
@@ -52,6 +54,8 @@ type
     FHookedWnd: HWND;
     FOrigWndProc: PtrUInt;
     FCaptionDragging: Boolean;
+    FDragTracking: Boolean;
+    FApplyingDrag: Boolean;
     FGrabOffX, FGrabOffY: Integer;
     FDragOriginX, FDragOriginY: Integer;
     FLastViewScale: Double;
@@ -66,6 +70,7 @@ type
     procedure InstallNativeHook;
     procedure RemoveNativeHook;
     procedure ReadPointerRoot(out X, Y: Integer);
+    procedure ApplyPointerLogicalPos;
   public
     constructor Create(AForm: TForm; AManager: TWindowSnapManager;
       AWin: ISnapWindow; AIsMain: Boolean); reintroduce;
@@ -230,6 +235,8 @@ begin
   FLastX := AForm.Left;
   FLastY := AForm.Top;
   FCaptionDragging := False;
+  FDragTracking := False;
+  FApplyingDrag := False;
   FGrabOffX := 0;
   FGrabOffY := 0;
   FDragOriginX := 0;
@@ -317,6 +324,10 @@ begin
   b := FWin.GetBounds;
   FLastX := b.X;
   FLastY := b.Y;
+  FDragOriginX := b.X;
+  FDragOriginY := b.Y;
+  ReadPointerRoot(FGrabOffX, FGrabOffY);
+  FDragTracking := True;
   UpdateScreenRect;
   FManager.OnDragStarted(FWin);
 end;
@@ -326,7 +337,28 @@ var
   b: TSnapRect;
 begin
   if (FManager = nil) or (FWin = nil) then Exit;
+  FDragTracking := False;
   FManager.OnDragFinished(FWin);
+  b := FWin.GetBounds;
+  FLastX := b.X;
+  FLastY := b.Y;
+end;
+
+procedure TSnapFormAdapter.ApplyPointerLogicalPos;
+var
+  curX, curY, lx, ly: Integer;
+  b: TSnapRect;
+begin
+  if (not FDragTracking) or FApplyingDrag or (FWin = nil) or (FManager = nil) then Exit;
+  ReadPointerRoot(curX, curY);
+  lx := FDragOriginX + curX - FGrabOffX;
+  ly := FDragOriginY + curY - FGrabOffY;
+  FApplyingDrag := True;
+  try
+    FManager.OnDragLogicalMove(lx, ly);
+  finally
+    FApplyingDrag := False;
+  end;
   b := FWin.GetBounds;
   FLastX := b.X;
   FLastY := b.Y;
@@ -423,11 +455,6 @@ begin
   Exit;
   {$ENDIF}
   if FCaptionDragging or (FForm = nil) or (FWin = nil) then Exit;
-  // 起点用 LCL Left + 指针根坐标的累计位移。不要 CursorPos-Left：
-  // WSLg 上 GDK origin 与 LCL Left 不是同一原点，相减会瞬移。
-  ReadPointerRoot(FGrabOffX, FGrabOffY);
-  FDragOriginX := FForm.Left;
-  FDragOriginY := FForm.Top;
   FCaptionDragging := True;
   if FForm.HandleAllocated then
     PlatformGrabPointer(FForm.Handle);
@@ -471,12 +498,18 @@ procedure TSnapFormAdapter.WndProc(var Msg: TLMessage);
 var
   dx, dy: Integer;
   b: TSnapRect;
-  cur: TPoint;
 begin
   if Assigned(FForm) and (csDestroying in FForm.ComponentState) then
   begin
     if Assigned(FOldProc) then
       FOldProc(Msg);
+    Exit;
+  end;
+
+  // MoveTo 触发的嵌套 WM_MOVE：只让 LCL 更新 Left/Top，不要再按光标推一次。
+  if FApplyingDrag then
+  begin
+    FOldProc(Msg);
     Exit;
   end;
 
@@ -494,13 +527,7 @@ begin
   if FCaptionDragging then
   begin
     if Msg.Msg = LM_MOUSEMOVE then
-    begin
-      ReadPointerRoot(cur.X, cur.Y);
-      dx := cur.X - FGrabOffX;
-      dy := cur.Y - FGrabOffY;
-      if (dx <> 0) or (dy <> 0) then
-        FWin.MoveTo(FDragOriginX + dx, FDragOriginY + dy);
-    end
+      ApplyPointerLogicalPos
     else if (Msg.Msg = LM_CAPTURECHANGED) and (GetCapture <> FForm.Handle) and
             ((GetKeyState(VK_LBUTTON) and $8000) = 0) then
       // GTK3 GetCapture 常指向 container 而非 TForm.Handle；左键仍按下时
@@ -510,17 +537,22 @@ begin
 
   if Msg.Msg = LM_MOVE then
   begin
-    b := FWin.GetBounds;
-    dx := b.X - FLastX;
-    dy := b.Y - FLastY;
-    if (dx <> 0) or (dy <> 0) then
+    if FDragTracking then
+      ApplyPointerLogicalPos
+    else
     begin
-      FLastX := b.X;
-      FLastY := b.Y;
-      if FIsMain then
-        FManager.OnMainMoved(dx, dy)
-      else
-        FManager.OnSubMoved(FWin, dx, dy);
+      b := FWin.GetBounds;
+      dx := b.X - FLastX;
+      dy := b.Y - FLastY;
+      if (dx <> 0) or (dy <> 0) then
+      begin
+        FLastX := b.X;
+        FLastY := b.Y;
+        if FIsMain then
+          FManager.OnMainMoved(dx, dy)
+        else
+          FManager.OnSubMoved(FWin, dx, dy);
+      end;
     end;
     SyncViewScale(False);
   end

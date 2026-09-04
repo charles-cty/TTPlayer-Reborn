@@ -4,10 +4,15 @@ unit UWindowSnapManager;
 
 // 窗口吸附管理器，对应 Qt 版 src/ui/WindowSnapManager。
 //
-// 工作原理（与原版一致）：
+// 工作原理（对齐原版 TTPlayer：拖动过程中磁吸，而不是松手才吸）：
 //   - 子窗口可吸附到主窗口，或吸附到已连接主窗口的子窗口。
 //   - 主窗口移动时，仅移动“直接或间接连接到主窗口”的吸附窗口。
 //   - 子窗口手动拖动只影响自身位置与后续吸附关系，不带动其他窗口。
+//   - 拖动中磁吸按「光标推出的逻辑位置」判定，而不是已经吸住的窗口
+//     矩形。否则 Win32 HTCAPTION 会把拖动原点重定到窗口上，永远拉不开。
+//   - X/Y 独立吸住：沿贴边滑动不会把另一轴一起松开。某轴要垂直拉开
+//     SnapReleaseThreshold（2× 吸入）才脱离。LiveAttachOnMainDragEnabled=False
+//     时只联动、松手再吸。
 //   - 任务栏激活/Z 序成组不在本单元：宿主把辅助窗口绑成主窗口的
 //     owned/transient 子窗口（见 PrepareAuxOwnedWindow），与是否吸附无关。
 //
@@ -76,8 +81,12 @@ type
     property  LiveAttachOnMainDragEnabled: Boolean
       read GetLiveAttachOnMainDragEnabled write SetLiveAttachOnMainDragEnabled;
 
+    function  GetSnapReleaseThreshold: Integer;
+    property  SnapReleaseThreshold: Integer read GetSnapReleaseThreshold;
+
     procedure OnMainMoved(DX, DY: Integer);
     procedure OnSubMoved(ASub: ISnapWindow; DX, DY: Integer);
+    procedure OnDragLogicalMove(AX, AY: Integer);
     procedure OnSubResized(ASub: ISnapWindow; Edges: TSnapEdges);
     procedure OnSubResizeFinished(ASub: ISnapWindow; Edges: TSnapEdges);
     procedure OnDragStarted(ALeader: ISnapWindow);
@@ -111,9 +120,13 @@ type
       FDragLeaderStart: TSnapPoint;
       FMoveGroup: array of Integer;
       FMoveGroupStart: array of TSnapPoint;
+      FHeldX, FHeldY: Boolean;
+      FHeldLeaderPos: TSnapPoint;
 
     function  DragActive: Boolean;
     procedure ClearDrag;
+    procedure ApplyDragLogical(AX, AY: Integer);
+    procedure MoveLeaderTo(AX, AY: Integer);
     function  IsSnappedIndex(SubIndex: Integer): Boolean;
     function  IsConnectedToMain(SubIndex: Integer): Boolean;
     function  WouldCreateCycle(MovingIndex, AnchorIndex: Integer): Boolean;
@@ -332,6 +345,68 @@ begin
   FDragLeaderStart := SnapPointXY(0, 0);
   SetLength(FMoveGroup, 0);
   SetLength(FMoveGroupStart, 0);
+  FHeldX := False;
+  FHeldY := False;
+  FHeldLeaderPos := SnapPointXY(0, 0);
+end;
+
+function TWindowSnapManager.GetSnapReleaseThreshold: Integer;
+begin
+  Result := FSnapThreshold * 1;
+end;
+
+procedure TWindowSnapManager.MoveLeaderTo(AX, AY: Integer);
+begin
+  if FDragLeader = nil then Exit;
+  FSyncing := True;
+  try
+    FDragLeader.MoveTo(AX, AY);
+  finally
+    FSyncing := False;
+  end;
+end;
+
+procedure TWindowSnapManager.ApplyDragLogical(AX, AY: Integer);
+var
+  outX, outY, rel: Integer;
+begin
+  if (not DragActive) or (FDragLeader = nil) then Exit;
+  rel := GetSnapReleaseThreshold;
+
+  outX := AX;
+  outY := AY;
+  if FHeldX then
+  begin
+    if Abs(AX - FHeldLeaderPos.X) > rel then
+      FHeldX := False
+    else
+      outX := FHeldLeaderPos.X;
+  end;
+  if FHeldY then
+  begin
+    if Abs(AY - FHeldLeaderPos.Y) > rel then
+      FHeldY := False
+    else
+      outY := FHeldLeaderPos.Y;
+  end;
+
+  MoveLeaderTo(outX, outY);
+  if FDragLeader = FMain then
+    MoveDragGroup(SnapPointXY(outX - FDragLeaderStart.X, outY - FDragLeaderStart.Y));
+
+  if not FLiveAttachOnMainDragEnabled then Exit;
+  if FHeldX and FHeldY then Exit;
+
+  if FDragLeader = FMain then
+    FinalSnapGroupToStaticWindows
+  else
+    FinalSnapDraggedSub;
+end;
+
+procedure TWindowSnapManager.OnDragLogicalMove(AX, AY: Integer);
+begin
+  if FSyncing or (FMain = nil) then Exit;
+  ApplyDragLogical(AX, AY);
 end;
 
 function TWindowSnapManager.IsSnappedIndex(SubIndex: Integer): Boolean;
@@ -587,7 +662,10 @@ begin
   else
   begin
     curPos := SnapPointXY(entryWin.GetBounds.X, entryWin.GetBounds.Y);
-    if Manhattan(bestPos.X, bestPos.Y, curPos.X, curPos.Y) > 2 then
+    // 就地重建：已经贴上的那一轴即可建边。不要因为另一轴没对齐
+    // （沿边滑开）就把连通关系拆掉。
+    if not (((hasXSnap and (Abs(bestNewX - curPos.X) <= 2)) or
+             (hasYSnap and (Abs(bestNewY - curPos.Y) <= 2)))) then
       Exit(False);
   end;
 
@@ -611,7 +689,6 @@ end;
 
 procedure TWindowSnapManager.OnMainMoved(DX, DY: Integer);
 var
-  totalDelta: TSnapPoint;
   mb: TSnapRect;
 begin
   if FSyncing or (FMain = nil) then Exit;
@@ -620,10 +697,7 @@ begin
   if DragActive and (FDragLeader = FMain) then
   begin
     mb := FMain.GetBounds;
-    totalDelta := SnapPointXY(mb.X - FDragLeaderStart.X, mb.Y - FDragLeaderStart.Y);
-    MoveDragGroup(totalDelta);
-    // 拖动过程中不把主窗口磁吸到静止窗口：HTCAPTION / 系统拖动会覆盖
-    // 主窗口位置（Qt 版同样被下一帧 mouseMove 覆盖）。松手时再吸附。
+    ApplyDragLogical(mb.X, mb.Y);
     Exit;
   end;
 
@@ -634,9 +708,11 @@ procedure TWindowSnapManager.OnSubMoved(ASub: ISnapWindow; DX, DY: Integer);
 begin
   if FSyncing or (FMain = nil) or (ASub = nil) then Exit;
   if (DX = 0) and (DY = 0) then Exit;
-  // 子窗口拖动中不实时磁吸（与主窗口同一原因）；松手时 finalSnapDraggedSub。
   if DragActive and (FDragLeader = ASub) then
+  begin
+    ApplyDragLogical(ASub.GetBounds.X, ASub.GetBounds.Y);
     Exit;
+  end;
 end;
 
 procedure TWindowSnapManager.OnDragStarted(ALeader: ISnapWindow);
@@ -688,6 +764,12 @@ begin
   end;
   b := ALeader.GetBounds;
   FDragLeaderStart := SnapPointXY(b.X, b.Y);
+  if IsConnectedToMain(FDragLeaderIndex) then
+  begin
+    FHeldX := True;
+    FHeldY := True;
+    FHeldLeaderPos := FDragLeaderStart;
+  end;
 end;
 
 procedure TWindowSnapManager.FinishDragSession(ALeader: ISnapWindow);
@@ -832,9 +914,13 @@ begin
     AccumulateScreenAxes(FSubs[FMoveGroup[g]].Win.GetBounds);
   end;
 
+  if FHeldX then hasXShift := False;
+  if FHeldY then hasYShift := False;
   if hasXShift then bestGroupShift.X := bestXShift else bestGroupShift.X := 0;
   if hasYShift then bestGroupShift.Y := bestYShift else bestGroupShift.Y := 0;
-  if SnapPointIsZero(bestGroupShift) then Exit;
+  if (not hasXShift) and (not hasYShift) then Exit;
+  if hasXShift then FHeldX := True;
+  if hasYShift then FHeldY := True;
 
   FSyncing := True;
   try
@@ -852,6 +938,9 @@ begin
     FSyncing := False;
   end;
   Result := bestGroupShift;
+  b := FMain.GetBounds;
+  if FHeldX then FHeldLeaderPos.X := b.X;
+  if FHeldY then FHeldLeaderPos.Y := b.Y;
 end;
 
 function TWindowSnapManager.FinalSnapDraggedSub: TSnapPoint;
@@ -926,10 +1015,14 @@ begin
     hasYSnap := True;
   end;
 
+  if FHeldX then hasXSnap := False;
+  if FHeldY then hasYSnap := False;
   if (not hasXSnap) and (not hasYSnap) then Exit;
 
   oldPos := SnapPointXY(entryWin.GetBounds.X, entryWin.GetBounds.Y);
   bestPos := CombineAxisSnap(movingRect, hasXSnap, bestNewX, hasYSnap, bestNewY);
+  if FHeldX then bestPos.X := FHeldLeaderPos.X;
+  if FHeldY then bestPos.Y := FHeldLeaderPos.Y;
 
   FSyncing := True;
   try
@@ -938,6 +1031,16 @@ begin
     FSyncing := False;
   end;
   Result := SnapPointXY(bestPos.X - oldPos.X, bestPos.Y - oldPos.Y);
+  if hasXSnap then
+  begin
+    FHeldX := True;
+    FHeldLeaderPos.X := bestPos.X;
+  end;
+  if hasYSnap then
+  begin
+    FHeldY := True;
+    FHeldLeaderPos.Y := bestPos.Y;
+  end;
 end;
 
 procedure TWindowSnapManager.OnSubResized(ASub: ISnapWindow; Edges: TSnapEdges);
