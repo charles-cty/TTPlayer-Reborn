@@ -520,9 +520,9 @@ begin
   AssertTrue('歌词 Paint 按客户区重绘',
     Pos('SkinFrameNeedsRebuild(FFrame, ClientWidth, ClientHeight)', lyricSrc) > 0);
   AssertTrue('放大先画再撑 HWND',
-    Pos('先画进 FFrame，再撑 HWND', playlistSrc) > 0);
+    Pos('先画 FFrame、按新帧 BuildRegion，再撑 HWND', playlistSrc) > 0);
   AssertTrue('歌词放大先画再撑 HWND',
-    Pos('先画进 FFrame，再撑 HWND', lyricSrc) > 0);
+    Pos('先画 FFrame、按新帧 BuildRegion，再撑 HWND', lyricSrc) > 0);
 end;
 
 procedure TLiveResizeTest.TestEnsureSkinFrameReusesInstance;
@@ -786,6 +786,10 @@ begin
     Pos('FFrame.Draw(Canvas, 0, 0, True)', playlistSrc) = 0);
   AssertTrue('歌词放大不把旧帧贴在 0,0 留出底色',
     Pos('FFrame.Draw(Canvas, 0, 0, True)', lyricSrc) = 0);
+  AssertTrue('播放列表 live Region 用新帧圆角，不拉伸旧 HRGN',
+    Pos('MapLiveShapeRects', playlistSrc) = 0);
+  AssertTrue('歌词 live Region 用新帧圆角，不拉伸旧 HRGN',
+    Pos('MapLiveShapeRects', lyricSrc) = 0);
 end;
 
 type

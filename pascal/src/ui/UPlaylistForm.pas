@@ -469,20 +469,6 @@ var
   s: Double;
   fw, fh: Integer;
   growing, moved: Boolean;
-
-  procedure ApplyMappedShape;
-  begin
-    if not D.ApplyScaledShape then Exit;
-    if (not HandleAllocated) or (Length(FShapeRects) = 0) then Exit;
-    if (FShapeW < 1) or (FShapeH < 1) then Exit;
-    if (fw = FLastRgnW) and (fh = FLastRgnH) then Exit;
-    ApplyShapeRects(Handle,
-      MergeShapeRects(MapLiveShapeRects(FShapeRects, FShapeW, FShapeH, fw, fh)),
-      fw, fh, False);
-    FLastRgnW := fw;
-    FLastRgnH := fh;
-  end;
-
 begin
   if D.Kind = lrkIdle then Exit;
   // 合帧：逻辑尺寸在 session 里，HWND 未到点则不动，避免把新布局画进旧客户区。
@@ -501,30 +487,44 @@ begin
   ClampDividerPos;
   ClampScroll;
 
-  // 放大：先画进 FFrame，再撑 HWND，避免新边露出窗体底色。
-  if D.RebuildNinePatch or (D.ApplyWindowSize and growing) then
+  // 圆角来自九宫格，不能把旧 HRGN 均匀拉伸（半径会跟着变）。
+  // 放大：先画 FFrame、按新帧 BuildRegion，再撑 HWND。
+  // 缩小：先裁 HWND，再画再 BuildRegion。
+  if growing then
   begin
     RenderFrame;
     FLastPaintChromeUs := LiveNowUs;
-  end;
-
-  if D.ApplyWindowSize then
-  begin
-    if growing then
-      ApplyMappedShape;
-    FDeferLiveChrome := True;
-    try
-      if moved then
-        SetBounds(Left, Top, fw, fh);
-    finally
-      FDeferLiveChrome := False;
+    if D.ApplyWindowSize and HandleAllocated then
+      BuildRegion;
+    if D.ApplyWindowSize then
+    begin
+      FDeferLiveChrome := True;
+      try
+        if moved then
+          SetBounds(Left, Top, fw, fh);
+      finally
+        FDeferLiveChrome := False;
+      end;
     end;
-    if not growing then
-      ApplyMappedShape;
+  end
+  else
+  begin
+    if D.ApplyWindowSize then
+    begin
+      FDeferLiveChrome := True;
+      try
+        if moved then
+          SetBounds(Left, Top, fw, fh);
+      finally
+        FDeferLiveChrome := False;
+      end;
+    end;
+    RenderFrame;
+    FLastPaintChromeUs := LiveNowUs;
+    if HandleAllocated then
+      BuildRegion;
   end;
 
-  if D.RebuildNinePatch and D.ApplyAlphaShape and HandleAllocated then
-    BuildRegion;
   Invalidate;
   if HandleAllocated then
     Update;
