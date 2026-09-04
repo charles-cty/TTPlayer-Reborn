@@ -3,7 +3,8 @@ unit ULiveResizeSession;
 {$mode objfpc}{$H+}
 
 // 播放列表/歌词窗口的 live 缩放会话：指针每拍都改逻辑尺寸（真·resize）。
-// 画面由 Paint 按当前尺寸九宫格重绘，禁止把旧帧整图拉伸（那是放大镜）。
+// HWND/Region 最多按 coalesce 间隔改一次，避免每条鼠标消息都 SetWindowPos。
+// 画面由 Paint 按当前 HWND 九宫格重绘，禁止把旧帧整图拉伸（那是放大镜）。
 // live 只映射上一帧的 alpha run 以保持圆角；不用矩形 Region。
 // 吸附只在松手。不依赖 LCL，FPCUnit 可直接驱动。
 
@@ -32,6 +33,7 @@ type
     ApplyScaledShape: Boolean;
     ApplyRectRegion: Boolean;
     ApplyResizeSnap: Boolean;
+    ApplyWindowSize: Boolean;
   end;
 
   TLiveResizeSession = class
@@ -45,10 +47,12 @@ type
     FCommitCount: Integer;
     FLastChromeUs: Int64;
     FLastChromeW, FLastChromeH: Integer;
+    FLastBoundsUs: Int64;
+    FLastBoundsW, FLastBoundsH: Integer;
     FDirty: Boolean;
     FCoalesceUs: Int64;
     FPendingSizeChanged: Boolean;
-    function Decide(NowUs: Int64; SizeChanged: Boolean): TLiveResizeDecision;
+    function Decide(NowUs: Int64; SizeChanged, FlushHwnd: Boolean): TLiveResizeDecision;
   public
     constructor Create;
     procedure BeginGesture(StartW, StartH: Integer);
@@ -106,6 +110,7 @@ begin
   Result.ApplyScaledShape := False;
   Result.ApplyRectRegion := False;
   Result.ApplyResizeSnap := False;
+  Result.ApplyWindowSize := False;
 end;
 
 constructor TLiveResizeSession.Create;
@@ -129,14 +134,17 @@ begin
   FLastChromeUs := 0;
   FLastChromeW := StartW;
   FLastChromeH := StartH;
+  FLastBoundsUs := 0;
+  FLastBoundsW := StartW;
+  FLastBoundsH := StartH;
   FDirty := True;
   FPendingSizeChanged := True;
 end;
 
 function TLiveResizeSession.Decide(NowUs: Int64;
-  SizeChanged: Boolean): TLiveResizeDecision;
+  SizeChanged, FlushHwnd: Boolean): TLiveResizeDecision;
 var
-  due, grew: Boolean;
+  chromeDue, boundsDue, grew, pendingHwnd, applyHwnd: Boolean;
 begin
   Result := EmptyLiveResizeDecision;
   Result.LogicW := FLogicW;
@@ -145,14 +153,61 @@ begin
   if not FActive then Exit;
   if not FDirty then Exit;
 
+  pendingHwnd := (FLogicW <> FLastBoundsW) or (FLogicH <> FLastBoundsH);
+  boundsDue := (FLastBoundsUs = 0) or (NowUs - FLastBoundsUs >= FCoalesceUs);
   grew := (FLogicW > FLastChromeW) or (FLogicH > FLastChromeH);
-  due := (FLastChromeUs = 0) or (NowUs - FLastChromeUs >= FCoalesceUs);
-  // Sample 只跟手改 HWND/Region。九宫格在 Paint 里按 coalesce 节流，
-  // 避免 SetBounds 同步重绘把鼠标消息堵住。
-  if due and (not SizeChanged) and (not grew) then
+  chromeDue := (FLastChromeUs = 0) or (NowUs - FLastChromeUs >= FCoalesceUs);
+  // Sample 合帧 HWND；Tick 把挂起的尺寸刷上去。九宫格仍由 Paint 节流。
+  applyHwnd := pendingHwnd and (boundsDue or FlushHwnd);
+
+  if applyHwnd then
+  begin
+    Result.ApplyWindowSize := True;
+    Result.ApplyScaledShape := True;
+    Result.ApplyRectRegion := False;
+    Result.ApplyResizeSnap := False;
+    FLastBoundsUs := NowUs;
+    FLastBoundsW := FLogicW;
+    FLastBoundsH := FLogicH;
+    FPendingSizeChanged := False;
+    if (not grew) and chromeDue and (not SizeChanged) then
+    begin
+      Result.Kind := lrkChromeCoalesce;
+      Result.RebuildNinePatch := True;
+      Result.ApplyAlphaShape := True;
+      Result.ApplyScaledShape := False;
+      Inc(FChromeRebuildCount);
+      FLastChromeUs := NowUs;
+      FLastChromeW := FLogicW;
+      FLastChromeH := FLogicH;
+      FDirty := False;
+    end
+    else
+    begin
+      Result.Kind := lrkLiveFill;
+      Result.RebuildNinePatch := False;
+      Result.ApplyAlphaShape := False;
+      Inc(FLiveFillCount);
+      FDirty := False;
+    end;
+  end
+  else if pendingHwnd then
+  begin
+    Result.Kind := lrkLiveFill;
+    Result.RebuildNinePatch := False;
+    Result.ApplyWindowSize := False;
+    Result.ApplyScaledShape := False;
+    Result.ApplyAlphaShape := False;
+    Result.ApplyRectRegion := False;
+    Result.ApplyResizeSnap := False;
+    Inc(FLiveFillCount);
+    FDirty := True;
+  end
+  else if chromeDue and (not grew) then
   begin
     Result.Kind := lrkChromeCoalesce;
     Result.RebuildNinePatch := True;
+    Result.ApplyWindowSize := False;
     Result.ApplyRectRegion := False;
     Result.ApplyScaledShape := False;
     Result.ApplyAlphaShape := True;
@@ -165,17 +220,7 @@ begin
     FPendingSizeChanged := False;
   end
   else
-  begin
-    Result.Kind := lrkLiveFill;
-    Result.RebuildNinePatch := False;
-    Result.ApplyRectRegion := False;
-    Result.ApplyScaledShape := SizeChanged or FPendingSizeChanged or grew;
-    Result.ApplyAlphaShape := False;
-    Result.ApplyResizeSnap := False;
-    Inc(FLiveFillCount);
-    FPendingSizeChanged := False;
-    FDirty := grew or SizeChanged;
-  end;
+    FDirty := False;
 end;
 
 function TLiveResizeSession.Sample(NewW, NewH: Integer;
@@ -194,12 +239,12 @@ begin
     FDirty := True;
     FPendingSizeChanged := True;
   end;
-  Result := Decide(NowUs, sizeChanged);
+  Result := Decide(NowUs, sizeChanged, False);
 end;
 
 function TLiveResizeSession.Tick(NowUs: Int64): TLiveResizeDecision;
 begin
-  Result := Decide(NowUs, False);
+  Result := Decide(NowUs, False, True);
 end;
 
 function TLiveResizeSession.Commit(NowUs: Int64): TLiveResizeDecision;
@@ -215,11 +260,15 @@ begin
   Result.ApplyScaledShape := False;
   Result.ApplyRectRegion := False;
   Result.ApplyResizeSnap := True;
+  Result.ApplyWindowSize := True;
   Inc(FChromeRebuildCount);
   Inc(FCommitCount);
   FLastChromeUs := NowUs;
   FLastChromeW := FLogicW;
   FLastChromeH := FLogicH;
+  FLastBoundsUs := NowUs;
+  FLastBoundsW := FLogicW;
+  FLastBoundsH := FLogicH;
   FDirty := False;
   FPendingSizeChanged := False;
 end;

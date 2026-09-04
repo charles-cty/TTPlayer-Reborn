@@ -476,6 +476,8 @@ var
 
 begin
   if D.Kind = lrkIdle then Exit;
+  // 合帧：逻辑尺寸在 session 里，HWND 未到点则不动，避免把新布局画进旧客户区。
+  if (not D.ApplyWindowSize) and (not D.RebuildNinePatch) then Exit;
   s := FormViewScale(Self);
   if s < 0.01 then s := 1.0;
   fw := ScalePx(D.LogicW, s);
@@ -485,23 +487,18 @@ begin
   growing := (fw > Width) or (fh > Height);
   moved := (Width <> fw) or (Height <> fh);
 
-  // 放大：先把 Region 撑到新尺寸，再 SetBounds，避免旧 HRGN 裁掉新边。
-  if growing then
-    ApplyMappedShape;
-
-  FDeferLiveChrome := True;
-  try
-    if moved then
-      SetBounds(Left, Top, fw, fh)
-    else
-    begin
-      FLogicW := Max(1, D.LogicW);
-      FLogicH := Max(1, D.LogicH);
-      ClampDividerPos;
-      ClampScroll;
+  if D.ApplyWindowSize then
+  begin
+    // 放大：先把 Region 撑到新尺寸，再 SetBounds，避免旧 HRGN 裁掉新边。
+    if growing then
+      ApplyMappedShape;
+    FDeferLiveChrome := True;
+    try
+      if moved then
+        SetBounds(Left, Top, fw, fh);
+    finally
+      FDeferLiveChrome := False;
     end;
-  finally
-    FDeferLiveChrome := False;
   end;
   FLogicW := Max(1, D.LogicW);
   FLogicH := Max(1, D.LogicH);
@@ -515,7 +512,7 @@ begin
       BuildRegion;
     Invalidate;
   end
-  else if D.Kind = lrkLiveFill then
+  else if D.ApplyWindowSize then
   begin
     if not growing then
       ApplyMappedShape;
@@ -533,7 +530,7 @@ begin
       FResizeCoalesce.Enabled := False;
     Exit;
   end;
-  Invalidate;
+  ApplyResizeDecision(FResizeSession.Tick(LiveNowUs));
 end;
 
 procedure TPlaylistForm.MapHit(var X, Y: Integer);

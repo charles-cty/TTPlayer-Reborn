@@ -32,6 +32,7 @@ type
     procedure TestEnsureSkinFrameReusesInstance;
     procedure TestNinePatchResizeIsNotMagnify;
     procedure TestLivePaintShouldRebuildChrome;
+    procedure TestHwndCoalescesNotPerSample;
     procedure TestSampleDoesNotRebuildNinePatch;
     procedure TestMergeAfterMapLiveShape;
     procedure TestNinePatchUsesLogicSizeNotDestScale;
@@ -112,7 +113,7 @@ begin
       AssertFalse('不用矩形 Region（会露出黑角）', d.ApplyRectRegion);
       AssertFalse('live 不跑缩放吸附', d.ApplyResizeSnap);
       AssertEquals('放大全程 live fill', Ord(lrkLiveFill), Ord(d.Kind));
-      AssertTrue(d.ApplyScaledShape);
+      AssertEquals('Region 只跟 HWND', d.ApplyWindowSize, d.ApplyScaledShape);
       AssertFalse(d.ApplyAlphaShape);
     end;
     d := session.Commit(nowUs + 1000);
@@ -390,12 +391,14 @@ begin
     session.BeginGesture(80, 60);
     d := session.Sample(96, 72, 2000);
     AssertEquals(Ord(lrkLiveFill), Ord(d.Kind));
+    AssertTrue(d.ApplyWindowSize);
     AssertTrue(d.ApplyScaledShape);
     AssertFalse(d.ApplyRectRegion);
     AssertFalse(d.ApplyAlphaShape);
     d := session.Sample(112, 84, 4000);
     AssertEquals(Ord(lrkLiveFill), Ord(d.Kind));
-    AssertTrue(d.ApplyScaledShape);
+    AssertFalse('16ms 内不改 HWND', d.ApplyWindowSize);
+    AssertFalse(d.ApplyScaledShape);
     AssertFalse(d.ApplyRectRegion);
     AssertFalse(d.ApplyAlphaShape);
     d := session.Commit(20000);
@@ -587,6 +590,37 @@ begin
     LivePaintShouldRebuildChrome(False, False, 1000, 1001, 16000));
 end;
 
+procedure TLiveResizeTest.TestHwndCoalescesNotPerSample;
+var
+  session: TLiveResizeSession;
+  i, hwndCount: Integer;
+  nowUs: Int64;
+  d: TLiveResizeDecision;
+begin
+  session := TLiveResizeSession.Create;
+  try
+    session.CoalesceIntervalUs := 16000;
+    session.BeginGesture(268, 200);
+    hwndCount := 0;
+    for i := 1 to 30 do
+    begin
+      nowUs := Int64(i) * 2000;
+      d := session.Sample(268 + i * 4, 200 + i * 2, nowUs);
+      AssertEquals('逻辑尺寸跟鼠标', 268 + i * 4, d.LogicW);
+      if d.ApplyWindowSize then
+        Inc(hwndCount);
+    end;
+    AssertTrue('首拍立刻改 HWND', hwndCount >= 1);
+    AssertTrue('HWND 次数少于采样', hwndCount < 30);
+    d := session.Tick(nowUs + 16000);
+    AssertTrue('定时器刷挂起的 HWND', d.ApplyWindowSize);
+    d := session.Commit(nowUs + 20000);
+    AssertTrue(d.ApplyWindowSize);
+  finally
+    session.Free;
+  end;
+end;
+
 procedure TLiveResizeTest.TestSampleDoesNotRebuildNinePatch;
 var
   session: TLiveResizeSession;
@@ -713,6 +747,16 @@ begin
     Pos('EnsureSkinFrame(FFrame, fw, fh)', playlistSrc) > 0);
   AssertTrue('歌词复用 FFrame',
     Pos('EnsureSkinFrame(FFrame, fw, fh)', lyricSrc) > 0);
+  AssertTrue('播放列表 HWND 合帧',
+    Pos('FResizeSession.Tick(LiveNowUs)', playlistSrc) > 0);
+  AssertTrue('歌词 HWND 合帧',
+    Pos('FResizeSession.Tick(LiveNowUs)', lyricSrc) > 0);
+  AssertTrue('播放列表跳过未到期的 SetBounds',
+    Pos('if (not D.ApplyWindowSize) and (not D.RebuildNinePatch) then Exit',
+      playlistSrc) > 0);
+  AssertTrue('歌词跳过未到期的 SetBounds',
+    Pos('if (not D.ApplyWindowSize) and (not D.RebuildNinePatch) then Exit',
+      lyricSrc) > 0);
 end;
 
 type

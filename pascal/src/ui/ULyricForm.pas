@@ -414,6 +414,8 @@ var
 
 begin
   if D.Kind = lrkIdle then Exit;
+  // 合帧：逻辑尺寸在 session 里，HWND 未到点则不动，避免把新布局画进旧客户区。
+  if (not D.ApplyWindowSize) and (not D.RebuildNinePatch) then Exit;
   s := FormViewScale(Self);
   if s < 0.01 then s := 1.0;
   fw := ScalePx(D.LogicW, s);
@@ -423,21 +425,18 @@ begin
   growing := (fw > Width) or (fh > Height);
   moved := (Width <> fw) or (Height <> fh);
 
-  // 放大才必须先撑 Region，否则旧 HRGN 裁新边。缩小靠 HWND 裁切。
-  if growing then
-    ApplyMappedShape;
-
-  FDeferLiveChrome := True;
-  try
-    if moved then
-      SetBounds(Left, Top, fw, fh)
-    else
-    begin
-      FLogicW := Max(1, D.LogicW);
-      FLogicH := Max(1, D.LogicH);
+  if D.ApplyWindowSize then
+  begin
+    // 放大才必须先撑 Region，否则旧 HRGN 裁新边。缩小靠 HWND 裁切。
+    if growing then
+      ApplyMappedShape;
+    FDeferLiveChrome := True;
+    try
+      if moved then
+        SetBounds(Left, Top, fw, fh);
+    finally
+      FDeferLiveChrome := False;
     end;
-  finally
-    FDeferLiveChrome := False;
   end;
   FLogicW := Max(1, D.LogicW);
   FLogicH := Max(1, D.LogicH);
@@ -449,7 +448,7 @@ begin
       BuildRegion;
     Invalidate;
   end
-  else if D.Kind = lrkLiveFill then
+  else if D.ApplyWindowSize then
   begin
     if not growing then
       ApplyMappedShape;
@@ -467,7 +466,7 @@ begin
       FResizeCoalesce.Enabled := False;
     Exit;
   end;
-  Invalidate;
+  ApplyResizeDecision(FResizeSession.Tick(LiveNowUs));
 end;
 
 procedure TLyricForm.MapHit(var X, Y: Integer);
