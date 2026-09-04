@@ -6,7 +6,7 @@ unit USkinView;
 // GTK3 在 GDK_SCALE≥2 时 LCL 保持 1× 皮肤尺寸（cairo 已做设备缩放，
 // 再 SetBounds(skin*2) 会变成 4×）。命中测试把客户区坐标映回皮肤像素。
 // 皮肤位图最近邻拉伸；播放列表/歌词 TrueType 在 dest 像素栅格化（Windows
-// ClearType），避免 1× 合成后再 HALFTONE 发糊。
+// 用 GDI ClearType，live/静止同一档），避免 1× 合成后再 HALFTONE 发糊。
 
 interface
 
@@ -160,7 +160,7 @@ begin
     Include(st, fsItalic);
   Bmp.FontStyle := st;
 {$IFDEF WINDOWS}
-  Bmp.FontQuality := fqFineClearTypeRGB;
+  Bmp.FontQuality := fqSystemClearType;
 {$ELSE}
   Bmp.FontAntialias := True;
 {$ENDIF}

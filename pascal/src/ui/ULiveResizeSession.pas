@@ -10,7 +10,7 @@ unit ULiveResizeSession;
 interface
 
 uses
-  Classes, SysUtils, UUiPerf;
+  Classes, SysUtils;
 
 const
   kLiveResizeCoalesceUs = 16000; // ~60 Hz
@@ -56,8 +56,6 @@ type
     function Tick(NowUs: Int64): TLiveResizeDecision;
     function Commit(NowUs: Int64): TLiveResizeDecision;
     procedure EndGesture;
-    function ReportText(Log: TUiPhaseLog): string;
-    procedure DumpReport(Log: TUiPhaseLog; const Path: string);
     property Active: Boolean read FActive;
     property LogicW: Integer read FLogicW;
     property LogicH: Integer read FLogicH;
@@ -224,42 +222,6 @@ begin
   FActive := False;
   FDirty := False;
   FPendingSizeChanged := False;
-end;
-
-function TLiveResizeSession.ReportText(Log: TUiPhaseLog): string;
-var
-  sl: TStringList;
-begin
-  sl := TStringList.Create;
-  try
-    sl.Add('# zoom-phases');
-    sl.Add(Format('samples=%d', [FSampleCount]));
-    sl.Add(Format('chrome_rebuilds=%d', [FChromeRebuildCount]));
-    sl.Add(Format('live_fills=%d', [FLiveFillCount]));
-    sl.Add(Format('commits=%d', [FCommitCount]));
-    sl.Add(Format('start=%dx%d', [FStartW, FStartH]));
-    sl.Add(Format('commit_size=%dx%d', [FLogicW, FLogicH]));
-    sl.Add(Format('coalesce_us=%d', [FCoalesceUs]));
-    if Log <> nil then
-      sl.Text := sl.Text + Log.DumpText;
-    Result := sl.Text;
-  finally
-    sl.Free;
-  end;
-end;
-
-procedure TLiveResizeSession.DumpReport(Log: TUiPhaseLog; const Path: string);
-var
-  sl: TStringList;
-begin
-  if Path = '' then Exit;
-  sl := TStringList.Create;
-  try
-    sl.Text := ReportText(Log);
-    sl.SaveToFile(Path);
-  finally
-    sl.Free;
-  end;
 end;
 
 end.

@@ -9,11 +9,15 @@ unit USkinRender;
 interface
 
 uses
-  Classes, SysUtils, Types, BGRABitmap, BGRABitmapTypes, USkinTypes, UDpiScale;
+  Classes, SysUtils, Types, LazUTF8, BGRABitmap, BGRABitmapTypes, USkinTypes,
+  UDpiScale;
 
 type
   // 按钮视觉状态（与 Qt 版 currentState 的取值一致）。
   TButtonVisualState = (bvsNormal, bvsHover, bvsPressed, bvsDisabled);
+
+  // 量宽回调：Data 由调用方解释（位图、缓存对象等）。
+  TTextWidthFn = function(const S: string; Data: Pointer): Integer;
 
 // 计算按钮控件的实际尺寸（对应 SkinButton::setSkinElement 的尺寸推导）。
 function ButtonBounds(const Elem: TSkinElement): TSkinRect;
@@ -81,6 +85,14 @@ function NearestResample(Src: TBGRABitmap; DestW, DestH: Integer): TBGRABitmap;
 
 // 窗口客户区尺寸变了就要按新尺寸九宫格重绘，不能把旧帧当放大镜拉伸。
 function SkinFrameNeedsRebuild(Frame: TBGRABitmap; DestW, DestH: Integer): Boolean;
+
+// 原地改尺寸并清空。同尺寸不重新分配。
+procedure EnsureSkinFrame(var Frame: TBGRABitmap; DestW, DestH: Integer);
+
+// 右省略：UTF-8 按字符二分，避免逐字 TextSize。装得下则原样返回。
+// MaxW<=0 或 Measure=nil 时返回 S（与旧 ElideRight 一致）。
+function ElideUtf8Right(const S: string; MaxW: Integer;
+  Measure: TTextWidthFn; Data: Pointer): string;
 
 // 仅位图拉伸（测试/备用）。播放列表/歌词 live 缩放不要走这条路径。
 procedure LiveFillFrame(var Frame: TBGRABitmap; DestW, DestH: Integer);
@@ -267,6 +279,56 @@ function SkinFrameNeedsRebuild(Frame: TBGRABitmap; DestW, DestH: Integer): Boole
 begin
   Result := (Frame = nil) or (DestW < 1) or (DestH < 1) or
     (Frame.Width <> DestW) or (Frame.Height <> DestH);
+end;
+
+procedure EnsureSkinFrame(var Frame: TBGRABitmap; DestW, DestH: Integer);
+begin
+  if DestW < 1 then DestW := 1;
+  if DestH < 1 then DestH := 1;
+  if Frame = nil then
+  begin
+    Frame := TBGRABitmap.Create(DestW, DestH, BGRAPixelTransparent);
+    Exit;
+  end;
+  if (Frame.Width <> DestW) or (Frame.Height <> DestH) then
+    Frame.SetSize(DestW, DestH);
+  Frame.FillRect(0, 0, DestW, DestH, BGRAPixelTransparent, dmSet);
+end;
+
+function ElideUtf8Right(const S: string; MaxW: Integer;
+  Measure: TTextWidthFn; Data: Pointer): string;
+const
+  kEllipsis = '...';
+var
+  lo, hi, mid, n, fullW, ellW: Integer;
+  prefix: string;
+begin
+  Result := S;
+  if (Measure = nil) or (MaxW <= 0) then Exit;
+  fullW := Measure(S, Data);
+  if fullW <= MaxW then Exit;
+  ellW := Measure(kEllipsis, Data);
+  n := UTF8Length(S);
+  if (n <= 0) or (ellW > MaxW) then
+  begin
+    Result := kEllipsis;
+    Exit;
+  end;
+  lo := 0;
+  hi := n;
+  while lo < hi do
+  begin
+    mid := (lo + hi + 1) div 2;
+    prefix := UTF8Copy(S, 1, mid);
+    if Measure(prefix + kEllipsis, Data) <= MaxW then
+      lo := mid
+    else
+      hi := mid - 1;
+  end;
+  if lo <= 0 then
+    Result := kEllipsis
+  else
+    Result := UTF8Copy(S, 1, lo) + kEllipsis;
 end;
 
 procedure LiveFillFrame(var Frame: TBGRABitmap; DestW, DestH: Integer);
@@ -636,7 +698,11 @@ begin
       if px <= 0 then
         px := 12;
       Dest.FontHeight := px;
+{$IFDEF WINDOWS}
+      Dest.FontQuality := fqSystemClearType;
+{$ELSE}
       Dest.FontAntialias := True;
+{$ENDIF}
       sz := Dest.TextSize(Text);
       x := Elem.Position.X;
       lowerAlign := LowerCase(Elem.Align);
@@ -708,7 +774,11 @@ begin
       try
         Dest.FontName := 'SimSun';
         Dest.FontHeight := 12;
+{$IFDEF WINDOWS}
+        Dest.FontQuality := fqSystemClearType;
+{$ELSE}
         Dest.FontAntialias := True;
+{$ENDIF}
         sz := Dest.TextSize('No Cover');
         Dest.TextOut(Elem.Position.X + (Elem.Position.W - sz.cx) div 2,
           Elem.Position.Y + (Elem.Position.H - sz.cy) div 2,

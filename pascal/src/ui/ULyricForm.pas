@@ -56,6 +56,7 @@ type
     FSkin: PSkinData;
     FBackend: IPlayerBackend;
     FFrame: TBGRABitmap;
+    FNineScratch: TBGRABitmap;
 
     // 当前窗口逻辑尺寸（用于九宫格和命中测试）
     FLogicW, FLogicH: Integer;
@@ -101,7 +102,7 @@ type
     procedure MapHit(var X, Y: Integer);
     procedure ApplyResizeDecision(const D: TLiveResizeDecision);
     procedure HandleResizeCoalesce(Sender: TObject);
-    procedure DumpZoomPhasesIfRequested;
+
     procedure OnLyricTick(Sender: TObject);
     function LyricArea: TSkinRect;
     procedure DrawLyrics;
@@ -193,7 +194,8 @@ begin
   if FResizeCoalesce <> nil then
     FResizeCoalesce.Enabled := False;
   FreeAndNil(FResizeSession);
-  FFrame.Free;
+  FreeAndNil(FNineScratch);
+  FreeAndNil(FFrame);
   inherited Destroy;
 end;
 
@@ -401,14 +403,9 @@ var
     if not D.ApplyScaledShape then Exit;
     if (not HandleAllocated) or (Length(FShapeRects) = 0) then Exit;
     if (FShapeW < 1) or (FShapeH < 1) then Exit;
-    UiPhaseBegin(kUiPhaseRectRegion);
-    try
-      ApplyShapeRects(Handle,
-        MergeShapeRects(MapLiveShapeRects(FShapeRects, FShapeW, FShapeH, fw, fh)),
-        fw, fh, False);
-    finally
-      UiPhaseEnd;
-    end;
+    ApplyShapeRects(Handle,
+      MergeShapeRects(MapLiveShapeRects(FShapeRects, FShapeW, FShapeH, fw, fh)),
+      fw, fh, False);
   end;
 
 begin
@@ -441,21 +438,11 @@ begin
 
   if D.RebuildNinePatch then
   begin
-    UiPhaseBegin(kUiPhaseNinePatch);
-    try
-      RenderFrame;
-    finally
-      UiPhaseEnd;
-    end;
+    RenderFrame;
     if D.ApplyAlphaShape then
     begin
-      UiPhaseBegin(kUiPhaseAlphaShape);
-      try
-        if HandleAllocated then
-          BuildRegion;
-      finally
-        UiPhaseEnd;
-      end;
+      if HandleAllocated then
+        BuildRegion;
     end;
     Invalidate;
   end
@@ -477,15 +464,6 @@ begin
     Exit;
   end;
   Invalidate;
-end;
-
-procedure TLyricForm.DumpZoomPhasesIfRequested;
-var
-  path: string;
-begin
-  path := GetEnvironmentVariable('TTPLAYER_ZOOM_PHASES_LOG');
-  if (path <> '') and (FResizeSession <> nil) then
-    FResizeSession.DumpReport(SharedUiPhaseLog, path);
 end;
 
 procedure TLyricForm.MapHit(var X, Y: Integer);
@@ -566,10 +544,8 @@ var
   btnX: Integer;
   s: Double;
   fw, fh: Integer;
-  tmp: TBGRABitmap;
 begin
   if FSkin = nil then Exit;
-  FreeAndNil(FFrame);
 
   s := FormViewScale(Self);
   if s < 0.01 then s := 1.0;
@@ -580,7 +556,7 @@ begin
 
   wnd := FSkin^.LyricWindow;
 
-  FFrame := TBGRABitmap.Create(fw, fh, BGRAPixelTransparent);
+  EnsureSkinFrame(FFrame, fw, fh);
   if wnd.BackgroundPixmap <> nil then
   begin
     if (fw = FLogicW) and (fh = FLogicH) then
@@ -588,14 +564,10 @@ begin
         FLogicW, FLogicH, True)
     else
     begin
-      tmp := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);
-      try
-        DrawNinePatch(tmp, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
-          FLogicW, FLogicH, True);
-        BlitNearest(FFrame, tmp);
-      finally
-        tmp.Free;
-      end;
+      EnsureSkinFrame(FNineScratch, FLogicW, FLogicH);
+      DrawNinePatch(FNineScratch, wnd.BackgroundPixmap, wnd.ResizeRect,
+        wnd.ResizeTile, FLogicW, FLogicH, True);
+      BlitNearest(FFrame, FNineScratch);
     end;
   end;
 
@@ -1040,7 +1012,6 @@ begin
       FResizing := False;
       FResizeCoalesce.Enabled := False;
       ApplyResizeDecision(FResizeSession.Commit(UiNowUs));
-      DumpZoomPhasesIfRequested;
       FResizeSession.EndGesture;
       if Assigned(FOnResizeFinished) then
         FOnResizeFinished(Self);

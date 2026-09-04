@@ -9,11 +9,11 @@ unit UTestLiveResize;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry,
+  Classes, SysUtils, LazUTF8, fpcunit, testregistry,
   BGRABitmap, BGRABitmapTypes,
   USkinTypes, USkinRender, UAlphaShape, UDpiScale,
   UWindowSnapMath, UWindowSnapManager,
-  ULiveResizeSession, UUiPerf, USkinErase;
+  ULiveResizeSession, USkinErase;
 
 type
   TLiveResizeTest = class(TTestCase)
@@ -29,11 +29,15 @@ type
     procedure TestGrowSkipsChromeCoalesce;
     procedure TestShrinkCoalescesChrome;
     procedure TestSkinFrameNeedsRebuildOnSizeChange;
+    procedure TestEnsureSkinFrameReusesInstance;
     procedure TestNinePatchResizeIsNotMagnify;
     procedure TestLivePaintShouldRebuildChrome;
     procedure TestSampleDoesNotRebuildNinePatch;
     procedure TestMergeAfterMapLiveShape;
     procedure TestNinePatchUsesLogicSizeNotDestScale;
+    procedure TestLiveResizeKeepsProductPaths;
+    procedure TestElideUtf8RightFitsAndCuts;
+    procedure TestElideUtf8RightIsLogMeasures;
   end;
 
 implementation
@@ -240,20 +244,19 @@ end;
 procedure TLiveResizeTest.TestLivePathCheaperThanFullRebuild;
 var
   session: TLiveResizeSession;
-  log: TUiPhaseLog;
   base, dest, naiveDest: TBGRABitmap;
   rr: TSkinRect;
-  i: Integer;
-  nowUs, t0: Int64;
+  i, naiveCount, chromeCount: Integer;
+  nowUs: Int64;
   d: TLiveResizeDecision;
-  path: string;
   shapes: TShapeRectArray;
 begin
   session := TLiveResizeSession.Create;
-  log := TUiPhaseLog.Create;
   base := MakePatchBase(240, 180);
   dest := nil;
   naiveDest := nil;
+  naiveCount := 0;
+  chromeCount := 0;
   try
     rr := PatchRect(24, 24, 192, 132);
     session.CoalesceIntervalUs := 16000;
@@ -263,10 +266,9 @@ begin
     begin
       nowUs := Int64(i) * 2000;
       naiveDest := TBGRABitmap.Create(480 + i * 16, 360 + i * 10, BGRAPixelTransparent);
-      t0 := UiNowUs;
       DrawNinePatch(naiveDest, base, rr, True, naiveDest.Width, naiveDest.Height, True);
       shapes := AlphaRunRects(naiveDest);
-      log.Add('naive_rebuild', UiNowUs - t0);
+      Inc(naiveCount);
       AssertTrue('naive 九宫格应能生成形状', Length(shapes) > 0);
       FreeAndNil(naiveDest);
 
@@ -275,41 +277,27 @@ begin
       begin
         FreeAndNil(dest);
         dest := TBGRABitmap.Create(d.LogicW, d.LogicH, BGRAPixelTransparent);
-        t0 := UiNowUs;
         DrawNinePatch(dest, base, rr, True, d.LogicW, d.LogicH, True);
         shapes := AlphaRunRects(dest);
-        log.Add(kUiPhaseNinePatch, UiNowUs - t0);
-        if Length(shapes) > 0 then
-          log.Add(kUiPhaseAlphaShape, 0);
+        Inc(chromeCount);
       end
       else
-      begin
-        t0 := UiNowUs;
         LiveFillFrame(dest, d.LogicW, d.LogicH);
-        log.Add(kUiPhaseLiveFill, UiNowUs - t0);
-      end;
     end;
 
     d := session.Commit(50000);
     FreeAndNil(dest);
     dest := TBGRABitmap.Create(d.LogicW, d.LogicH, BGRAPixelTransparent);
-    t0 := UiNowUs;
     DrawNinePatch(dest, base, rr, True, d.LogicW, d.LogicH, True);
     shapes := AlphaRunRects(dest);
-    log.Add(kUiPhaseNinePatch, UiNowUs - t0);
+    Inc(chromeCount);
     AssertTrue(Length(shapes) > 0);
-    AssertTrue('live chrome 次数 < 每拍 naive',
-      log.CountOf(kUiPhaseNinePatch) < log.CountOf('naive_rebuild'));
+    AssertTrue('live chrome 次数 < 每拍 naive', chromeCount < naiveCount);
     AssertTrue(session.ChromeRebuildCount < session.SampleCount);
-
-    path := GetEnvironmentVariable('TTPLAYER_ZOOM_PHASES_LOG');
-    if path <> '' then
-      session.DumpReport(log, path);
   finally
     dest.Free;
     naiveDest.Free;
     base.Free;
-    log.Free;
     session.Free;
   end;
 end;
@@ -529,6 +517,31 @@ begin
     Pos('SkinFrameNeedsRebuild(FFrame, ClientWidth, ClientHeight)', lyricSrc) > 0);
 end;
 
+procedure TLiveResizeTest.TestEnsureSkinFrameReusesInstance;
+var
+  frame: TBGRABitmap;
+  inst: Pointer;
+begin
+  frame := nil;
+  EnsureSkinFrame(frame, 40, 30);
+  try
+    AssertEquals(40, frame.Width);
+    AssertEquals(30, frame.Height);
+    inst := Pointer(frame);
+    EnsureSkinFrame(frame, 80, 50);
+    AssertTrue('改尺寸仍是同一对象', inst = Pointer(frame));
+    AssertEquals(80, frame.Width);
+    AssertEquals(50, frame.Height);
+    EnsureSkinFrame(frame, 80, 50);
+    AssertTrue(inst = Pointer(frame));
+    frame.DrawPixel(0, 0, BGRA(255, 0, 0, 255));
+    EnsureSkinFrame(frame, 80, 50);
+    AssertEquals('复用前清空', 0, frame.GetPixel(0, 0).alpha);
+  finally
+    frame.Free;
+  end;
+end;
+
 procedure TLiveResizeTest.TestNinePatchResizeIsNotMagnify;
 var
   base, small, large, zoomed: TBGRABitmap;
@@ -654,13 +667,110 @@ begin
   AssertTrue('歌词九宫格用逻辑尺寸',
     Pos('FLogicW, FLogicH, True)', lyricSrc) > 0);
   AssertTrue('播放列表 HiDPI 用 BlitNearest',
-    Pos('BlitNearest(FFrame, tmp)', playlistSrc) > 0);
+    Pos('BlitNearest(FFrame, FNineScratch)', playlistSrc) > 0);
   AssertTrue('歌词 HiDPI 用 BlitNearest',
-    Pos('BlitNearest(FFrame, tmp)', lyricSrc) > 0);
+    Pos('BlitNearest(FFrame, FNineScratch)', lyricSrc) > 0);
   AssertTrue('播放列表仍画列表内容',
     Pos('DrawListRows;', playlistSrc) > 0);
   AssertTrue('歌词仍画歌词',
     Pos('DrawLyrics;', lyricSrc) > 0);
+end;
+
+procedure TLiveResizeTest.TestLiveResizeKeepsProductPaths;
+var
+  root, path, playlistSrc, lyricSrc, viewSrc: string;
+  sl: TStringList;
+begin
+  root := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..' + PathDelim +
+    '..' + PathDelim);
+  sl := TStringList.Create;
+  try
+    path := root + 'pascal' + PathDelim + 'src' + PathDelim + 'ui' +
+      PathDelim + 'UPlaylistForm.pas';
+    AssertTrue(FileExists(path));
+    sl.LoadFromFile(path);
+    playlistSrc := sl.Text;
+    path := root + 'pascal' + PathDelim + 'src' + PathDelim + 'ui' +
+      PathDelim + 'ULyricForm.pas';
+    sl.LoadFromFile(path);
+    lyricSrc := sl.Text;
+    path := root + 'pascal' + PathDelim + 'src' + PathDelim + 'ui' +
+      PathDelim + 'platform' + PathDelim + 'USkinView.pas';
+    sl.LoadFromFile(path);
+    viewSrc := sl.Text;
+  finally
+    sl.Free;
+  end;
+  AssertTrue('列表省略走二分 ElideUtf8Right',
+    Pos('ElideUtf8Right', playlistSrc) > 0);
+  AssertTrue('列表行用量宽缓存',
+    Pos('TextWidthOf(duration)', playlistSrc) > 0);
+  AssertTrue('Windows TrueType 统一 GDI ClearType',
+    Pos('fqSystemClearType', viewSrc) > 0);
+  AssertTrue('不再用精细 ClearType',
+    Pos('fqFineClearTypeRGB', viewSrc) = 0);
+  AssertTrue('播放列表复用 FFrame',
+    Pos('EnsureSkinFrame(FFrame, fw, fh)', playlistSrc) > 0);
+  AssertTrue('歌词复用 FFrame',
+    Pos('EnsureSkinFrame(FFrame, fw, fh)', lyricSrc) > 0);
+end;
+
+type
+  TElideMeasureState = record
+    Count: Integer;
+    UnitW: Integer;
+  end;
+  PElideMeasureState = ^TElideMeasureState;
+
+function ElideUnitMeasure(const S: string; Data: Pointer): Integer;
+begin
+  Inc(PElideMeasureState(Data)^.Count);
+  Result := UTF8Length(S) * PElideMeasureState(Data)^.UnitW;
+end;
+
+procedure TLiveResizeTest.TestElideUtf8RightFitsAndCuts;
+var
+  st: TElideMeasureState;
+  s, outS: string;
+  w: Integer;
+begin
+  st.Count := 0;
+  st.UnitW := 10;
+  s := 'ABCDEFGHIJ';
+  outS := ElideUtf8Right(s, 100, @ElideUnitMeasure, @st);
+  AssertEquals('装得下不省略', s, outS);
+  outS := ElideUtf8Right(s, 50, @ElideUnitMeasure, @st);
+  AssertEquals('MaxW=50 → 2字+省略', 'AB...', outS);
+  outS := ElideUtf8Right(s, 30, @ElideUnitMeasure, @st);
+  AssertEquals('刚好三个点', '...', outS);
+  outS := ElideUtf8Right(s, 0, @ElideUnitMeasure, @st);
+  AssertEquals('MaxW<=0 保持原文', s, outS);
+  outS := ElideUtf8Right('周杰伦晴天下', 50, @ElideUnitMeasure, @st);
+  AssertEquals('UTF-8 按字符切', '周杰...', outS);
+  for w := 30 to 120 do
+  begin
+    outS := ElideUtf8Right(s, w, @ElideUnitMeasure, @st);
+    if Pos('...', outS) > 0 then
+      AssertTrue('省略号在末尾', Copy(outS, Length(outS) - 2, 3) = '...')
+    else
+      AssertEquals(s, outS);
+  end;
+end;
+
+procedure TLiveResizeTest.TestElideUtf8RightIsLogMeasures;
+var
+  st: TElideMeasureState;
+  s: string;
+  i: Integer;
+begin
+  st.Count := 0;
+  st.UnitW := 10;
+  s := '';
+  for i := 1 to 80 do
+    s := s + 'A';
+  ElideUtf8Right(s, 80, @ElideUnitMeasure, @st);
+  AssertTrue(Format('80 字省略应是 log 次量宽，实际 %d', [st.Count]),
+    st.Count < 24);
 end;
 
 initialization

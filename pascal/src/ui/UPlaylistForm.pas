@@ -67,6 +67,7 @@ type
     FSkin: PSkinData;
     FBackend: IPlayerBackend;
     FFrame: TBGRABitmap;
+    FNineScratch: TBGRABitmap;
     FBook: TPlaylistBook;
     FModel: TPlaylistModel;
     FMetaLoader: TPlaylistMetadataLoader;
@@ -91,6 +92,12 @@ type
     FLastPaintChromeUs: Int64;
     FShapeRects: TShapeRectArray;
     FShapeW, FShapeH: Integer;
+    FTwKey: array of string;
+    FTwVal: array of Integer;
+    FTwCount: Integer;
+    FTwScale: Double;
+    FListTextH: Integer;
+    FListGapW: Integer;
 
     FDividerPos, FDividerSavedPos: Integer;
     FDividerDragging, FDividerHandlePressed: Boolean;
@@ -131,7 +138,6 @@ type
     procedure MapHit(var X, Y: Integer);
     procedure ApplyResizeDecision(const D: TLiveResizeDecision);
     procedure HandleResizeCoalesce(Sender: TObject);
-    procedure DumpZoomPhasesIfRequested;
     procedure ApplyListFont;
     function SX(V: Integer): Integer;
     procedure RebuildVisible;
@@ -205,6 +211,8 @@ type
     procedure DrawVTiled(Src: TBGRABitmap; const R: TSkinRect);
     procedure DrawVThreeSlice(Src: TBGRABitmap; const R: TSkinRect;
       ResizeCenter: Integer; TileCenter: Boolean);
+    procedure ResetListTextCache;
+    function TextWidthOf(const S: string): Integer;
     function ElideRight(const S: string; MaxW: Integer): string;
 
     procedure FireButtonClick(const AName: string);
@@ -280,6 +288,12 @@ const
   kDividerHotPad            = 6;
   kAudioExts: array[0..7] of string = (
     '.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.ape');
+  kTextWidthCacheCap = 512;
+
+function PlaylistMeasureWidth(const S: string; Data: Pointer): Integer;
+begin
+  Result := TPlaylistForm(Data).TextWidthOf(S);
+end;
 
 { TPlaylistForm }
 
@@ -299,6 +313,10 @@ begin
   FLogicH := 165;
   FRowHeight := 16;
   FDrawScale := 1.0;
+  FTwScale := 0;
+  FTwCount := 0;
+  FListTextH := 0;
+  FListGapW := 0;
 
   FHoveredType     := '';
   FPressedType     := '';
@@ -352,6 +370,7 @@ begin
   FreeAndNil(FResizeSession);
   FreeAndNil(FMetaLoader);
   FreeScrollButtons;
+  FreeAndNil(FNineScratch);
   FreeAndNil(FFrame);
   FModel := nil;
   FreeAndNil(FBook);
@@ -365,6 +384,7 @@ var
 begin
   if ASkin = nil then Exit;
   FSkin := ASkin;
+  ResetListTextCache;
   ConfigurePlatformWindow(Self);
 
   if HandleAllocated then
@@ -445,14 +465,9 @@ var
     if not D.ApplyScaledShape then Exit;
     if (not HandleAllocated) or (Length(FShapeRects) = 0) then Exit;
     if (FShapeW < 1) or (FShapeH < 1) then Exit;
-    UiPhaseBegin(kUiPhaseRectRegion);
-    try
-      ApplyShapeRects(Handle,
-        MergeShapeRects(MapLiveShapeRects(FShapeRects, FShapeW, FShapeH, fw, fh)),
-        fw, fh, False);
-    finally
-      UiPhaseEnd;
-    end;
+    ApplyShapeRects(Handle,
+      MergeShapeRects(MapLiveShapeRects(FShapeRects, FShapeW, FShapeH, fw, fh)),
+      fw, fh, False);
   end;
 
 begin
@@ -490,21 +505,11 @@ begin
 
   if D.RebuildNinePatch then
   begin
-    UiPhaseBegin(kUiPhaseNinePatch);
-    try
-      RenderFrame;
-    finally
-      UiPhaseEnd;
-    end;
+    RenderFrame;
     if D.ApplyAlphaShape then
     begin
-      UiPhaseBegin(kUiPhaseAlphaShape);
-      try
-        if HandleAllocated then
-          BuildRegion;
-      finally
-        UiPhaseEnd;
-      end;
+      if HandleAllocated then
+        BuildRegion;
     end;
     Invalidate;
   end
@@ -526,15 +531,6 @@ begin
     Exit;
   end;
   Invalidate;
-end;
-
-procedure TPlaylistForm.DumpZoomPhasesIfRequested;
-var
-  path: string;
-begin
-  path := GetEnvironmentVariable('TTPLAYER_ZOOM_PHASES_LOG');
-  if (path <> '') and (FResizeSession <> nil) then
-    FResizeSession.DumpReport(SharedUiPhaseLog, path);
 end;
 
 procedure TPlaylistForm.MapHit(var X, Y: Integer);
@@ -1269,15 +1265,39 @@ begin
   end;
 end;
 
+procedure TPlaylistForm.ResetListTextCache;
+begin
+  FTwCount := 0;
+  FTwScale := 0;
+  FListTextH := 0;
+  FListGapW := 0;
+end;
+
+function TPlaylistForm.TextWidthOf(const S: string): Integer;
+var
+  i: Integer;
+begin
+  if S = '' then Exit(0);
+  for i := 0 to FTwCount - 1 do
+    if FTwKey[i] = S then
+      Exit(FTwVal[i]);
+  if FFrame = nil then Exit(0);
+  Result := FFrame.TextSize(S).cx;
+  if FTwCount >= kTextWidthCacheCap then
+    FTwCount := 0;
+  if Length(FTwKey) < kTextWidthCacheCap then
+  begin
+    SetLength(FTwKey, kTextWidthCacheCap);
+    SetLength(FTwVal, kTextWidthCacheCap);
+  end;
+  FTwKey[FTwCount] := S;
+  FTwVal[FTwCount] := Result;
+  Inc(FTwCount);
+end;
+
 function TPlaylistForm.ElideRight(const S: string; MaxW: Integer): string;
 begin
-  Result := S;
-  if (FFrame = nil) or (MaxW <= 0) then Exit;
-  if FFrame.TextSize(Result).cx <= MaxW then Exit;
-  while (UTF8Length(Result) > 0) and
-        (FFrame.TextSize(Result + '...').cx > MaxW) do
-    UTF8Delete(Result, UTF8Length(Result), 1);
-  Result := Result + '...';
+  Result := ElideUtf8Right(S, MaxW, @PlaylistMeasureWidth, Pointer(Self));
 end;
 
 procedure TPlaylistForm.DrawListRows;
@@ -1295,6 +1315,10 @@ begin
   if (lr.W <= 0) or (lr.H <= 0) or (FSkin = nil) then Exit;
 
   ApplyListFont;
+  if FListTextH <= 0 then
+    FListTextH := FFrame.TextSize('Ag').cy;
+  if FListGapW <= 0 then
+    FListGapW := TextWidthOf('  ');
   vx := SX(lr.X);
   vy := SX(lr.Y);
   vw := SX(lr.X + lr.W) - vx;
@@ -1369,23 +1393,23 @@ begin
     durW := 0;
     if duration <> '' then
     begin
-      durW := FFrame.TextSize(duration).cx;
-      FFrame.TextOut(crR - durW, rowY + (rowH - FFrame.TextSize(duration).cy) div 2,
+      durW := TextWidthOf(duration);
+      FFrame.TextOut(crR - durW, rowY + (rowH - FListTextH) div 2,
         duration, useC);
     end;
 
     if selected or playing then useC := hiC else useC := numC;
     number := number + ' ';
-    numW := FFrame.TextSize(number).cx;
-    FFrame.TextOut(crL, rowY + (rowH - FFrame.TextSize(number).cy) div 2,
+    numW := TextWidthOf(number);
+    FFrame.TextOut(crL, rowY + (rowH - FListTextH) div 2,
       number, useC);
 
     if selected or playing then useC := hiC else useC := textC;
     gap := 0;
-    if durW > 0 then gap := FFrame.TextSize('  ').cx;
+    if durW > 0 then gap := FListGapW;
     playW := Max(1, (crR - durW - gap) - (crL + numW));
     title := ElideRight(title, playW);
-    FFrame.TextOut(crL + numW, rowY + (rowH - FFrame.TextSize(title).cy) div 2,
+    FFrame.TextOut(crL + numW, rowY + (rowH - FListTextH) div 2,
       title, useC);
   end;
 
@@ -1430,13 +1454,15 @@ end;
 procedure TPlaylistForm.DrawTabs;
 var
   r: TSkinRect;
-  i, ySkin, tw, vx, vy, vw, vh, rowY, rowH, pad: Integer;
+  i, ySkin, vx, vy, vw, vh, rowY, rowH, pad: Integer;
   tabName: string;
   textC, hiC, selC: TBGRAPixel;
 begin
   r := TabListRect;
   if (r.W <= 0) or (r.H <= 0) or (FFrame = nil) or (FBook = nil) then Exit;
   ApplyListFont;
+  if FListTextH <= 0 then
+    FListTextH := FFrame.TextSize('Ag').cy;
   vx := SX(r.X);
   vy := SX(r.Y);
   vw := SX(r.X + r.W) - vx;
@@ -1468,14 +1494,12 @@ begin
         BGRA(selC.red, selC.green, selC.blue, 80), dmDrawWithTransparency);
     tabName := FBook.Tabs[i].Name;
     tabName := ElideRight(tabName, Max(1, vw - SX(8)));
-    tw := FFrame.TextSize(tabName).cx;
     if i = FBook.ActiveIndex then
-      FFrame.TextOut(vx + pad, rowY + (rowH - FFrame.TextSize(tabName).cy) div 2,
+      FFrame.TextOut(vx + pad, rowY + (rowH - FListTextH) div 2,
         tabName, hiC)
     else
-      FFrame.TextOut(vx + pad, rowY + (rowH - FFrame.TextSize(tabName).cy) div 2,
+      FFrame.TextOut(vx + pad, rowY + (rowH - FListTextH) div 2,
         tabName, textC);
-    if tw = 0 then ;
   end;
   FFrame.NoClip;
 end;
@@ -1721,13 +1745,15 @@ var
   fillBkgnd, fillBkgnd2, front, back: TBGRAPixel;
   sz: TPoint;
   s: Double;
-  tmp: TBGRABitmap;
 begin
   if FSkin = nil then Exit;
 
   s := FormViewScale(Self);
   if s < 0.01 then s := 1.0;
+  if Abs(FTwScale - s) > 1e-6 then
+    ResetListTextCache;
   FDrawScale := s;
+  FTwScale := s;
   fw := ScalePx(FLogicW, s);
   fh := ScalePx(FLogicH, s);
   if fw < 1 then fw := 1;
@@ -1735,8 +1761,7 @@ begin
 
   wnd := FSkin^.PlaylistWindow;
   sz := BgSize;
-  FreeAndNil(FFrame);
-  FFrame := TBGRABitmap.Create(fw, fh, BGRAPixelTransparent);
+  EnsureSkinFrame(FFrame, fw, fh);
 
   if wnd.BackgroundPixmap <> nil then
   begin
@@ -1745,14 +1770,10 @@ begin
         FLogicW, FLogicH, True)
     else
     begin
-      tmp := TBGRABitmap.Create(FLogicW, FLogicH, BGRAPixelTransparent);
-      try
-        DrawNinePatch(tmp, wnd.BackgroundPixmap, wnd.ResizeRect, wnd.ResizeTile,
-          FLogicW, FLogicH, True);
-        BlitNearest(FFrame, tmp);
-      finally
-        tmp.Free;
-      end;
+      EnsureSkinFrame(FNineScratch, FLogicW, FLogicH);
+      DrawNinePatch(FNineScratch, wnd.BackgroundPixmap, wnd.ResizeRect,
+        wnd.ResizeTile, FLogicW, FLogicH, True);
+      BlitNearest(FFrame, FNineScratch);
     end;
   end;
 
@@ -2398,7 +2419,6 @@ begin
       FResizing := False;
       FResizeCoalesce.Enabled := False;
       ApplyResizeDecision(FResizeSession.Commit(UiNowUs));
-      DumpZoomPhasesIfRequested;
       FResizeSession.EndGesture;
       if Assigned(FOnResizeFinished) then
         FOnResizeFinished(Self);
