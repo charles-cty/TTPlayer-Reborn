@@ -69,10 +69,17 @@ type
   end;
 
 function EmptyLiveResizeDecision: TLiveResizeDecision;
+function LiveNowUs: Int64;
 function LivePaintShouldRebuildChrome(Resizing, FrameMatchesDest: Boolean;
   LastChromeUs, NowUs, IntervalUs: Int64): Boolean;
 
 implementation
+
+function LiveNowUs: Int64;
+begin
+  // 16ms 合帧只需要毫秒级；GetTickCount64 两边都有。
+  Result := Int64(GetTickCount64) * 1000;
+end;
 
 function LivePaintShouldRebuildChrome(Resizing, FrameMatchesDest: Boolean;
   LastChromeUs, NowUs, IntervalUs: Int64): Boolean;

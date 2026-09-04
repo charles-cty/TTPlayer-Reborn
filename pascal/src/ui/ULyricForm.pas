@@ -14,7 +14,7 @@ uses
   LCLIntf, LCLType, LMessages,
   BGRABitmap, BGRABitmapTypes,
   USkinTypes, USkinRender, UPlayerBackend, ULrcParser, UPlatformWindow,
-  USkinView, UPlayerMenuSpec, ULiveResizeSession, UUiPerf, USkinErase,
+  USkinView, UPlayerMenuSpec, ULiveResizeSession, USkinErase,
   UAlphaShape;
 
 type
@@ -81,6 +81,7 @@ type
     FLastPaintChromeUs: Int64;
     FShapeRects: TShapeRectArray;
     FShapeW, FShapeH: Integer;
+    FLastRgnW, FLastRgnH: Integer;
 
     FOnResizeInProgress: TNotifyEvent;
     FOnResizeFinished: TNotifyEvent;
@@ -396,16 +397,19 @@ procedure TLyricForm.ApplyResizeDecision(const D: TLiveResizeDecision);
 var
   s: Double;
   fw, fh: Integer;
-  growing: Boolean;
+  growing, moved: Boolean;
 
   procedure ApplyMappedShape;
   begin
     if not D.ApplyScaledShape then Exit;
     if (not HandleAllocated) or (Length(FShapeRects) = 0) then Exit;
     if (FShapeW < 1) or (FShapeH < 1) then Exit;
+    if (fw = FLastRgnW) and (fh = FLastRgnH) then Exit;
     ApplyShapeRects(Handle,
       MergeShapeRects(MapLiveShapeRects(FShapeRects, FShapeW, FShapeH, fw, fh)),
       fw, fh, False);
+    FLastRgnW := fw;
+    FLastRgnH := fh;
   end;
 
 begin
@@ -417,13 +421,15 @@ begin
   if fw < 1 then fw := 1;
   if fh < 1 then fh := 1;
   growing := (fw > Width) or (fh > Height);
+  moved := (Width <> fw) or (Height <> fh);
 
+  // 放大才必须先撑 Region，否则旧 HRGN 裁新边。缩小靠 HWND 裁切。
   if growing then
     ApplyMappedShape;
 
   FDeferLiveChrome := True;
   try
-    if (Width <> fw) or (Height <> fh) then
+    if moved then
       SetBounds(Left, Top, fw, fh)
     else
     begin
@@ -439,18 +445,16 @@ begin
   if D.RebuildNinePatch then
   begin
     RenderFrame;
-    if D.ApplyAlphaShape then
-    begin
-      if HandleAllocated then
-        BuildRegion;
-    end;
+    if D.ApplyAlphaShape and HandleAllocated then
+      BuildRegion;
     Invalidate;
   end
   else if D.Kind = lrkLiveFill then
   begin
     if not growing then
       ApplyMappedShape;
-    Invalidate;
+    if not moved then
+      Invalidate;
   end;
 end;
 
@@ -495,6 +499,8 @@ begin
     FShapeW := FFrame.Width;
     FShapeH := FFrame.Height;
     ApplyShapeRects(Handle, FShapeRects, FFrame.Width, FFrame.Height);
+    FLastRgnW := FFrame.Width;
+    FLastRgnH := FFrame.Height;
     Exit;
   end;
   src := FSkin^.LyricWindow.BackgroundPixmap;
@@ -514,6 +520,8 @@ begin
     FShapeW := FLogicW;
     FShapeH := FLogicH;
     ApplyShapeRects(Handle, FShapeRects, bmp.Width, bmp.Height);
+    FLastRgnW := bmp.Width;
+    FLastRgnH := bmp.Height;
   finally
     if own then bmp.Free;
   end;
@@ -698,12 +706,10 @@ begin
   if FLivePaintLocked then Exit;
   matches := not SkinFrameNeedsRebuild(FFrame, ClientWidth, ClientHeight);
   if LivePaintShouldRebuildChrome(FResizing, matches, FLastPaintChromeUs,
-    UiNowUs, kLiveResizeCoalesceUs) then
+    LiveNowUs, kLiveResizeCoalesceUs) then
   begin
     RenderFrame;
-    FLastPaintChromeUs := UiNowUs;
-    if FResizing and HandleAllocated then
-      BuildRegion;
+    FLastPaintChromeUs := LiveNowUs;
   end
   else if not matches then
   begin
@@ -973,7 +979,7 @@ begin
     if FResizeEdgeRight  then newW := Max(200, FResizeStartW + Round(dx / s));
     if FResizeEdgeBottom then newH := Max(50,  FResizeStartH + Round(dy / s));
     if (newW <> FLogicW) or (newH <> FLogicH) then
-      ApplyResizeDecision(FResizeSession.Sample(newW, newH, UiNowUs));
+      ApplyResizeDecision(FResizeSession.Sample(newW, newH, LiveNowUs));
   end
   else
   begin
@@ -1011,7 +1017,7 @@ begin
       ReleaseCapture;
       FResizing := False;
       FResizeCoalesce.Enabled := False;
-      ApplyResizeDecision(FResizeSession.Commit(UiNowUs));
+      ApplyResizeDecision(FResizeSession.Commit(LiveNowUs));
       FResizeSession.EndGesture;
       if Assigned(FOnResizeFinished) then
         FOnResizeFinished(Self);
