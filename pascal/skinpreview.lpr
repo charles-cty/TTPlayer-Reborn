@@ -241,6 +241,8 @@ begin
     FSnap.RebuildSnapGraph;
     Exit;
   end;
+  if (FPlayerForm = nil) or (FSnap = nil) then
+    Exit;
   FPlayerWin := HookSnapWindow(FPlayerForm, FSnap, True);
   FEqWin := HookSnapWindow(FEqForm, FSnap, False);
   FLyricWin := HookSnapWindow(FLyricForm, FSnap, False);

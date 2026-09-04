@@ -220,6 +220,8 @@ end;
 constructor TSnapFormAdapter.Create(AForm: TForm; AManager: TWindowSnapManager;
   AWin: ISnapWindow; AIsMain: Boolean);
 begin
+  if AForm = nil then
+    raise EArgumentException.Create('TSnapFormAdapter requires a form');
   inherited Create(AForm);
   FForm := AForm;
   FManager := AManager;
@@ -565,6 +567,9 @@ end;
 function HookSnapWindow(AForm: TForm; AManager: TWindowSnapManager;
   AIsMain: Boolean): ISnapWindow;
 begin
+  Result := nil;
+  if (AForm = nil) or (AManager = nil) then
+    Exit;
   Result := TFormSnapWindow.Create(AForm);
   if AIsMain then
     AManager.SetMainWindow(Result)
