@@ -34,6 +34,10 @@ type
     procedure SetSkinBackground(ABg: TBGRABitmap);
 
     procedure SetVisualVisible(AValue: Boolean);
+    // GTK3：子控件 Canvas 上 BGRA.Draw 会 LPtoDP 把 Left/Top 加两遍，
+    // visual 凹槽左上露出白底。由 PlayerForm.Paint 画到窗体 Canvas。
+    procedure DrawOnto(ACanvas: TCanvas; AX, AY: Integer);
+    function OverlayOnParent: Boolean;
 
   protected
     procedure Paint; override;
@@ -49,6 +53,7 @@ type
     FBg:      TBGRABitmap;       // 皮肤 visual 矩形拷贝
     FSkinRect: TSkinRect;
     FOnClicked: TNotifyEvent;
+    FActive: Boolean;
 
     // 频谱数据（归一化 0..1，长度 = BandCount）
     FSpecData:  array of Single;
@@ -60,6 +65,7 @@ type
     procedure TimerTick(Sender: TObject);
     procedure SetMode(AMode: TVisualMode);
     procedure UpdateTimer;
+    procedure RequestPaint;
     function  BandCount: Integer;
     procedure EnsureFrame;
     procedure RenderSpectrum;
@@ -102,6 +108,8 @@ begin
   FBg      := nil;
   FSkinRect := TSkinRect.Zero;
   ControlStyle := ControlStyle + [csOpaque];
+  Color := clBlack;
+  FActive := False;
 
   FTimer          := TTimer.Create(Self);
   FTimer.Interval := 33;   // ~30 fps
@@ -131,7 +139,7 @@ procedure TVisualWidget.ApplyConfig(const AConfig: TVisualConfig);
 begin
   FConfig := AConfig;
   UpdateTimer;
-  Invalidate;
+  RequestPaint;
 end;
 
 procedure TVisualWidget.SetVisualRect(const R: TSkinRect);
@@ -170,13 +178,46 @@ begin
     RenderSpectrum
   else if FMode = vmBlurScope then
     RenderBlurScope;
-  Invalidate;
+  RequestPaint;
 end;
 
 procedure TVisualWidget.SetVisualVisible(AValue: Boolean);
 begin
+  FActive := AValue;
+{$IFDEF WINDOWS}
   Visible := AValue;
+{$ELSE}
+  // 不把 TGraphicControl 盖在凹槽上，避免 GTK3 白块。
+  Visible := False;
+{$ENDIF}
   UpdateTimer;
+  RequestPaint;
+end;
+
+function TVisualWidget.OverlayOnParent: Boolean;
+begin
+{$IFDEF WINDOWS}
+  Result := False;
+{$ELSE}
+  Result := FActive;
+{$ENDIF}
+end;
+
+procedure TVisualWidget.DrawOnto(ACanvas: TCanvas; AX, AY: Integer);
+begin
+  if ACanvas = nil then Exit;
+  if FFrame <> nil then
+    FFrame.Draw(ACanvas, AX, AY, True)
+  else if FBg <> nil then
+    FBg.Draw(ACanvas, AX, AY, True);
+end;
+
+procedure TVisualWidget.RequestPaint;
+begin
+  if OverlayOnParent and (Parent <> nil) then
+    Parent.Invalidate
+  else
+    Invalidate;
 end;
 
 procedure TVisualWidget.SetMode(AMode: TVisualMode);
@@ -186,7 +227,7 @@ begin
   if FMode <> vmBlurScope then
     SetLength(FScopeHistory, 0);
   UpdateTimer;
-  Invalidate;
+  RequestPaint;
 end;
 
 procedure TVisualWidget.UpdateTimer;
@@ -197,7 +238,7 @@ begin
   if fps < 10 then fps := 10;
   if fps > 120 then fps := 120;
   FTimer.Interval := 1000 div fps;
-  FTimer.Enabled  := Visible and
+  FTimer.Enabled  := FActive and
     ((FMode = vmSpectrum) or (FMode = vmBlurScope));
 end;
 
@@ -232,14 +273,16 @@ begin
   if (FFrame = nil) or (FFrame.Width <> w) or (FFrame.Height <> h) then
   begin
     FreeAndNil(FFrame);
-    FFrame := TBGRABitmap.Create(w, h);
-  end;
+    FFrame := TBGRABitmap.Create(w, h, BGRA(0, 0, 0, 255));
+  end
+  else
+    FFrame.Fill(BGRA(0, 0, 0, 255));
   if FBg = nil then
     Exit;
   if (FBg.Width = w) and (FBg.Height = h) then
-    FFrame.PutImage(0, 0, FBg, dmSet)
+    FFrame.PutImage(0, 0, FBg, dmDrawWithTransparency)
   else
-    FFrame.StretchPutImage(Classes.Rect(0, 0, w, h), FBg, dmSet);
+    FFrame.StretchPutImage(Classes.Rect(0, 0, w, h), FBg, dmDrawWithTransparency);
 end;
 
 // ── 定时器：拉取频谱数据并刷新 ─────────────────────────────────────
@@ -310,7 +353,7 @@ begin
 
   if FMode = vmSpectrum then RenderSpectrum
   else if FMode = vmBlurScope then RenderBlurScope;
-  Invalidate;
+  RequestPaint;
 end;
 
 // ── 频谱渲染 ─────────────────────────────────────────────────────────
@@ -409,10 +452,17 @@ end;
 
 procedure TVisualWidget.Paint;
 begin
+  if OverlayOnParent then
+    Exit;
   if FFrame <> nil then
     FFrame.Draw(Canvas, 0, 0, True)
   else if FBg <> nil then
-    FBg.Draw(Canvas, 0, 0, True);
+    FBg.Draw(Canvas, 0, 0, True)
+  else
+  begin
+    Canvas.Brush.Color := clBlack;
+    Canvas.FillRect(0, 0, Width, Height);
+  end;
 end;
 
 procedure TVisualWidget.MouseDown(Button: TMouseButton; Shift: TShiftState;

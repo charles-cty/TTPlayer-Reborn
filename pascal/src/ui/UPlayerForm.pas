@@ -560,6 +560,8 @@ begin
     RenderFrame;
   if FFrame = nil then Exit;
   DrawSkinFrame(Canvas, FFrame, ClientWidth, ClientHeight);
+  if (FVisual <> nil) and FVisual.OverlayOnParent then
+    FVisual.DrawOnto(Canvas, FVisual.Left, FVisual.Top);
 end;
 
 // 元素命中测试：按 position 查找包含 (X,Y) 的元素。
