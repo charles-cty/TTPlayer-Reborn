@@ -6,8 +6,8 @@
 #   LAZARUS_DIR / FPC / LCL_PLATFORM 可覆盖默认值。
 #
 # 用法：
-#   tools/build-pascal-linux.sh                    # Debug：ttdump + tests + skinpreview
-#   tools/build-pascal-linux.sh ttplayer
+#   tools/build-pascal-linux.sh                    # Debug：ttdump + tests + skinpreview + ttplayer
+#   tools/build-pascal-linux.sh ttplayer           # 只编主程序
 #   tools/build-pascal-linux.sh --config Debug
 #   tools/build-pascal-linux.sh --heaptrc          # HeapTrc 构建（-gh）
 #   tools/build-pascal-linux.sh --heaptrc tests
@@ -93,7 +93,7 @@ echo "[build-pascal-linux] 注册 BGRABitmap 包"
 "${LAZBUILD[@]}" --ws=nogui "$PASCAL/vendor/bgrabitmap/bgrabitmap/bgrabitmappack4nolcl.lpk"
 "${LAZBUILD[@]}" --ws="$WS" "$PASCAL/vendor/bgrabitmap/bgrabitmap/bgrabitmappack.lpk"
 
-projects=(ttdump tests skinpreview)
+projects=(ttdump tests skinpreview ttplayer)
 if [[ -n "$PROJECT" ]]; then
   projects=("$PROJECT")
 fi

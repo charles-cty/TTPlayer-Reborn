@@ -185,6 +185,7 @@ pwsh tools/build-pascal.ps1 -Config Profile
 sudo apt install cmake g++ pkg-config \
   libavformat-dev libavcodec-dev libavutil-dev libswresample-dev libsdl2-dev
 bash tools/build-ttcore-linux.sh
+# 构建全部 Pascal 工程（ttdump + tests + skinpreview + ttplayer，默认 Debug）
 bash tools/build-pascal-linux.sh
 bash tools/build-pascal-linux.sh --config Debug
 bash tools/test-gtk3-wayland.sh

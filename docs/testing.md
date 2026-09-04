@@ -196,7 +196,7 @@ sudo apt install cmake g++ pkg-config \
 bash tools/build-ttcore-linux.sh
 
 # FPC: $HOME/opt/fpc    Lazarus: $HOME/opt/lazarus（make lazbuild）
-bash tools/build-pascal-linux.sh          # ttdump + tests + skinpreview --ws=gtk3
+bash tools/build-pascal-linux.sh          # ttdump + tests + skinpreview + ttplayer --ws=gtk3
 bash tools/test-gtk3-wayland.sh           # FPCUnit + X11 --probe + GDK_SCALE=2
 ```
 
