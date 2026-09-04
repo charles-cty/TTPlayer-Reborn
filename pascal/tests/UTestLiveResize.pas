@@ -33,6 +33,7 @@ type
     procedure TestNinePatchResizeIsNotMagnify;
     procedure TestLivePaintShouldRebuildChrome;
     procedure TestHwndCoalescesNotPerSample;
+    procedure TestDefaultCoalesceIs32ms;
     procedure TestSampleDoesNotRebuildNinePatch;
     procedure TestMergeAfterMapLiveShape;
     procedure TestNinePatchUsesLogicSizeNotDestScale;
@@ -518,6 +519,10 @@ begin
     Pos('SkinFrameNeedsRebuild(FFrame, ClientWidth, ClientHeight)', playlistSrc) > 0);
   AssertTrue('歌词 Paint 按客户区重绘',
     Pos('SkinFrameNeedsRebuild(FFrame, ClientWidth, ClientHeight)', lyricSrc) > 0);
+  AssertTrue('放大先画再撑 HWND',
+    Pos('先画进 FFrame，再撑 HWND', playlistSrc) > 0);
+  AssertTrue('歌词放大先画再撑 HWND',
+    Pos('先画进 FFrame，再撑 HWND', lyricSrc) > 0);
 end;
 
 procedure TLiveResizeTest.TestEnsureSkinFrameReusesInstance;
@@ -619,6 +624,22 @@ begin
   finally
     session.Free;
   end;
+end;
+
+procedure TLiveResizeTest.TestDefaultCoalesceIs32ms;
+var
+  session: TLiveResizeSession;
+begin
+  AssertEquals(32, kLiveResizeCoalesceMs);
+  AssertEquals(32000, kLiveResizeCoalesceUs);
+  session := TLiveResizeSession.Create;
+  try
+    AssertEquals('产品默认 ~30Hz', kLiveResizeCoalesceUs, session.CoalesceIntervalUs);
+  finally
+    session.Free;
+  end;
+  AssertFalse(LivePaintShouldRebuildChrome(True, False, 1000, 20000, 32000));
+  AssertTrue(LivePaintShouldRebuildChrome(True, False, 1000, 33000, 32000));
 end;
 
 procedure TLiveResizeTest.TestSampleDoesNotRebuildNinePatch;
@@ -757,6 +778,14 @@ begin
   AssertTrue('歌词跳过未到期的 SetBounds',
     Pos('if (not D.ApplyWindowSize) and (not D.RebuildNinePatch) then Exit',
       lyricSrc) > 0);
+  AssertTrue('播放列表定时器跟合帧常量',
+    Pos('FResizeCoalesce.Interval := kLiveResizeCoalesceMs', playlistSrc) > 0);
+  AssertTrue('歌词定时器跟合帧常量',
+    Pos('FResizeCoalesce.Interval := kLiveResizeCoalesceMs', lyricSrc) > 0);
+  AssertTrue('播放列表放大不把旧帧贴在 0,0 留出底色',
+    Pos('FFrame.Draw(Canvas, 0, 0, True)', playlistSrc) = 0);
+  AssertTrue('歌词放大不把旧帧贴在 0,0 留出底色',
+    Pos('FFrame.Draw(Canvas, 0, 0, True)', lyricSrc) = 0);
 end;
 
 type

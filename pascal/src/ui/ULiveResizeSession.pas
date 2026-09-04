@@ -14,7 +14,9 @@ uses
   Classes, SysUtils;
 
 const
-  kLiveResizeCoalesceUs = 16000; // ~60 Hz
+  // ~30 Hz：老设备一次 SetBounds+Paint 常超过 16ms；60Hz 新屏只是轮廓隔一帧。
+  kLiveResizeCoalesceMs = 32;
+  kLiveResizeCoalesceUs = kLiveResizeCoalesceMs * 1000;
 
 type
   TLiveResizeKind = (
@@ -81,7 +83,8 @@ implementation
 
 function LiveNowUs: Int64;
 begin
-  // 16ms 合帧只需要毫秒级；GetTickCount64 两边都有。
+  // 合帧只要毫秒级；GetTickCount64 两边都有。默认量子 ~15.6ms，
+  // 32ms 大约两个量子，避免 16ms 阈值卡在一次量子上变成 ~31ms。
   Result := Int64(GetTickCount64) * 1000;
 end;
 

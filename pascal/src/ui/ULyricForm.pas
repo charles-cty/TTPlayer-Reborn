@@ -166,7 +166,7 @@ begin
   FResizeSession := TLiveResizeSession.Create;
   FResizeCoalesce := TTimer.Create(Self);
   FResizeCoalesce.Enabled := False;
-  FResizeCoalesce.Interval := 16;
+  FResizeCoalesce.Interval := kLiveResizeCoalesceMs;
   FResizeCoalesce.OnTimer := @HandleResizeCoalesce;
   FEncoding := leAutoDetect;
   FOffsetMs := 0;
@@ -362,19 +362,28 @@ end;
 
 procedure TLyricForm.SetBounds(ALeft, ATop, AWidth, AHeight: Integer);
 var
-  sizeChanged: Boolean;
+  sizeChanged, frameReady: Boolean;
   s: Double;
 begin
   sizeChanged := (AWidth <> Width) or (AHeight <> Height);
   if FDeferLiveChrome and HandleAllocated then
   begin
-    FLivePaintLocked := True;
-    try
+    // FFrame 已按新尺寸画好时不要锁 Paint / SETREDRAW，否则新边会露出底色。
+    frameReady := (FFrame <> nil) and (FFrame.Width >= AWidth) and
+      (FFrame.Height >= AHeight);
+    if not frameReady then
+    begin
+      FLivePaintLocked := True;
       PlatformBeginLiveSize(Handle);
+    end;
+    try
       inherited SetBounds(ALeft, ATop, AWidth, AHeight);
-      PlatformEndLiveSize(Handle);
     finally
-      FLivePaintLocked := False;
+      if not frameReady then
+      begin
+        PlatformEndLiveSize(Handle);
+        FLivePaintLocked := False;
+      end;
     end;
     Invalidate;
     Exit;
@@ -425,9 +434,18 @@ begin
   growing := (fw > Width) or (fh > Height);
   moved := (Width <> fw) or (Height <> fh);
 
+  FLogicW := Max(1, D.LogicW);
+  FLogicH := Max(1, D.LogicH);
+
+  // 放大：先画进 FFrame，再撑 HWND，避免新边露出窗体底色。
+  if D.RebuildNinePatch or (D.ApplyWindowSize and growing) then
+  begin
+    RenderFrame;
+    FLastPaintChromeUs := LiveNowUs;
+  end;
+
   if D.ApplyWindowSize then
   begin
-    // 放大才必须先撑 Region，否则旧 HRGN 裁新边。缩小靠 HWND 裁切。
     if growing then
       ApplyMappedShape;
     FDeferLiveChrome := True;
@@ -437,24 +455,15 @@ begin
     finally
       FDeferLiveChrome := False;
     end;
-  end;
-  FLogicW := Max(1, D.LogicW);
-  FLogicH := Max(1, D.LogicH);
-
-  if D.RebuildNinePatch then
-  begin
-    RenderFrame;
-    if D.ApplyAlphaShape and HandleAllocated then
-      BuildRegion;
-    Invalidate;
-  end
-  else if D.ApplyWindowSize then
-  begin
     if not growing then
       ApplyMappedShape;
-    if not moved then
-      Invalidate;
   end;
+
+  if D.RebuildNinePatch and D.ApplyAlphaShape and HandleAllocated then
+    BuildRegion;
+  Invalidate;
+  if HandleAllocated then
+    Update;
 end;
 
 procedure TLyricForm.HandleResizeCoalesce(Sender: TObject);
@@ -699,22 +708,17 @@ begin
 end;
 
 procedure TLyricForm.Paint;
-var
-  matches: Boolean;
 begin
-  if FLivePaintLocked then Exit;
-  matches := not SkinFrameNeedsRebuild(FFrame, ClientWidth, ClientHeight);
-  if LivePaintShouldRebuildChrome(FResizing, matches, FLastPaintChromeUs,
-    LiveNowUs, kLiveResizeCoalesceUs) then
+  if FLivePaintLocked then
+  begin
+    if FFrame <> nil then
+      DrawSkinFrame(Canvas, FFrame, ClientWidth, ClientHeight);
+    Exit;
+  end;
+  if SkinFrameNeedsRebuild(FFrame, ClientWidth, ClientHeight) then
   begin
     RenderFrame;
     FLastPaintChromeUs := LiveNowUs;
-  end
-  else if not matches then
-  begin
-    if FFrame <> nil then
-      FFrame.Draw(Canvas, 0, 0, True);
-    Exit;
   end;
   if FFrame = nil then Exit;
   DrawSkinFrame(Canvas, FFrame, ClientWidth, ClientHeight);
