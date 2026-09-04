@@ -107,7 +107,7 @@ end;
 
 function TTtplayerHost.SkinDir: string;
 begin
-  Result := RepoRoot + 'Skin';
+  Result := FindSkinDirectory(ExeDir);
 end;
 
 function TTtplayerHost.ConfigFilePath: string;

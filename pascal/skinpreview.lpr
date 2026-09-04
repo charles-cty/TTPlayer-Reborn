@@ -15,7 +15,8 @@ uses
   LazFileUtils, LazUTF8, LCLIntf,
   USkinTypes, USkinLoader, UPlayerForm, UEqualizerForm, ULyricForm,
   UVisualWidget, UPlaylistForm, UPlayerBackend,
-  UWindowSnapManager, UFormSnap, UWindowSnapMath, UPlatformWindow, USkinView;
+  UWindowSnapManager, UFormSnap, UWindowSnapMath, UPlatformWindow, USkinView,
+  UPlayerMenuSpec;
 
 type
   TPreviewMainForm = class(TForm)
@@ -28,7 +29,7 @@ type
     FPlaylistForm: TPlaylistForm;
     FEngine: TSkinEngine;
     FBackend: TStubBackend;
-    FRepoRoot: string;
+    FSkinDir: string;
     FSnap: TWindowSnapManager;
     FPlayerWin, FEqWin, FLyricWin, FPlaylistWin: ISnapWindow;
 
@@ -65,9 +66,7 @@ begin
   FEngine  := TSkinEngine.Create;
   FSnap    := TWindowSnapManager.Create;
 
-  // 仓库根目录 = 本工具所在目录的上两级（pascal/bin/ -> pascal/ -> repo root）
-  FRepoRoot := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..' + PathDelim + '..');
-  FRepoRoot := AppendPathDelim(FRepoRoot);
+  FSkinDir := IncludeTrailingPathDelimiter(FindSkinDirectory);
 
   BuildUI;
   PopulateSkins;
@@ -122,7 +121,7 @@ var
   sr: TSearchRec;
   names: TStringList;
 begin
-  skinDir := FRepoRoot + 'Skin' + PathDelim;
+  skinDir := FSkinDir;
   FCombo.OnChange := nil;
   FCombo.Items.Clear;
 
@@ -158,8 +157,7 @@ var
   sknPath: string;
 begin
   if FCombo.ItemIndex < 0 then Exit;
-  sknPath := FRepoRoot + 'Skin' + PathDelim +
-             FCombo.Items[FCombo.ItemIndex] + '.skn';
+  sknPath := FSkinDir + FCombo.Items[FCombo.ItemIndex] + '.skn';
   LoadSkin(sknPath);
 end;
 

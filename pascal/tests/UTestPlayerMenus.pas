@@ -13,6 +13,7 @@ type
   TPlayerMenusTest = class(TTestCase)
   published
     procedure TestDiscoverSkinsFromTempDir;
+    procedure TestFindSkinDirectoryPrefersExeThenTwoUp;
     procedure TestTrayAndPlayModeCaptions;
     procedure TestLyricOffsetReparse;
     procedure TestLyricEncodingCaptions;
@@ -66,6 +67,42 @@ begin
     DeleteFile(a);
     DeleteFile(b);
     RemoveDir(dir);
+  end;
+end;
+
+procedure TPlayerMenusTest.TestFindSkinDirectoryPrefersExeThenTwoUp;
+var
+  root, exeDir, exeSkin, twoUpSkin: string;
+
+  function Norm(const P: string): string;
+  begin
+    Result := ExcludeTrailingPathDelimiter(ExpandFileName(P));
+  end;
+begin
+  root := IncludeTrailingPathDelimiter(GetTempDir) +
+    'ttplayer-skinroot-' + IntToStr(Random(MaxInt));
+  exeDir := IncludeTrailingPathDelimiter(root) + 'app' + PathDelim + 'bin';
+  exeSkin := IncludeTrailingPathDelimiter(exeDir) + 'Skin';
+  twoUpSkin := IncludeTrailingPathDelimiter(root) + 'Skin';
+  ForceDirectories(exeDir);
+  try
+    ForceDirectories(twoUpSkin);
+    AssertEquals(Norm(twoUpSkin), Norm(FindSkinDirectory(exeDir)));
+
+    ForceDirectories(exeSkin);
+    AssertEquals(Norm(exeSkin), Norm(FindSkinDirectory(exeDir)));
+
+    RemoveDir(twoUpSkin);
+    AssertEquals(Norm(exeSkin), Norm(FindSkinDirectory(exeDir)));
+
+    RemoveDir(exeSkin);
+    AssertEquals(Norm(exeSkin), Norm(FindSkinDirectory(exeDir)));
+  finally
+    RemoveDir(exeSkin);
+    RemoveDir(twoUpSkin);
+    RemoveDir(exeDir);
+    RemoveDir(ExtractFileDir(exeDir));
+    RemoveDir(root);
   end;
 end;
 

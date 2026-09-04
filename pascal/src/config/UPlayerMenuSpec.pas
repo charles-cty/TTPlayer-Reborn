@@ -88,6 +88,7 @@ function CurrentOffsetCaption(OffsetMs: Integer): string;
 
 function DiscoverSkins(const SkinDir: string): TSkinChoiceArray;
 function ResolveSkinPath(const Configured, SkinDir: string): string;
+function FindSkinDirectory(const ExeDirectory: string = ''): string;
 
 implementation
 
@@ -167,6 +168,24 @@ begin
   skins := DiscoverSkins(SkinDir);
   if Length(skins) > 0 then
     Result := skins[0].Path;
+end;
+
+function FindSkinDirectory(const ExeDirectory: string): string;
+var
+  exe, nextToExe, twoUp: string;
+begin
+  exe := Trim(ExeDirectory);
+  if exe = '' then
+    exe := ExtractFilePath(ParamStr(0));
+  exe := IncludeTrailingPathDelimiter(ExpandFileName(exe));
+  nextToExe := ExcludeTrailingPathDelimiter(exe + 'Skin');
+  twoUp := ExcludeTrailingPathDelimiter(
+    ExpandFileName(exe + '..' + PathDelim + '..' + PathDelim + 'Skin'));
+  if DirectoryExists(nextToExe) then
+    Exit(nextToExe);
+  if DirectoryExists(twoUp) then
+    Exit(twoUp);
+  Result := nextToExe;
 end;
 
 end.
