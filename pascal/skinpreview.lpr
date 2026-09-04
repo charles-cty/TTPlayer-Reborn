@@ -612,8 +612,12 @@ begin
   finally
     sl.Free;
   end;
-  WriteLn(json);
-  Flush(Output);
+  // -WG GUI 子系统下 Output 未打开，WriteLn 会 EInOutError「File not open」。
+  if TextRec(Output).Mode <> fmClosed then
+  begin
+    WriteLn(json);
+    Flush(Output);
+  end;
 end;
 
 var
