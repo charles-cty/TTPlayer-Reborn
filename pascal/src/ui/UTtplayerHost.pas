@@ -838,7 +838,7 @@ begin
     FEq.Top := FConfig.EqY;
   end;
   if FConfig.PlaylistW > 0 then
-    FPlaylist.SetBounds(FConfig.PlaylistX, FConfig.PlaylistY,
+    FPlaylist.ApplySavedBounds(FConfig.PlaylistX, FConfig.PlaylistY,
       FConfig.PlaylistW, FConfig.PlaylistH)
   else
   begin

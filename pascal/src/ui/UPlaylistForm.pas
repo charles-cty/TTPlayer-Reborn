@@ -27,6 +27,8 @@ type
 
     procedure ApplySkin(ASkin: PSkinData);
     procedure RefreshViewScale;
+    // 配置里的像素尺寸不能小于皮肤底图（TT-07 的 position 宽为 10）。
+    procedure ApplySavedBounds(AX, AY, AW, AH: Integer);
 
     procedure AddEntry(const FilePath, Title, Artist: string; DurationMs: Int64);
     procedure Clear;
@@ -395,16 +397,14 @@ begin
   dp := ASkin^.PlaylistWindow.DefaultPosition;
   if bg <> nil then
   begin
-    if (dp.W > 0) and (dp.H > 0) then
-    begin
+    // 底图是最小客户区。PlayList.xml 的 position 常是上次窗口矩形，
+    // 可以比底图高（已拉伸），也可能极窄（TT-07 w=10）。
+    FLogicW := bg.Width;
+    FLogicH := bg.Height;
+    if dp.W > FLogicW then
       FLogicW := dp.W;
+    if dp.H > FLogicH then
       FLogicH := dp.H;
-    end
-    else
-    begin
-      FLogicW := bg.Width;
-      FLogicH := bg.Height;
-    end;
     ApplySkinFormSize(Self, FLogicW, FLogicH);
   end;
 
@@ -624,12 +624,30 @@ end;
 
 function TPlaylistForm.BgSize: TPoint;
 begin
-  Result := Point(FLogicW, FLogicH);
+  Result := Point(kPlaylistMinW, kPlaylistMinH);
   if (FSkin <> nil) and (FSkin^.PlaylistWindow.BackgroundPixmap <> nil) then
   begin
     Result.X := FSkin^.PlaylistWindow.BackgroundPixmap.Width;
     Result.Y := FSkin^.PlaylistWindow.BackgroundPixmap.Height;
   end;
+end;
+
+procedure TPlaylistForm.ApplySavedBounds(AX, AY, AW, AH: Integer);
+var
+  s: Double;
+  minSz: TPoint;
+  fw, fh: Integer;
+begin
+  minSz := BgSize;
+  s := FormViewScale(Self);
+  if s < 0.01 then s := 1.0;
+  fw := AW;
+  fh := AH;
+  if fw < ScalePx(minSz.X, s) then
+    fw := ScalePx(minSz.X, s);
+  if fh < ScalePx(minSz.Y, s) then
+    fh := ScalePx(minSz.Y, s);
+  SetBounds(AX, AY, fw, fh);
 end;
 
 function TPlaylistForm.AlignedButtonX(const Elem: TSkinElement): Integer;
@@ -2276,9 +2294,9 @@ begin
     newW := FResizeStartW;
     newH := FResizeStartH;
     if FResizeEdgeRight  then
-      newW := Max(kPlaylistMinW, FResizeStartW + Round(dx / s));
+      newW := Max(BgSize.X, FResizeStartW + Round(dx / s));
     if FResizeEdgeBottom then
-      newH := Max(kPlaylistMinH, FResizeStartH + Round(dy / s));
+      newH := Max(BgSize.Y, FResizeStartH + Round(dy / s));
     if (newW <> FLogicW) or (newH <> FLogicH) then
       ApplyResizeDecision(FResizeSession.Sample(newW, newH, LiveNowUs));
   end
