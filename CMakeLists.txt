@@ -1,8 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
+# Profile must be visible before project() so the compiler module
+# initializes CMAKE_<LANG>_FLAGS_PROFILE from these INIT values.
+set(CMAKE_C_FLAGS_PROFILE_INIT "-O3 -g -DNDEBUG -fno-omit-frame-pointer")
+set(CMAKE_CXX_FLAGS_PROFILE_INIT "-O3 -g -DNDEBUG -fno-omit-frame-pointer")
 project(TTPlayerReborn VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+include("${CMAKE_SOURCE_DIR}/cmake/BuildConfigs.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/Cv2pdb.cmake")
 
 option(BUILD_QT_APP "Build the Qt TTPlayerReborn GUI executable" ON)
 
@@ -77,6 +84,7 @@ set_target_properties(ttcore PROPERTIES
 if (WIN32)
     set_target_properties(ttcore PROPERTIES PREFIX "")
 endif()
+ttplayer_convert_dwarf_to_pdb(ttcore)
 # Windows ship layout: FFmpeg + libgcc/libstdc++/winpthread inside ttcore.dll.
 # SDL2 stays a separate official DLL. --exclude-libs keeps av_* from leaking.
 if (WIN32 AND MINGW)
@@ -118,10 +126,31 @@ if (WIN32 AND SDL2_DLL)
         COMMENT "Copy SDL2.dll next to ttcore.dll"
     )
 endif()
+if (WIN32)
+    add_custom_command(TARGET ttcore POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            "-Dsrc=$<TARGET_FILE_DIR:ttcore>"
+            "-Dbase=$<TARGET_FILE_BASE_NAME:ttcore>"
+            "-Ddst=${_pascal_bin}"
+            -P "${CMAKE_SOURCE_DIR}/cmake/CopyPdbIfPresent.cmake"
+        COMMENT "Copy ttcore PDB to pascal/bin if present"
+    )
+endif()
+ttplayer_convert_dwarf_to_pdb(ttcore_probe)
 add_custom_command(TARGET ttcore_probe POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ttcore_probe> "${_pascal_bin}/"
     COMMENT "Copy ttcore_probe to pascal/bin"
 )
+if (WIN32)
+    add_custom_command(TARGET ttcore_probe POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            "-Dsrc=$<TARGET_FILE_DIR:ttcore_probe>"
+            "-Dbase=$<TARGET_FILE_BASE_NAME:ttcore_probe>"
+            "-Ddst=${_pascal_bin}"
+            -P "${CMAKE_SOURCE_DIR}/cmake/CopyPdbIfPresent.cmake"
+        COMMENT "Copy ttcore_probe PDB to pascal/bin if present"
+    )
+endif()
 
 if (NOT BUILD_QT_APP)
     return()
@@ -239,3 +268,4 @@ target_link_directories(${PROJECT_NAME} PRIVATE
     ${SWRESAMPLE_LIBRARY_DIRS}
     ${SDL2_LIBRARY_DIRS}
 )
+ttplayer_convert_dwarf_to_pdb(${PROJECT_NAME})

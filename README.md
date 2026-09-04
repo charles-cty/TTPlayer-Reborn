@@ -114,6 +114,16 @@ TTPlayer-Reborn/
 
 已在 **Windows（MSYS2/MinGW64）** 和 **Kubuntu（Linux）** 编译成功。
 
+构建配置三种（CMake `CMAKE_BUILD_TYPE` / Lazarus `--bm` 同名）：
+
+| 配置 | 含义 |
+|---|---|
+| **Debug** | 低优化 + 调试信息（Windows 另用 cv2pdb 把 DWARF 转成 PDB） |
+| **Release** | 优化、无调试信息 |
+| **Profile** | 与 Release 相同的优化，加上调试信息与帧指针，给采样 profiler 用。Windows 同样走 cv2pdb |
+
+另有 Lazarus **HeapTrc**（`-gh`），只用于堆诊断，不是第四种发布配置。
+
 **Linux / macOS**
 
 FFmpeg / SDL2 走发行版包管理（pkg-config），不要自备 kitchen-sink 前缀：
@@ -122,9 +132,11 @@ FFmpeg / SDL2 走发行版包管理（pkg-config），不要自备 kitchen-sink 
 sudo apt install cmake g++ pkg-config \
   libavformat-dev libavcodec-dev libavutil-dev libswresample-dev libsdl2-dev
 # Qt 版另需 Qt6 Widgets 等
-cmake -B build -DCMAKE_PREFIX_PATH=/path/to/qt6
-cmake --build build
-./build/TTPlayerReborn
+cmake --preset debug     # 或 release / profile；Qt 版仍可 cmake -B build ...
+cmake --build --preset debug
+# ttcore 快捷脚本（默认 Debug）：
+bash tools/build-ttcore-linux.sh
+bash tools/build-ttcore-linux.sh --config Profile
 ```
 
 **Windows（MSYS2/MinGW64 工具链，PowerShell）**
@@ -133,10 +145,14 @@ cmake --build build
 
 **运行时自包含**：只要 `ttcore.dll`（FFmpeg + MinGW CRT 已静态打进 DLL）和旁边的 `SDL2.dll`。不依赖 MSYS2、不依赖 MinGW CRT DLL、也不读 `C:\Programs` 这类硬编码路径。构建机用 `SDL2_PREFIX` 或 mingw64 的 `pkg-config sdl2` 找到 SDK，CMake 把 `SDL2.dll` 复制到输出目录。
 
+Debug / Profile 会下载 `cv2pdb`（rainers/cv2pdb 0.54）并把 PDB 放到 `pascal\bin\`（WinDbg / WPA 用）。需要本机 Visual Studio 的 `mspdb140.dll`。
+
 ```powershell
 git submodule update --init --depth 1 third_party/ffmpeg
 pwsh tools/build-ffmpeg-win.ps1
-pwsh tools/build-ttcore-win.ps1
+pwsh tools/build-ttcore-win.ps1                 # 默认 Debug
+pwsh tools/build-ttcore-win.ps1 -Config Profile
+pwsh tools/build-ttcore-win.ps1 -Config Release
 # 可选：官方 MinGW SDL2 根目录（含 include/SDL2 与 bin/SDL2.dll）
 # $env:SDL2_PREFIX = 'D:\sdl2\x86_64-w64-mingw32'
 ```
@@ -157,8 +173,9 @@ git submodule update --init --depth 1
 pwsh tools/build-ffmpeg-win.ps1
 pwsh tools/build-ttcore-win.ps1
 
-# 构建全部 Pascal 工程（ttdump + tests + skinpreview）
+# 构建全部 Pascal 工程（ttdump + tests + skinpreview + ttplayer，默认 Debug）
 pwsh tools/build-pascal.ps1
+pwsh tools/build-pascal.ps1 -Config Profile
 ```
 
 **Linux（GTK3 + XWayland，用户目录 FPC/Lazarus）**
@@ -168,6 +185,7 @@ sudo apt install cmake g++ pkg-config \
   libavformat-dev libavcodec-dev libavutil-dev libswresample-dev libsdl2-dev
 bash tools/build-ttcore-linux.sh
 bash tools/build-pascal-linux.sh
+bash tools/build-pascal-linux.sh --config Debug
 bash tools/test-gtk3-wayland.sh
 ```
 

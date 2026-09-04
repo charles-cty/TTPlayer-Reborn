@@ -4,6 +4,8 @@ build*/
 build-*/
 out/
 */build/
+*.pdb
+tools/.cache/
 
 # ---- CMake ----
 CMakeCache.txt

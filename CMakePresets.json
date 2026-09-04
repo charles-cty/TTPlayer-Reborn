@@ -1,0 +1,75 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "ttcore-base",
+      "hidden": true,
+      "cacheVariables": {
+        "BUILD_QT_APP": "OFF"
+      }
+    },
+    {
+      "name": "windows-ninja",
+      "hidden": true,
+      "inherits": "ttcore-base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "TTCORE_STATIC_FFMPEG": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "inherits": ["ttcore-base", "windows-ninja"],
+      "binaryDir": "${sourceDir}/build/${hostSystemName}/ttcore-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "inherits": ["ttcore-base", "windows-ninja"],
+      "binaryDir": "${sourceDir}/build/${hostSystemName}/ttcore-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "profile",
+      "displayName": "Profile",
+      "inherits": ["ttcore-base", "windows-ninja"],
+      "binaryDir": "${sourceDir}/build/${hostSystemName}/ttcore-profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Profile"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "targets": ["ttcore", "ttcore_probe"]
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "targets": ["ttcore", "ttcore_probe"]
+    },
+    {
+      "name": "profile",
+      "configurePreset": "profile",
+      "targets": ["ttcore", "ttcore_probe"]
+    }
+  ]
+}

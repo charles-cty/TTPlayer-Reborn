@@ -5,22 +5,27 @@
 .PARAMETER Project
     只构建指定工程（如 ttdump）；缺省全部构建。
 
+.PARAMETER Config
+    Debug / Release / Profile / HeapTrc（默认 Debug）。
+    Profile = Release 优化 + DWARF。Debug 与 Profile 在 Windows 上跑 cv2pdb 生成 PDB。
+
 .PARAMETER HeapTrace
-    HeapTrc 调试构建（Linux / Windows 相同设施）：lazbuild --bm=HeapTrc，
-    为每个工程打开 -gh（Pascal 堆追踪）+ -gl + -dENABLE_HEAPTRC，
-    输出到 bin\<proj>_heaptrc.exe，单元输出与 Default 隔离。
-    运行时默认把 heaptrc 报告写到同目录 <exe>.heaptrc；可用 HEAPTRACEFILE 覆盖。
-    HEAPTRC_KEEP_RELEASED=1 时不复用已释放块，UAF 会变成确定性 Invalid pointer。
-    Windows 上 C++/CRT 堆（ttcore.dll）另需 tools/pageheap.ps1（GFlags 完整 PageHeap）。
-    注意：-gh 会使程序明显变慢，仅用于调试，不用于发布。
+    等同于 -Config HeapTrc（保留旧开关）。
+    HeapTrc：lazbuild --bm=HeapTrc，-gh + -gl + -dENABLE_HEAPTRC，
+    输出到 bin\<proj>_heaptrc.exe。
+    Windows 上 C++/CRT 堆（ttcore.dll）另需 tools/pageheap.ps1。
 #>
 [CmdletBinding()]
 param(
     [string]$Project = '',
+    [ValidateSet('Debug', 'Release', 'Profile', 'HeapTrc')]
+    [string]$Config = 'Debug',
     [switch]$HeapTrace
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($HeapTrace) { $Config = 'HeapTrc' }
 
 $RepoRoot  = Split-Path -Parent $PSScriptRoot
 $PascalDir = Join-Path $RepoRoot 'pascal'
@@ -28,6 +33,8 @@ $LazBuild  = 'C:\lazarus\lazbuild.exe'
 $LazDir    = 'C:\lazarus'
 
 if (-not (Test-Path $LazBuild)) { throw "找不到 lazbuild：$LazBuild" }
+
+. (Join-Path $PSScriptRoot 'Cv2pdb.ps1')
 
 # vendor 包只需注册一次（lazbuild 会记录到本地包链接），重复执行无害。
 $Packages = @(
@@ -50,20 +57,27 @@ foreach ($proj in $Projects) {
     $lpi = Join-Path $PascalDir "$proj.lpi"
     if (-not (Test-Path $lpi)) { throw "找不到工程：$lpi" }
 
-    if ($HeapTrace) {
+    $outDir = Join-Path $PascalDir "lib\$proj"
+    if ($Config -eq 'HeapTrc') {
         $outDir = Join-Path $PascalDir "lib\${proj}_heaptrc"
-        if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir | Out-Null }
-        Write-Host "[build-pascal] HeapTrc 构建工程：$proj (--bm=HeapTrc)" -ForegroundColor Yellow
-        & $LazBuild --lazarusdir=$LazDir --bm=HeapTrc $lpi
     } else {
-        Write-Host "[build-pascal] 构建工程：$proj" -ForegroundColor Cyan
-        & $LazBuild --lazarusdir=$LazDir $lpi
+        $outDir = Join-Path $PascalDir "lib\$proj\$Config"
     }
+    if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir | Out-Null }
+
+    Write-Host "[build-pascal] $Config 构建工程：$proj (--bm=$Config)" -ForegroundColor Cyan
+    & $LazBuild --lazarusdir=$LazDir --bm=$Config $lpi
     if ($LASTEXITCODE -ne 0) { throw "工程构建失败：$proj" }
+
+    if ($Config -in @('Debug', 'Profile')) {
+        $exeName = if ($Config -eq 'HeapTrc') { "${proj}_heaptrc.exe" } else { "$proj.exe" }
+        $exe = Join-Path $PascalDir "bin\$exeName"
+        Convert-DwarfToPdb -Binary $exe
+    }
 }
 
-Write-Host '[build-pascal] 全部构建完成' -ForegroundColor Green
-if ($HeapTrace) {
+Write-Host "[build-pascal] 全部构建完成 ($Config)" -ForegroundColor Green
+if ($Config -eq 'HeapTrc') {
     Write-Host '[build-pascal] HeapTrc 产物：pascal\bin\*_heaptrc.exe ；报告默认写到同名 .heaptrc' -ForegroundColor Yellow
     Write-Host '[build-pascal] Windows C++ 堆请再开：pwsh tools\pageheap.ps1 -Action Enable tests_heaptrc.exe' -ForegroundColor Yellow
 }

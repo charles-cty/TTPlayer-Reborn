@@ -17,9 +17,69 @@
       </XPManifest>
       <UseDefaultCompilerOptions Value="True"/>
     </General>
-    <BuildModes Count="2">
-      <Item1 Name="Default" Default="True"/>
-      <Item2 Name="HeapTrc">
+    <BuildModes Count="4">
+      <Item1 Name="Debug" Default="True"/>
+      <Item2 Name="Release">
+        <CompilerOptions>
+          <Version Value="11"/>
+          <Target>
+            <Filename Value="bin/skinpreview"/>
+          </Target>
+          <SearchPaths>
+            <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="src/skin;src/render;src/backend;src/ui;src/ui/platform;src/playlist;src/lyric;src/debug;src/config"/>
+            <UnitOutputDirectory Value="lib/skinpreview/Release/$(TargetCPU)-$(TargetOS)"/>
+          </SearchPaths>
+          <CodeGeneration>
+            <Optimizations>
+              <OptimizationLevel Value="2"/>
+            </Optimizations>
+          </CodeGeneration>
+          <Linking>
+            <Debugging>
+              <GenerateDebugInfo Value="False"/>
+              <UseLineInfoUnit Value="False"/>
+              <StripSymbols Value="True"/>
+            </Debugging>
+            <Options>
+              <Win32>
+                <GraphicApplication Value="True"/>
+              </Win32>
+            </Options>
+          </Linking>
+        </CompilerOptions>
+      </Item2>
+      <Item3 Name="Profile">
+        <CompilerOptions>
+          <Version Value="11"/>
+          <Target>
+            <Filename Value="bin/skinpreview"/>
+          </Target>
+          <SearchPaths>
+            <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="src/skin;src/render;src/backend;src/ui;src/ui/platform;src/playlist;src/lyric;src/debug;src/config"/>
+            <UnitOutputDirectory Value="lib/skinpreview/Profile/$(TargetCPU)-$(TargetOS)"/>
+          </SearchPaths>
+          <CodeGeneration>
+            <Optimizations>
+              <OptimizationLevel Value="2"/>
+            </Optimizations>
+          </CodeGeneration>
+          <Linking>
+            <Debugging>
+              <GenerateDebugInfo Value="True"/>
+              <DebugInfoType Value="dsDwarf3"/>
+              <UseLineInfoUnit Value="True"/>
+            </Debugging>
+            <Options>
+              <Win32>
+                <GraphicApplication Value="True"/>
+              </Win32>
+            </Options>
+          </Linking>
+        </CompilerOptions>
+      </Item3>
+      <Item4 Name="HeapTrc">
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
@@ -49,6 +109,7 @@
           <Linking>
             <Debugging>
               <GenerateDebugInfo Value="True"/>
+              <DebugInfoType Value="dsDwarf3"/>
               <UseLineInfoUnit Value="True"/>
               <UseHeaptrc Value="True"/>
             </Debugging>
@@ -62,7 +123,7 @@
             <CustomOptions Value="-dENABLE_HEAPTRC"/>
           </Other>
         </CompilerOptions>
-      </Item2>
+      </Item4>
     </BuildModes>
     <PublishOptions>
       <Version Value="2"/>
@@ -97,16 +158,28 @@
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
       <OtherUnitFiles Value="src/skin;src/render;src/backend;src/ui;src/ui/platform;src/playlist;src/lyric;src/debug;src/config"/>
-      <UnitOutputDirectory Value="lib/skinpreview/$(TargetCPU)-$(TargetOS)"/>
+      <UnitOutputDirectory Value="lib/skinpreview/Debug/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
+    <Parsing>
+      <SyntaxOptions>
+        <IncludeAssertionCode Value="True"/>
+      </SyntaxOptions>
+    </Parsing>
     <CodeGeneration>
+      <Checks>
+        <IOChecks Value="True"/>
+        <RangeChecks Value="True"/>
+        <OverflowChecks Value="True"/>
+        <StackChecks Value="True"/>
+      </Checks>
       <Optimizations>
-        <OptimizationLevel Value="2"/>
+        <OptimizationLevel Value="1"/>
       </Optimizations>
     </CodeGeneration>
     <Linking>
       <Debugging>
         <GenerateDebugInfo Value="True"/>
+        <DebugInfoType Value="dsDwarf3"/>
         <UseLineInfoUnit Value="True"/>
       </Debugging>
       <Options>

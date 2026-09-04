@@ -13,9 +13,59 @@
       <Title Value="tests"/>
       <UseDefaultCompilerOptions Value="True"/>
     </General>
-    <BuildModes Count="2">
-      <Item1 Name="Default" Default="True"/>
-      <Item2 Name="HeapTrc">
+    <BuildModes Count="4">
+      <Item1 Name="Debug" Default="True"/>
+      <Item2 Name="Release">
+        <CompilerOptions>
+          <Version Value="11"/>
+          <Target>
+            <Filename Value="bin/tests"/>
+          </Target>
+          <SearchPaths>
+            <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="src/skin;src/render;src/playlist;src/lyric;src/ui;src/ui/platform;src/backend;src/debug;src/config;tests"/>
+            <UnitOutputDirectory Value="lib/tests/Release/$(TargetCPU)-$(TargetOS)"/>
+          </SearchPaths>
+          <CodeGeneration>
+            <Optimizations>
+              <OptimizationLevel Value="2"/>
+            </Optimizations>
+          </CodeGeneration>
+          <Linking>
+            <Debugging>
+              <GenerateDebugInfo Value="False"/>
+              <UseLineInfoUnit Value="False"/>
+              <StripSymbols Value="True"/>
+            </Debugging>
+          </Linking>
+        </CompilerOptions>
+      </Item2>
+      <Item3 Name="Profile">
+        <CompilerOptions>
+          <Version Value="11"/>
+          <Target>
+            <Filename Value="bin/tests"/>
+          </Target>
+          <SearchPaths>
+            <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="src/skin;src/render;src/playlist;src/lyric;src/ui;src/ui/platform;src/backend;src/debug;src/config;tests"/>
+            <UnitOutputDirectory Value="lib/tests/Profile/$(TargetCPU)-$(TargetOS)"/>
+          </SearchPaths>
+          <CodeGeneration>
+            <Optimizations>
+              <OptimizationLevel Value="2"/>
+            </Optimizations>
+          </CodeGeneration>
+          <Linking>
+            <Debugging>
+              <GenerateDebugInfo Value="True"/>
+              <DebugInfoType Value="dsDwarf3"/>
+              <UseLineInfoUnit Value="True"/>
+            </Debugging>
+          </Linking>
+        </CompilerOptions>
+      </Item3>
+      <Item4 Name="HeapTrc">
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
@@ -45,6 +95,7 @@
           <Linking>
             <Debugging>
               <GenerateDebugInfo Value="True"/>
+              <DebugInfoType Value="dsDwarf3"/>
               <UseLineInfoUnit Value="True"/>
               <UseHeaptrc Value="True"/>
             </Debugging>
@@ -53,7 +104,7 @@
             <CustomOptions Value="-dENABLE_HEAPTRC"/>
           </Other>
         </CompilerOptions>
-      </Item2>
+      </Item4>
     </BuildModes>
     <PublishOptions>
       <Version Value="2"/>
@@ -88,16 +139,28 @@
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
       <OtherUnitFiles Value="src/skin;src/render;src/playlist;src/lyric;src/ui;src/ui/platform;src/backend;src/debug;src/config;tests"/>
-      <UnitOutputDirectory Value="lib/tests/$(TargetCPU)-$(TargetOS)"/>
+      <UnitOutputDirectory Value="lib/tests/Debug/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
+    <Parsing>
+      <SyntaxOptions>
+        <IncludeAssertionCode Value="True"/>
+      </SyntaxOptions>
+    </Parsing>
     <CodeGeneration>
+      <Checks>
+        <IOChecks Value="True"/>
+        <RangeChecks Value="True"/>
+        <OverflowChecks Value="True"/>
+        <StackChecks Value="True"/>
+      </Checks>
       <Optimizations>
-        <OptimizationLevel Value="2"/>
+        <OptimizationLevel Value="1"/>
       </Optimizations>
     </CodeGeneration>
     <Linking>
       <Debugging>
         <GenerateDebugInfo Value="True"/>
+        <DebugInfoType Value="dsDwarf3"/>
         <UseLineInfoUnit Value="True"/>
       </Debugging>
     </Linking>

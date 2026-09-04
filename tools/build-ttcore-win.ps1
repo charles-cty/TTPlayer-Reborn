@@ -2,13 +2,24 @@
 .SYNOPSIS
     用 MSYS2 MinGW64 + Ninja 只编 ttcore.dll（BUILD_QT_APP=OFF），并复制到 pascal\bin。
     FFmpeg 与 MinGW CRT 静态打进 DLL；SDL2.dll 复制到同一目录。
+
+.PARAMETER Config
+    Debug / Release / Profile（默认 Debug）。
+    Profile = Release 优化 + DWARF，Windows 上再经 cv2pdb 生成 PDB。
 #>
+[CmdletBinding()]
+param(
+    [ValidateSet('Debug', 'Release', 'Profile')]
+    [string]$Config = 'Debug'
+)
+
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $RepoRoot
+. (Join-Path $PSScriptRoot 'Cv2pdb.ps1')
 
 $ffmpegLib = Join-Path $RepoRoot 'build-ffmpeg-mingw64\prefix\lib\libavcodec.a'
 if (-not (Test-Path -LiteralPath $ffmpegLib)) {
@@ -23,20 +34,28 @@ foreach ($name in @('cmake.exe', 'ninja.exe', 'pkg-config.exe', 'g++.exe')) {
     if (-not $c) { throw "找不到 $name（需要 MSYS2 mingw-w64 工具链）" }
 }
 
-$BuildDir = Join-Path $RepoRoot 'build-ttcore-mingw64'
+$cv2pdb = $null
+if ($Config -ne 'Release') {
+    $cv2pdb = Get-Cv2pdbExecutable
+}
+
+$BuildDir = Join-Path $RepoRoot "build\Windows\ttcore-$($Config.ToLowerInvariant())"
 $cmakeArgs = @(
     '-S', $RepoRoot,
     '-B', $BuildDir,
     '-G', 'Ninja',
     '-DBUILD_QT_APP=OFF',
-    '-DCMAKE_BUILD_TYPE=RelWithDebInfo',
+    "-DCMAKE_BUILD_TYPE=$Config",
     '-DTTCORE_STATIC_FFMPEG=ON'
 )
+if ($cv2pdb) {
+    $cmakeArgs += "-DCV2PDB_EXECUTABLE=$cv2pdb"
+}
 Write-Host "[build-ttcore-win] cmake $($cmakeArgs -join ' ')"
 & cmake.exe @cmakeArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed: $LASTEXITCODE" }
 
-Write-Host '[build-ttcore-win] cmake --build ttcore ttcore_probe'
+Write-Host "[build-ttcore-win] cmake --build ttcore ttcore_probe ($Config)"
 & cmake.exe --build $BuildDir --target ttcore ttcore_probe
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed: $LASTEXITCODE" }
 
@@ -50,6 +69,14 @@ if (Test-Path -LiteralPath $sdl2) {
     Write-Host "[build-ttcore-win] $sdl2 ($((Get-Item -LiteralPath $sdl2).Length) bytes)"
 } else {
     throw "未复制 $sdl2"
+}
+
+if ($Config -ne 'Release') {
+    $pdb = Join-Path $RepoRoot 'pascal\bin\ttcore.pdb'
+    if (-not (Test-Path -LiteralPath $pdb)) {
+        throw "未生成 $pdb（cv2pdb）"
+    }
+    Write-Host "[build-ttcore-win] $pdb ($((Get-Item -LiteralPath $pdb).Length) bytes)"
 }
 
 $objdump = Join-Path 'C:\msys64\mingw64\bin' 'objdump.exe'

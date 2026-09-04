@@ -234,7 +234,7 @@ SDL_AUDIODRIVER=dummy HEAPTRC_KEEP_RELEASED=1 \
 # 报告：pascal/bin/tests_heaptrc.heaptrc
 ```
 
-`UHeapTraceConfig` 在 `-dENABLE_HEAPTRC` 时打开 `HaltOnError`，并把 dump 指到 `HEAPTRACEFILE` 或 `<exe>.heaptrc`。GUI 工程（`ttplayer` / `skinpreview`）无控制台也看得到报告。`-gh` 产物与 Default 的单元目录隔离（`lib/<proj>_heaptrc/`），不要混编。
+`UHeapTraceConfig` 在 `-dENABLE_HEAPTRC` 时打开 `HaltOnError`，并把 dump 指到 `HEAPTRACEFILE` 或 `<exe>.heaptrc`。GUI 工程（`ttplayer` / `skinpreview`）无控制台也看得到报告。`-gh` 产物与 Debug/Release/Profile 的单元目录隔离（`lib/<proj>_heaptrc/` vs `lib/<proj>/<Config>/`），不要混编。
 
 PageHeap 按 **exe 文件名** 写 IFEO，用完必须 Disable，否则以后每次运行都会又慢又吃内存。
 
