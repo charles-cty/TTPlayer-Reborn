@@ -82,8 +82,9 @@ TTPlayer-Reborn/
 │   └── test-gtk3-wayland.sh  # Linux FPCUnit + XWayland/X11 --probe
 │
 └── docs/
-    ├── testing.md            # 测试体系详细文档
-    └── lazarus-rewrite.md    # Lazarus 重写计划与进展
+    ├── testing.md                   # 测试体系详细文档
+    ├── lazarus-rewrite.md           # Lazarus 重写计划与进展
+    └── debugging-and-profiling.md   # 符号、WinDbg、ETW、DTrace、perf
 ```
 
 ---
@@ -122,7 +123,7 @@ TTPlayer-Reborn/
 | **Release** | 优化、无调试信息 |
 | **Profile** | 与 Release 相同的优化，加上调试信息与帧指针，给采样 profiler 用。Windows 同样走 cv2pdb |
 
-另有 Lazarus **HeapTrc**（`-gh`），只用于堆诊断，不是第四种发布配置。
+另有 Lazarus **HeapTrc**（`-gh`），只用于堆诊断，不是第四种发布配置。HeapTrc / PageHeap、WinDbg、ETW、DTrace 见 [docs/debugging-and-profiling.md](docs/debugging-and-profiling.md)。
 
 **Linux / macOS**
 
@@ -145,7 +146,7 @@ bash tools/build-ttcore-linux.sh --config Profile
 
 **运行时自包含**：只要 `ttcore.dll`（FFmpeg + MinGW CRT 已静态打进 DLL）和旁边的 `SDL2.dll`。不依赖 MSYS2、不依赖 MinGW CRT DLL、也不读 `C:\Programs` 这类硬编码路径。构建机用 `SDL2_PREFIX` 或 mingw64 的 `pkg-config sdl2` 找到 SDK，CMake 把 `SDL2.dll` 复制到输出目录。
 
-Debug / Profile 会下载 `cv2pdb`（rainers/cv2pdb 0.54）并把 PDB 放到 `pascal\bin\`（WinDbg / WPA 用）。需要本机 Visual Studio 的 `mspdb140.dll`。
+Debug / Profile 会下载 `cv2pdb`（rainers/cv2pdb 0.54）并把 PDB 放到 `pascal\bin\`（WinDbg / WPA 用）。需要本机 Visual Studio 的 `mspdb140.dll`。调试、采样与已知限制见 [docs/debugging-and-profiling.md](docs/debugging-and-profiling.md)。
 
 ```powershell
 git submodule update --init --depth 1 third_party/ffmpeg

@@ -179,7 +179,7 @@ pwsh tools/test-all.ps1
 - `-SkipLayer1`：跳过 Layer 1
 - `-SkipFPCUnit`：跳过 Layer 2/3/4
 - `-SkipSmoke`：跳过 Layer 5 GUI 冒烟（无桌面会话时使用）
-- `-HeapTrace`：跑 `pascal\bin\tests_heaptrc.exe`（需先 `tools\build-pascal.ps1 -HeapTrace`）
+- `-HeapTrace`：跑 `pascal\bin\tests_heaptrc.exe`（需先 `tools\build-pascal.ps1 -HeapTrace`）。HeapTrc / PageHeap 的配置与解释见 [debugging-and-profiling.md](debugging-and-profiling.md)
 
 Layer 5（`tools/smoke_skinpreview.py`）在四个窗口渲染之外，还会：点 EQ `enabled` 断言标题变为 `Equalizer ON`、换到 Subaru/HiFi 等尺寸差明显的皮肤并断言窗口尺寸或像素变化、把 Player 放到 EQ 旁发 `WM_ENTERSIZEMOVE`/`SetWindowPos`/`WM_EXITSIZEMOVE` 断言吸附间隙 ~0（LCL 逻辑像素；原生 WndProc 子类化才能收到跨进程的这两条消息）。
 
@@ -205,38 +205,6 @@ bash tools/test-gtk3-wayland.sh           # FPCUnit + X11 --probe + GDK_SCALE=2
 断言（`tools/smoke_gtk3_wayland.py`）：`backend=x11`，`shape_supported=true`，四窗口在且可见。native 尺寸须 >0 且与 LCL×`scale` 相差 ≤24（CSD/frame 仍开则失败；`GDK_SCALE=2` 时 native 可以是 2×）。`GDK_SCALE≥2` 时 `view_scale` 必须为 1（LCL 保持皮肤 1×，由 cairo 做设备缩放）。`decorated`/`has_titlebar` 须为 false。程序化吸附 `gap_after` 须合缝（|gap|≤1）。Player 探测时调用 `gtk_window_set_keep_above`；`ewmh_above` 在 WSLg Weston 上可能仍为 false（合成器不实现 `_NET_WM_STATE_ABOVE`），记 NOTE 不失败。`backend=wayland` 视为失败。`tools/test-gtk3-wayland.sh` 另跑一次 `GDK_SCALE=2` 探测。
 
 stderr 里 `gtk_widget_get_window: assertion 'GTK_IS_WIDGET'` 视为失败（把 `TGtk3Widget` 当成了 `GtkWidget*`）。`gdk_pixbuf_get_from_surface` 0 尺寸 CRITICAL 是 LCL GTK3 在未映射/`bsNone` 上的已知噪音，不判失败。
-
-### 内存诊断（HeapTrc 两端都要；Windows 另加 PageHeap）
-
-Pascal 堆用 FPC **HeapTrc**（`-gh`）。Linux 和 Windows 是同一套工程开关（`--bm=HeapTrc`），Windows 不是只用 GFlags。C++ / CRT 堆（`ttcore.dll`、FFmpeg、SDL）HeapTrc 看不到，Windows 上**额外**开 **GFlags 完整 PageHeap**。
-
-```powershell
-# Windows：先编 ttcore.dll，再 HeapTrc（产物 pascal\bin\*_heaptrc.exe）
-pwsh tools/build-ttcore-win.ps1
-pwsh tools/build-pascal.ps1 -HeapTrace
-pwsh tools/test-all.ps1 -SkipLayer1 -SkipSmoke -HeapTrace
-
-# 默认把报告写到 <exe>.heaptrc；可覆盖：
-$env:HEAPTRACEFILE = 'C:\tmp\tests.heaptrc'
-$env:HEAPTRC_KEEP_RELEASED = '1'   # 不复用已释放块，UAF → Invalid pointer
-
-# 额外：C++ 堆（需管理员 + Windows SDK Debuggers 里的 gflags.exe）
-pwsh tools/pageheap.ps1 -Action Enable tests_heaptrc.exe ttplayer_heaptrc.exe
-# …复现 AV / 0xC0000005 / 0xC0000374…
-pwsh tools/pageheap.ps1 -Action Disable tests_heaptrc.exe ttplayer_heaptrc.exe
-```
-
-```bash
-# Linux：同一套 --bm=HeapTrc
-bash tools/build-pascal-linux.sh --heaptrc tests
-SDL_AUDIODRIVER=dummy HEAPTRC_KEEP_RELEASED=1 \
-  ./pascal/bin/tests_heaptrc --all --format=plain
-# 报告：pascal/bin/tests_heaptrc.heaptrc
-```
-
-`UHeapTraceConfig` 在 `-dENABLE_HEAPTRC` 时打开 `HaltOnError`，并把 dump 指到 `HEAPTRACEFILE` 或 `<exe>.heaptrc`。GUI 工程（`ttplayer` / `skinpreview`）无控制台也看得到报告。`-gh` 产物与 Debug/Release/Profile 的单元目录隔离（`lib/<proj>_heaptrc/` vs `lib/<proj>/<Config>/`），不要混编。
-
-PageHeap 按 **exe 文件名** 写 IFEO，用完必须 Disable，否则以后每次运行都会又慢又吃内存。
 
 ### 仅 FPCUnit
 
