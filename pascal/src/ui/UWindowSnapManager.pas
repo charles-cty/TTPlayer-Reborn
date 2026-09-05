@@ -162,9 +162,50 @@ type
     function  FinalSnapGroupToStaticWindows: TSnapPoint;
     function  FinalSnapDraggedSub: TSnapPoint;
     procedure RebuildSnapGraphInPlace;
+    function  DescribeGraph: string;
   end;
 
 implementation
+
+uses
+  ULog;
+
+function SnapWinName(AWin: ISnapWindow): string;
+begin
+  if AWin = nil then
+    Exit('-');
+  Result := AWin.GetName;
+  if Result = '' then
+    Result := '-';
+end;
+
+function SnapRectLabel(const R: TSnapRect): string;
+begin
+  Result := Format('%d,%d %dx%d', [R.X, R.Y, R.W, R.H]);
+end;
+
+function SnapEdgesLabel(Edges: TSnapEdges): string;
+begin
+  Result := '';
+  if seRight in Edges then
+    Result := Result + 'R';
+  if seBottom in Edges then
+    Result := Result + 'B';
+  if Result = '' then
+    Result := '-';
+end;
+
+function HeldAxesLabel(HeldX, HeldY: Boolean): string;
+begin
+  if HeldX and HeldY then
+    Result := 'XY'
+  else if HeldX then
+    Result := 'X'
+  else if HeldY then
+    Result := 'Y'
+  else
+    Result := '-';
+end;
 
 { TMemorySnapWindow }
 
@@ -237,6 +278,37 @@ begin
   SetLength(FSubs, 0);
   FMain := nil;
   inherited Destroy;
+end;
+
+function TWindowSnapManager.DescribeGraph: string;
+var
+  i: Integer;
+  b: TSnapRect;
+  an, item: string;
+begin
+  Result := '';
+  if FMain <> nil then
+  begin
+    b := FMain.GetBounds;
+    Result := 'main=' + SnapWinName(FMain) + '[' + SnapRectLabel(b) + ']';
+  end;
+  for i := 0 to High(FSubs) do
+  begin
+    if FSubs[i].Win = nil then Continue;
+    b := FSubs[i].Win.GetBounds;
+    if FSubs[i].Anchor = SNAP_MAIN_ANCHOR then
+      an := 'main'
+    else if FSubs[i].Anchor = SNAP_NO_ANCHOR then
+      an := '-'
+    else if (FSubs[i].Anchor >= 0) and (FSubs[i].Anchor <= High(FSubs)) then
+      an := SnapWinName(FSubs[FSubs[i].Anchor].Win)
+    else
+      an := '?';
+    item := SnapWinName(FSubs[i].Win) + '>' + an + '[' + SnapRectLabel(b) + ']';
+    if Result <> '' then
+      Result := Result + ' ';
+    Result := Result + item;
+  end;
 end;
 
 procedure TWindowSnapManager.SetMainWindow(AWin: ISnapWindow);
@@ -404,9 +476,12 @@ end;
 procedure TWindowSnapManager.ApplyDragLogical(AX, AY: Integer);
 var
   outX, outY, rel: Integer;
+  wasX, wasY: Boolean;
 begin
   if (not DragActive) or (FDragLeader = nil) then Exit;
   rel := GetSnapReleaseThreshold;
+  wasX := FHeldX;
+  wasY := FHeldY;
 
   outX := AX;
   outY := AY;
@@ -424,6 +499,13 @@ begin
     else
       outY := FHeldLeaderPos.Y;
   end;
+
+  if wasX and not FHeldX then
+    LogInfoFmt('snap', 'Release X %s pointer=%d held=%d',
+      [SnapWinName(FDragLeader), AX, FHeldLeaderPos.X]);
+  if wasY and not FHeldY then
+    LogInfoFmt('snap', 'Release Y %s pointer=%d held=%d',
+      [SnapWinName(FDragLeader), AY, FHeldLeaderPos.Y]);
 
   MoveLeaderTo(outX, outY);
   if FDragLeader = FMain then
@@ -707,6 +789,10 @@ begin
           FSubs[i].FitY := fy;
           assigned[i] := True;
           changed := True;
+          LogInfoFmt('snap',
+            'Capture %s target=main fitX=%d fitY=%d @%d,%d %dx%d',
+            [FSubs[i].Win.GetName, Ord(fx), Ord(fy),
+             child.X, child.Y, child.W, child.H]);
           Continue;
         end;
       end;
@@ -722,6 +808,10 @@ begin
           FSubs[i].FitY := fy;
           assigned[i] := True;
           changed := True;
+          LogInfoFmt('snap',
+            'Capture %s target=%s#%d fitX=%d fitY=%d @%d,%d %dx%d',
+            [FSubs[i].Win.GetName, FSubs[j].Win.GetName, j, Ord(fx), Ord(fy),
+             child.X, child.Y, child.W, child.H]);
           Break;
         end;
       end;
@@ -738,6 +828,10 @@ begin
     FSubs[i].FitTarget := SNAP_MAIN_ANCHOR;
     FSubs[i].FitX := fx;
     FSubs[i].FitY := fy;
+    LogInfoFmt('snap',
+      'Capture %s force-dock main fitX=%d fitY=%d @%d,%d %dx%d',
+      [FSubs[i].Win.GetName, Ord(fx), Ord(fy),
+       child.X, child.Y, child.W, child.H]);
   end;
 end;
 
@@ -840,6 +934,8 @@ var
         end;
         placed[i] := True;
         progress := True;
+        LogInfoFmt('snap', 'Place %s Y -> %d,%d',
+          [FSubs[i].Win.GetName, newX, newY]);
         child := FSubs[i].Win.GetLayoutBounds;
         if sideY = sfyAdjBelow then
           cursor := child.Y + child.H
@@ -900,6 +996,8 @@ var
         end;
         placed[i] := True;
         progress := True;
+        LogInfoFmt('snap', 'Place %s X -> %d,%d',
+          [FSubs[i].Win.GetName, newX, newY]);
         child := FSubs[i].Win.GetLayoutBounds;
         if sideX = sfxAdjRight then
           cursor := child.X + child.W
@@ -951,6 +1049,7 @@ begin
     end;
   end;
   RefreshOffsets;
+  LogInfoFmt('snap', 'Rebuild move %s', [DescribeGraph]);
 end;
 
 procedure TWindowSnapManager.RebuildSnapGraphInPlace;
@@ -974,6 +1073,7 @@ begin
     end;
   end;
   RefreshOffsets;
+  LogInfoFmt('snap', 'Rebuild inplace %s', [DescribeGraph]);
 end;
 
 function TWindowSnapManager.TrySnap(MovingIndex: Integer; MoveToSnap: Boolean): Boolean;
@@ -1158,6 +1258,9 @@ begin
     end;
     SetLength(FMoveGroup, n);
     SetLength(FMoveGroupStart, n);
+    LogInfoFmt('snap', 'Drag start %s @%s group=%d held=%s',
+      [SnapWinName(FMain), SnapRectLabel(FMain.GetBounds), n,
+       HeldAxesLabel(FHeldX, FHeldY)]);
     Exit;
   end;
 
@@ -1175,17 +1278,27 @@ begin
     FHeldY := True;
     FHeldLeaderPos := FDragLeaderStart;
   end;
+  LogInfoFmt('snap', 'Drag start %s @%s connected=%s held=%s',
+    [SnapWinName(ALeader), SnapRectLabel(b),
+     BoolToStr(IsConnectedToMain(FDragLeaderIndex), True),
+     HeldAxesLabel(FHeldX, FHeldY)]);
 end;
 
 procedure TWindowSnapManager.FinishDragSession(ALeader: ISnapWindow);
+var
+  leader: string;
+  b: TSnapRect;
 begin
   if (not DragActive) or (FDragLeader <> ALeader) then Exit;
+  leader := SnapWinName(FDragLeader);
   if FDragLeader = FMain then
     FinalSnapGroupToStaticWindows
   else
     FinalSnapDraggedSub;
+  b := FDragLeader.GetBounds;
   ClearDrag;
   RebuildSnapGraphInPlace;
+  LogInfoFmt('snap', 'Drag end %s @%s', [leader, SnapRectLabel(b)]);
 end;
 
 function TWindowSnapManager.MoveDragGroup(const TotalDelta: TSnapPoint): Integer;
@@ -1346,6 +1459,9 @@ begin
   b := FMain.GetBounds;
   if FHeldX then FHeldLeaderPos.X := b.X;
   if FHeldY then FHeldLeaderPos.Y := b.Y;
+  LogInfoFmt('snap', 'Attach group d=%d,%d held=%s main@%s',
+    [bestGroupShift.X, bestGroupShift.Y, HeldAxesLabel(FHeldX, FHeldY),
+     SnapRectLabel(b)]);
 end;
 
 function TWindowSnapManager.FinalSnapDraggedSub: TSnapPoint;
@@ -1446,6 +1562,9 @@ begin
     FHeldY := True;
     FHeldLeaderPos.Y := bestPos.Y;
   end;
+  LogInfoFmt('snap', 'Attach %s -> %d,%d d=%d,%d held=%s',
+    [SnapWinName(entryWin), bestPos.X, bestPos.Y, Result.X, Result.Y,
+     HeldAxesLabel(FHeldX, FHeldY)]);
 end;
 
 procedure TWindowSnapManager.OnSubResized(ASub: ISnapWindow; Edges: TSnapEdges);
@@ -1507,8 +1626,21 @@ begin
 end;
 
 procedure TWindowSnapManager.OnSubResizeFinished(ASub: ISnapWindow; Edges: TSnapEdges);
+var
+  oldR, newR: TSnapRect;
 begin
+  if ASub = nil then
+    oldR := SnapRectXYWH(0, 0, 0, 0)
+  else
+    oldR := ASub.GetBounds;
   OnSubResized(ASub, Edges);
+  if ASub = nil then
+    newR := oldR
+  else
+    newR := ASub.GetBounds;
+  LogInfoFmt('snap', 'Resize end %s edges=%s %s -> %s',
+    [SnapWinName(ASub), SnapEdgesLabel(Edges), SnapRectLabel(oldR),
+     SnapRectLabel(newR)]);
   RebuildSnapGraphInPlace;
 end;
 

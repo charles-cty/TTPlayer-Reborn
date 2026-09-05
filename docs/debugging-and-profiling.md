@@ -2,7 +2,7 @@
 
 产品 GUI 是 Lazarus/FPC（`pascal/`）。`ttcore` 是无 Qt 的 C++ FFI 库（Windows 上为 MinGW `ttcore.dll`，Linux 上为 `libttcore.so`）。仓库里的 Qt 程序是对照/遗留实现，不是发布目标。
 
-本文管 **符号、崩溃栈、堆诊断、CPU 采样**。分层测试、FPCUnit、冒烟见 [testing.md](testing.md)。
+本文管 **符号、崩溃栈、堆诊断、CPU 采样、Pascal 日志**。分层测试、FPCUnit、冒烟见 [testing.md](testing.md)。
 
 ## 编哪种配置
 
@@ -67,6 +67,38 @@ cdb -g -G pascal\bin\ttplayer.exe
 GUI 工程是 `-WG`（Windows 子系统），没有控制台。不要指望 `WriteLn` 出现在启动它的终端里；stdout 关闭时 `WriteLn` 会 `EInOutError`「File not open」。`skinpreview --probe` 在 `Output` 关闭时会跳过 `WriteLn`。需要看探测 JSON 时用 `--probe-out <file>`。
 
 吸附挂钩：`HookSnapWindow` 在 form 为 nil 时直接返回（窗口还没建好、`--probe` 未进 `Application.Run` 时不要解引用）。
+
+## Pascal 日志（ULog）
+
+单元 `pascal/src/debug/ULog.pas`。任意 Pascal 单元 `uses ULog` 后调用 `LogInfo('topic', '...')` / `LogInfoFmt` / `LogDebug` 等。不依赖 LCL。GUI 默认写文件，不写 stdout。
+
+默认文件是 exe 旁的 `<program>.log`（`ttplayer.exe` → `pascal/bin/ttplayer.log`）。默认级别 **info**。换肤几何走 topic `skin`；吸附/拖拽/缩放的状态变化走 topic `snap`（均为 info）：开始/结束拖拽、轴吸住或拉开、贴上边、重建吸附图、缩放起停。不要用日志记逐像素位移，那是 profiler / DTrace 的事。
+
+行格式：
+
+消息首字母大写、动词开头（`ApplySkinFile`、`Refit start`、`Drag end`、`Resize start`），词之间一个空格。
+
+```text
+---------- 2026-09-05 10:22:00 pid=1234 ttplayer.exe ----------
+10:22:01.123 INFO  [skin] ApplySkinFile C:\...\Classic.skn
+10:22:01.140 INFO  [skin] Refit start player=175,62 413x174 ...
+10:22:15.010 INFO  [snap] Drag start player @452,210 413x174 group=3 held=-
+10:22:16.200 INFO  [snap] Resize start 413x174
+```
+
+| 变量 | 含义 |
+|---|---|
+| `TTPLAYER_LOG` | 文件路径，或 `off` / `stdout` / `stderr`。未设则 exe 旁 `.log` |
+| `TTPLAYER_LOG_LEVEL` | `off` `error` `warn` `info` `debug` `trace`。未设则 `info` |
+| `TTPLAYER_LOG_TOPICS` | 逗号分隔的 topic；空或未设 = 全部。现有：`skin`、`snap` |
+
+```powershell
+# 默认 info 已含 skin / snap。只要看吸附：
+$env:TTPLAYER_LOG_TOPICS = 'snap'
+# 然后启动 pascal\bin\ttplayer.exe，看 pascal\bin\ttplayer.log
+```
+
+`stdout` / `stderr` 只在控制台程序（`tests`）或已打开的 Output 上有效；`-WG` 的 `ttplayer` 请用文件。写失败不抛、每行 Flush。测试里用 `SetLogDestination` / `SetLogLevel` 指到临时文件，不要依赖进程默认路径。
 
 ## 堆诊断（HeapTrc + PageHeap）
 

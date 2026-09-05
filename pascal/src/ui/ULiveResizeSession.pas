@@ -81,6 +81,9 @@ function LivePaintShouldRebuildChrome(Resizing, FrameMatchesDest: Boolean;
 
 implementation
 
+uses
+  ULog;
+
 function LiveNowUs: Int64;
 begin
   // 合帧只要毫秒级；GetTickCount64 两边都有。默认量子 ~15.6ms，
@@ -142,6 +145,7 @@ begin
   FLastBoundsH := StartH;
   FDirty := True;
   FPendingSizeChanged := True;
+  LogInfoFmt('snap', 'Resize start %dx%d', [StartW, StartH]);
 end;
 
 function TLiveResizeSession.Decide(NowUs: Int64;
@@ -274,6 +278,8 @@ begin
   FLastBoundsH := FLogicH;
   FDirty := False;
   FPendingSizeChanged := False;
+  LogInfoFmt('snap', 'Resize commit %dx%d -> %dx%d samples=%d',
+    [FStartW, FStartH, FLogicW, FLogicH, FSampleCount]);
 end;
 
 procedure TLiveResizeSession.EndGesture;

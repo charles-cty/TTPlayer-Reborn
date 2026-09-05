@@ -93,7 +93,7 @@ type
 implementation
 
 uses
-  LazFileUtils, Math, UWindowSnapMath
+  LazFileUtils, Math, UWindowSnapMath, ULog
   {$IFDEF WINDOWS}, Windows{$ENDIF};
 
 function TTtplayerHost.RepoRoot: string;
@@ -785,31 +785,11 @@ begin
     FPlaylist.PlayNext;
 end;
 
-procedure AppendSkinRefitLog(const Msg: string);
-var
-  f: TextFile;
-  p: string;
-begin
-  p := ExtractFilePath(ParamStr(0)) + 'skin-refit.log';
-  AssignFile(f, p);
-  {$I-}
-  if FileExists(p) then
-    Append(f)
-  else
-    Rewrite(f);
-  if IOResult = 0 then
-  begin
-    WriteLn(f, FormatDateTime('hh:nn:ss.zzz', Now), ' ', Msg);
-    CloseFile(f);
-  end;
-  {$I+}
-end;
-
 procedure TTtplayerHost.MoveSkinForm(AForm: TForm; AX, AY: Integer);
 begin
   if AForm = nil then Exit;
-  AppendSkinRefitLog(Format('Move %s from %d,%d %dx%d -> %d,%d',
-    [AForm.ClassName, AForm.Left, AForm.Top, AForm.Width, AForm.Height, AX, AY]));
+  LogInfoFmt('skin', 'Move %s from %d,%d %dx%d -> %d,%d',
+    [AForm.ClassName, AForm.Left, AForm.Top, AForm.Width, AForm.Height, AX, AY]);
   if AForm.HandleAllocated then
     ClearWindowShape(AForm.Handle);
   AForm.SetBounds(AX, AY, AForm.Width, AForm.Height);
@@ -825,15 +805,15 @@ end;
 procedure TTtplayerHost.RefitSkinForms;
 begin
   if (FSnap = nil) or (FPlayerWin = nil) then Exit;
-  AppendSkinRefitLog(Format(
-    'before player=%d,%d %dx%d eq=%d,%d %dx%d lyric=%d,%d %dx%d pl=%d,%d %dx%d snapped eq=%s lyric=%s pl=%s',
+  LogInfoFmt('skin',
+    'Refit start player=%d,%d %dx%d eq=%d,%d %dx%d lyric=%d,%d %dx%d pl=%d,%d %dx%d snapped eq=%s lyric=%s pl=%s',
     [FPlayer.Left, FPlayer.Top, FPlayer.Width, FPlayer.Height,
      FEq.Left, FEq.Top, FEq.Width, FEq.Height,
      FLyric.Left, FLyric.Top, FLyric.Width, FLyric.Height,
      FPlaylist.Left, FPlaylist.Top, FPlaylist.Width, FPlaylist.Height,
      BoolToStr(FSnap.IsSnapped(FEqWin), True),
      BoolToStr(FSnap.IsSnapped(FLyricWin), True),
-     BoolToStr(FSnap.IsSnapped(FPlaylistWin), True)]));
+     BoolToStr(FSnap.IsSnapped(FPlaylistWin), True)]);
   if FPlayer.HandleAllocated then ClearWindowShape(FPlayer.Handle);
   if FEq.HandleAllocated then ClearWindowShape(FEq.Handle);
   if FLyric.HandleAllocated then ClearWindowShape(FLyric.Handle);
@@ -847,18 +827,26 @@ begin
   FEq.RebuildWindowShape;
   FLyric.RebuildWindowShape;
   FPlaylist.RebuildWindowShape;
-  AppendSkinRefitLog(Format(
-    'after  player=%d,%d %dx%d eq=%d,%d %dx%d lyric=%d,%d %dx%d pl=%d,%d %dx%d',
+  LogInfoFmt('skin',
+    'Refit end player=%d,%d %dx%d eq=%d,%d %dx%d lyric=%d,%d %dx%d pl=%d,%d %dx%d snapped eq=%s lyric=%s pl=%s',
     [FPlayer.Left, FPlayer.Top, FPlayer.Width, FPlayer.Height,
      FEq.Left, FEq.Top, FEq.Width, FEq.Height,
      FLyric.Left, FLyric.Top, FLyric.Width, FLyric.Height,
-     FPlaylist.Left, FPlaylist.Top, FPlaylist.Width, FPlaylist.Height]));
+     FPlaylist.Left, FPlaylist.Top, FPlaylist.Width, FPlaylist.Height,
+     BoolToStr(FSnap.IsSnapped(FEqWin), True),
+     BoolToStr(FSnap.IsSnapped(FLyricWin), True),
+     BoolToStr(FSnap.IsSnapped(FPlaylistWin), True)]);
 end;
 
 procedure TTtplayerHost.ApplySkinFile(const SknPath: string);
 begin
   if (SknPath = '') or (not FileExists(SknPath)) then Exit;
-  if not FEngine.LoadFromFile(SknPath) then Exit;
+  LogInfoFmt('skin', 'ApplySkinFile %s', [SknPath]);
+  if not FEngine.LoadFromFile(SknPath) then
+  begin
+    LogWarnFmt('skin', 'LoadFromFile failed %s', [SknPath]);
+    Exit;
+  end;
   // 换肤只改尺寸。期间禁止 Show/Hide 重建吸附图（10px 阈值会把贴合边丢掉），
   // 必须在改尺寸之前记贴合边，落地后再按原边重新贴紧。
   if FSnap <> nil then

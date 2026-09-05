@@ -16,7 +16,7 @@ uses
   Classes, consoletestrunner, UTestLayer2, UTestLayer3, UTestMetamorphic,
   UTestPlaylistModel, UTestWindowSnap, UTestLiveResize, UTestLrcParser, UTestTtbl,
   UTestAlphaShape, UTestDpiScale, UTestTtcoreBackend, UTestSpectrumAnalyze,
-  UTestPlayerConfig, UTestPlayerMenus;
+  UTestPlayerConfig, UTestPlayerMenus, UTestLog;
 
 var
   App: TTestRunner;

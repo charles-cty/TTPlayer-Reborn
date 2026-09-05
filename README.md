@@ -132,6 +132,14 @@ TTPlayer-Reborn/
 
 Windows 上若已把 MinGW64 `bin` 和 `lazbuild` 加入 `PATH`，对应变量可省略；找不到工具时脚本会提示要设哪一个。
 
+运行时日志（Pascal `ULog`，详见 [debugging-and-profiling.md](docs/debugging-and-profiling.md) 的 Pascal 日志一节）：
+
+| 变量 | 含义 |
+|---|---|
+| `TTPLAYER_LOG` | 日志文件路径，或 `off` / `stdout` / `stderr`。未设则 exe 旁 `<program>.log` |
+| `TTPLAYER_LOG_LEVEL` | `off` `error` `warn` `info` `debug` `trace`。未设则 `info` |
+| `TTPLAYER_LOG_TOPICS` | 逗号分隔的 topic（如 `skin,snap`）；空 = 全部 |
+
 ### Linux 依赖包
 
 不要用 Ubuntu apt 的 `lazarus` / `fp-compiler`（当前是 3.0，没有 LCL GTK3）。FPC 与 Lazarus（GTK3 widgetset）自行安装，再用上表变量指向它们。其余用发行版包：
