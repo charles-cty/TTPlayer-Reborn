@@ -32,6 +32,7 @@ type
   public
     constructor Create(AForm: TForm);
     function GetBounds: TSnapRect;
+    function GetLayoutBounds: TSnapRect;
     procedure MoveTo(AX, AY: Integer);
     procedure ResizeTo(AW, AH: Integer);
     function GetVisible: Boolean;
@@ -145,6 +146,13 @@ begin
 {$ENDIF}
 end;
 
+function TFormSnapWindow.GetLayoutBounds: TSnapRect;
+begin
+  Result := SnapRectXYWH(0, 0, 0, 0);
+  if FForm = nil then Exit;
+  Result := SnapRectXYWH(FForm.Left, FForm.Top, FForm.Width, FForm.Height);
+end;
+
 procedure TFormSnapWindow.MoveTo(AX, AY: Integer);
 {$IFDEF WINDOWS}
 var
@@ -157,8 +165,9 @@ begin
   if (AX < Low(SmallInt)) or (AX > High(SmallInt)) or
      (AY < Low(SmallInt)) or (AY > High(SmallInt)) then
     Exit;
-  if (FForm.Left <> AX) or (FForm.Top <> AY) then
-    FForm.SetBounds(AX, AY, FForm.Width, FForm.Height);
+  FForm.SetBounds(AX, AY, FForm.Width, FForm.Height);
+  FForm.Left := AX;
+  FForm.Top := AY;
 {$IFNDEF WINDOWS}
   // GTK3 TGtk3Window.SetBounds 会 size_allocate+resize+move；再 gtk_window_move
   // 一次，避免只改 LCL Left 而 X 窗口停在原地（WSLg 上很常见）。
@@ -166,7 +175,7 @@ begin
     PlatformMoveWindow(FForm.Handle, AX, AY);
 {$ENDIF}
 {$IFDEF WINDOWS}
-  // Win32 SetWindowPos 是物理像素。GTK3 gtk_window_move 是逻辑像素。
+  // 换肤后 SetWindowRgn 可能让 LCL SetBounds 改不了 HWND。始终再 SetWindowPos。
   if not FForm.HandleAllocated then Exit;
   wr := Types.Rect(0, 0, 0, 0);
   if not PlatformGetWindowRect(FForm.Handle, wr) then Exit;
@@ -174,10 +183,17 @@ begin
   ph := wr.Bottom - wr.Top;
   if (pw <= 0) or (ph <= 0) or (FForm.Width <= 0) or (FForm.Height <= 0) then
     Exit;
-  physX := NativeFromLogical(AX, FForm.Width, pw);
-  physY := NativeFromLogical(AY, FForm.Height, ph);
-  if (wr.Left <> physX) or (wr.Top <> physY) then
-    PlatformMoveWindow(FForm.Handle, physX, physY);
+  if WindowScaleFromSizes(FForm.Width, FForm.Height, pw, ph) <= 1.0001 then
+  begin
+    physX := AX;
+    physY := AY;
+  end
+  else
+  begin
+    physX := NativeFromLogical(AX, FForm.Width, pw);
+    physY := NativeFromLogical(AY, FForm.Height, ph);
+  end;
+  PlatformMoveWindow(FForm.Handle, physX, physY);
 {$ENDIF}
 end;
 

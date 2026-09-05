@@ -26,6 +26,7 @@ type
     // 应用皮肤；换肤时调用。
     procedure ApplySkin(ASkin: PSkinData);
     procedure RefreshViewScale;
+    procedure RebuildWindowShape;
     procedure SetBounds(ALeft, ATop, AWidth, AHeight: Integer); override;
     procedure LoadLrc(const APath: string);
     procedure ClearLrc;
@@ -493,6 +494,12 @@ begin
   if HandleAllocated then
     BuildRegion;
   Invalidate;
+end;
+
+procedure TLyricForm.RebuildWindowShape;
+begin
+  if HandleAllocated then
+    BuildRegion;
 end;
 
 procedure TLyricForm.BuildRegion;

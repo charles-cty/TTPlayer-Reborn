@@ -34,6 +34,7 @@ type
     // 应用皮肤；换肤时调用，重建 Region 并刷新。
     procedure ApplySkin(ASkin: PSkinData);
     procedure RefreshViewScale;
+    procedure RebuildWindowShape;
     procedure ApplyEqConfig(AEnabled: Boolean; Preamp: Double;
       const Bands: array of Double; Balance: Integer);
     function GetPreamp: Double;
@@ -292,6 +293,12 @@ begin
   if HandleAllocated then
     BuildRegion;
   Invalidate;
+end;
+
+procedure TEqualizerForm.RebuildWindowShape;
+begin
+  if HandleAllocated then
+    BuildRegion;
 end;
 
 procedure TEqualizerForm.CreateWnd;

@@ -27,6 +27,7 @@ type
 
     procedure ApplySkin(ASkin: PSkinData);
     procedure RefreshViewScale;
+    procedure RebuildWindowShape;
     // 配置里的像素尺寸不能小于皮肤底图（TT-07 的 position 宽为 10）。
     procedure ApplySavedBounds(AX, AY, AW, AH: Integer);
 
@@ -557,6 +558,12 @@ begin
   if HandleAllocated then
     BuildRegion;
   Invalidate;
+end;
+
+procedure TPlaylistForm.RebuildWindowShape;
+begin
+  if HandleAllocated then
+    BuildRegion;
 end;
 
 procedure TPlaylistForm.BuildRegion;

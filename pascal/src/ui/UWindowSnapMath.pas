@@ -14,10 +14,30 @@ uses
 
 const
   kDefaultSnapThreshold = 10;
+  // 判定「同侧对齐」用的贴合容差。相邻（对边相贴）在已有吸附边上
+  // 允许更大间隙，以便换肤后尺寸差仍能认出原来的贴边。
+  kSnapFitAlignTolerance = 2;
 
 type
   TSnapEdge = (seRight, seBottom);
   TSnapEdges = set of TSnapEdge;
+
+  // 子窗口相对锚点的贴合方式。换肤改尺寸后按此重新贴紧，而不是
+  // 沿用旧的左上角偏移（那会留下空隙或重叠）。
+  TSnapFitX = (
+    sfxNone,
+    sfxAdjRight,    // 子窗口在锚点右侧：Child.X = Anchor.RightExcl
+    sfxAdjLeft,     // 子窗口在锚点左侧：Child.RightExcl = Anchor.X
+    sfxAlignLeft,   // 左边缘对齐
+    sfxAlignRight   // 右边缘对齐
+  );
+  TSnapFitY = (
+    sfyNone,
+    sfyAdjBelow,    // 子窗口在锚点下方：Child.Y = Anchor.BottomExcl
+    sfyAdjAbove,    // 子窗口在锚点上方：Child.BottomExcl = Anchor.Y
+    sfyAlignTop,    // 上边缘对齐
+    sfyAlignBottom  // 下边缘对齐
+  );
 
   TSnapRect = record
     X, Y, W, H: Integer;
@@ -63,6 +83,29 @@ function TrySnapResizeToScreen(const Moving: TSnapRect; Edges: TSnapEdges;
 function CombineAxisSnap(const Moving: TSnapRect;
   HasX: Boolean; NewX: Integer;
   HasY: Boolean; NewY: Integer): TSnapPoint;
+
+// 从当前几何推断贴合方式。对齐类只在 AlignTol 内成立；相邻类只要
+// 另一轴投影重叠就取更近的一侧（换肤造成的大间隙/重叠也能认出来）。
+// 沿边滑开的那一轴（对齐距离 > AlignTol 且相邻更远）保持 sfxNone。
+function ClassifySnapFitX(const Child, Anchor: TSnapRect;
+  AlignTol: Integer): TSnapFitX;
+function ClassifySnapFitY(const Child, Anchor: TSnapRect;
+  AlignTol: Integer): TSnapFitY;
+
+// 按贴合方式把子窗口放到锚点新尺寸下的紧贴位置。None 时沿用 KeepOffset。
+function ApplySnapFitX(const Child, Anchor: TSnapRect; Kind: TSnapFitX;
+  KeepOffsetX: Integer): Integer;
+function ApplySnapFitY(const Child, Anchor: TSnapRect; Kind: TSnapFitY;
+  KeepOffsetY: Integer): Integer;
+function SnapFitXDistance(const Child, Anchor: TSnapRect; Kind: TSnapFitX): Integer;
+function SnapFitYDistance(const Child, Anchor: TSnapRect; Kind: TSnapFitY): Integer;
+
+// 已吸附但分类失败时：选间隙更小的那一轴作为对边相贴，另一轴可同侧对齐。
+procedure ForceDockFit(const Child, Anchor: TSnapRect;
+  out FitX: TSnapFitX; out FitY: TSnapFitY);
+// 对边相贴且间隙 ≤ 2px：从主窗向外建链，避免多个窗口挤到同一条边上。
+function TouchingDock(const Child, Anchor: TSnapRect;
+  out FitX: TSnapFitX; out FitY: TSnapFitY): Boolean;
 
 implementation
 
@@ -444,6 +487,240 @@ begin
     candidate := Moving;
     candidate.H := ScreenRect.BottomExcl - Moving.Y;
     Consider(candidate);
+  end;
+end;
+
+function ProjectionsOverlapY(const A, B: TSnapRect; Pad: Integer): Boolean;
+begin
+  Result := (A.BottomIncl >= B.Y - Pad) and (A.Y <= B.BottomIncl + Pad);
+end;
+
+function ProjectionsOverlapX(const A, B: TSnapRect; Pad: Integer): Boolean;
+begin
+  Result := (A.RightIncl >= B.X - Pad) and (A.X <= B.RightIncl + Pad);
+end;
+
+function ClassifySnapFitX(const Child, Anchor: TSnapRect;
+  AlignTol: Integer): TSnapFitX;
+var
+  found, bestIsAlign: Boolean;
+  bestDist, dist: Integer;
+
+  procedure Consider(Kind: TSnapFitX; ADist: Integer; IsAlign: Boolean);
+  begin
+    if ADist < 0 then
+      ADist := -ADist;
+    if (not found) or (ADist < bestDist) then
+    begin
+      bestDist := ADist;
+      Result := Kind;
+      found := True;
+      bestIsAlign := IsAlign;
+    end;
+  end;
+
+begin
+  Result := sfxNone;
+  found := False;
+  bestIsAlign := False;
+  bestDist := High(Integer);
+  if AlignTol < 0 then
+    AlignTol := kSnapFitAlignTolerance;
+
+  // 与 TrySnapXAxis 相同的候选顺序：相邻优先，平局取先写入的。
+  // 对齐距离超过 AlignTol 时仍参与比较，以免沿边滑开被误判成左右相邻。
+  if ProjectionsOverlapY(Child, Anchor, AlignTol) then
+  begin
+    dist := Abs(Child.X - Anchor.RightExcl);
+    Consider(sfxAdjRight, dist, False);
+    dist := Abs(Child.RightExcl - Anchor.X);
+    Consider(sfxAdjLeft, dist, False);
+  end;
+  dist := Abs(Child.X - Anchor.X);
+  Consider(sfxAlignLeft, dist, True);
+  dist := Abs(Child.RightIncl - Anchor.RightIncl);
+  Consider(sfxAlignRight, dist, True);
+  if (not found) or (bestIsAlign and (bestDist > AlignTol)) then
+    Result := sfxNone;
+end;
+
+function ClassifySnapFitY(const Child, Anchor: TSnapRect;
+  AlignTol: Integer): TSnapFitY;
+var
+  found, bestIsAlign: Boolean;
+  bestDist, dist: Integer;
+
+  procedure Consider(Kind: TSnapFitY; ADist: Integer; IsAlign: Boolean);
+  begin
+    if ADist < 0 then
+      ADist := -ADist;
+    if (not found) or (ADist < bestDist) then
+    begin
+      bestDist := ADist;
+      Result := Kind;
+      found := True;
+      bestIsAlign := IsAlign;
+    end;
+  end;
+
+begin
+  Result := sfyNone;
+  found := False;
+  bestIsAlign := False;
+  bestDist := High(Integer);
+  if AlignTol < 0 then
+    AlignTol := kSnapFitAlignTolerance;
+
+  if ProjectionsOverlapX(Child, Anchor, AlignTol) then
+  begin
+    dist := Abs(Child.Y - Anchor.BottomExcl);
+    Consider(sfyAdjBelow, dist, False);
+    dist := Abs(Child.BottomExcl - Anchor.Y);
+    Consider(sfyAdjAbove, dist, False);
+  end;
+  dist := Abs(Child.Y - Anchor.Y);
+  Consider(sfyAlignTop, dist, True);
+  dist := Abs(Child.BottomIncl - Anchor.BottomIncl);
+  Consider(sfyAlignBottom, dist, True);
+  if (not found) or (bestIsAlign and (bestDist > AlignTol)) then
+    Result := sfyNone;
+end;
+
+function ApplySnapFitX(const Child, Anchor: TSnapRect; Kind: TSnapFitX;
+  KeepOffsetX: Integer): Integer;
+begin
+  case Kind of
+    sfxAdjRight:
+      Result := Anchor.RightExcl;
+    sfxAdjLeft:
+      Result := Anchor.X - Child.W;
+    sfxAlignLeft:
+      Result := Anchor.X;
+    sfxAlignRight:
+      Result := Anchor.RightIncl - Child.W + 1;
+  else
+    Result := Anchor.X + KeepOffsetX;
+  end;
+end;
+
+function ApplySnapFitY(const Child, Anchor: TSnapRect; Kind: TSnapFitY;
+  KeepOffsetY: Integer): Integer;
+begin
+  case Kind of
+    sfyAdjBelow:
+      Result := Anchor.BottomExcl;
+    sfyAdjAbove:
+      Result := Anchor.Y - Child.H;
+    sfyAlignTop:
+      Result := Anchor.Y;
+    sfyAlignBottom:
+      Result := Anchor.BottomIncl - Child.H + 1;
+  else
+    Result := Anchor.Y + KeepOffsetY;
+  end;
+end;
+
+function SnapFitXDistance(const Child, Anchor: TSnapRect; Kind: TSnapFitX): Integer;
+begin
+  case Kind of
+    sfxAdjRight:
+      Result := Abs(Child.X - Anchor.RightExcl);
+    sfxAdjLeft:
+      Result := Abs(Child.RightExcl - Anchor.X);
+    sfxAlignLeft:
+      Result := Abs(Child.X - Anchor.X);
+    sfxAlignRight:
+      Result := Abs(Child.RightIncl - Anchor.RightIncl);
+  else
+    Result := 0;
+  end;
+end;
+
+function SnapFitYDistance(const Child, Anchor: TSnapRect; Kind: TSnapFitY): Integer;
+begin
+  case Kind of
+    sfyAdjBelow:
+      Result := Abs(Child.Y - Anchor.BottomExcl);
+    sfyAdjAbove:
+      Result := Abs(Child.BottomExcl - Anchor.Y);
+    sfyAlignTop:
+      Result := Abs(Child.Y - Anchor.Y);
+    sfyAlignBottom:
+      Result := Abs(Child.BottomIncl - Anchor.BottomIncl);
+  else
+    Result := 0;
+  end;
+end;
+
+procedure ForceDockFit(const Child, Anchor: TSnapRect;
+  out FitX: TSnapFitX; out FitY: TSnapFitY);
+var
+  dBelow, dAbove, dRight, dLeft, dY, dX: Integer;
+begin
+  FitX := sfxNone;
+  FitY := sfyNone;
+  if not Child.IsValid or not Anchor.IsValid then Exit;
+  dBelow := Abs(Child.Y - Anchor.BottomExcl);
+  dAbove := Abs(Child.BottomExcl - Anchor.Y);
+  dRight := Abs(Child.X - Anchor.RightExcl);
+  dLeft := Abs(Child.RightExcl - Anchor.X);
+  dY := Min(dBelow, dAbove);
+  dX := Min(dRight, dLeft);
+  if dY <= dX then
+  begin
+    if dBelow <= dAbove then
+      FitY := sfyAdjBelow
+    else
+      FitY := sfyAdjAbove;
+    if Abs(Child.X - Anchor.X) <= kSnapFitAlignTolerance then
+      FitX := sfxAlignLeft
+    else if Abs(Child.RightIncl - Anchor.RightIncl) <= kSnapFitAlignTolerance then
+      FitX := sfxAlignRight;
+  end
+  else
+  begin
+    if dRight <= dLeft then
+      FitX := sfxAdjRight
+    else
+      FitX := sfxAdjLeft;
+    if Abs(Child.Y - Anchor.Y) <= kSnapFitAlignTolerance then
+      FitY := sfyAlignTop
+    else if Abs(Child.BottomIncl - Anchor.BottomIncl) <= kSnapFitAlignTolerance then
+      FitY := sfyAlignBottom;
+  end;
+end;
+
+function TouchingDock(const Child, Anchor: TSnapRect;
+  out FitX: TSnapFitX; out FitY: TSnapFitY): Boolean;
+var
+  d: Integer;
+begin
+  FitX := ClassifySnapFitX(Child, Anchor, kSnapFitAlignTolerance);
+  FitY := ClassifySnapFitY(Child, Anchor, kSnapFitAlignTolerance);
+  Result := False;
+  if FitY = sfyAdjBelow then
+  begin
+    d := Abs(Child.Y - Anchor.BottomExcl);
+    if d <= 2 then
+      Result := True;
+  end
+  else if FitY = sfyAdjAbove then
+  begin
+    d := Abs(Child.BottomExcl - Anchor.Y);
+    if d <= 2 then
+      Result := True;
+  end;
+  if FitX = sfxAdjRight then
+  begin
+    d := Abs(Child.X - Anchor.RightExcl);
+    if d <= 2 then
+      Result := True;
+  end
+  else if FitX = sfxAdjLeft then
+  begin
+    d := Abs(Child.RightExcl - Anchor.X);
+    if d <= 2 then
+      Result := True;
   end;
 end;
 

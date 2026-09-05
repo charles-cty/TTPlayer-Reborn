@@ -31,6 +31,7 @@ type
     // ASkin 必须指向引擎持有的 TSkinData（TSkinEngine.SkinPtr），不能是副本。
     procedure ApplySkin(ASkin: PSkinData);
     procedure RefreshViewScale;
+    procedure RebuildWindowShape;
 
     // 切换辅助窗口按钮的切换状态（lyric/equalizer/playlist）。
     procedure SetAuxToggle(const AType: string; AToggled: Boolean);
@@ -295,6 +296,12 @@ begin
   end;
   ApplyVisualMode;
   Invalidate;
+end;
+
+procedure TPlayerForm.RebuildWindowShape;
+begin
+  if HandleAllocated then
+    BuildRegion;
 end;
 
 procedure TPlayerForm.CreateWnd;

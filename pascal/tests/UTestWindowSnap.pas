@@ -6,7 +6,8 @@ unit UTestWindowSnap;
 //
 // MR-4：A 向 B 吸附的相对几何 ≡ B 向 A 吸附（角色互换）。
 // 其余用例覆盖阈值边界、主窗口联动、子窗口独立拖动、
-// 拖动中磁吸、按轴脱离、沿边滑动、松手吸附、隐藏窗口、就地重建、缩放。
+// 拖动中磁吸、按轴脱离、沿边滑动、松手吸附、隐藏窗口、就地重建、缩放、
+// 换肤改尺寸后按贴合边重新贴紧。
 
 interface
 
@@ -44,6 +45,20 @@ type
     procedure TestGroupFollowThenDetach;
     procedure TestResizeSnapToMain;
     procedure TestResizeSnapScreenAndCommitSequence;
+    procedure TestClassifyFitAdjacentBelow;
+    procedure TestClassifyFitSlideKeepsNone;
+    procedure TestForceDockFitGappedBelow;
+    procedure TestClassifyFitOverlapStillAdjacent;
+    procedure TestRefitAfterMainGrowsBelow;
+    procedure TestRefitAfterMainShrinksBelow;
+    procedure TestRefitAfterMainGrowsRight;
+    procedure TestRefitStackDoesNotOverlap;
+    procedure TestRefitChainBelow;
+    procedure TestRefitKeepsUnsnapped;
+    procedure TestRefitKeepsSlideOffset;
+    procedure TestRefitGappedStillFlush;
+    procedure TestRefitSurvivesRebuildDuringLayoutChange;
+    procedure TestLayoutChangeEndKeepsSnap;
   end;
 
 implementation
@@ -434,15 +449,15 @@ begin
     mgr.AddSubWindow(eq);
     mgr.RebuildSnapGraph;
     releasePx := mgr.SnapReleaseThreshold;
-    AssertEquals('默认脱离阈值是吸入的 2 倍', 20, releasePx);
+    AssertEquals('默认脱离阈值是吸入的 1 倍', 10, releasePx);
 
     mgr.OnDragStarted(eq);
     eq.MoveTo(100, 220);
     mgr.OnSubMoved(eq, -300, -180);
     AssertEquals('吸入后贴边', 216, eq.GetBounds.Y);
 
-    eq.MoveTo(100, 216 + 12);
-    mgr.OnSubMoved(eq, 0, 12);
+    eq.MoveTo(100, 216 + 8);
+    mgr.OnSubMoved(eq, 0, 8);
     AssertEquals('小于脱离阈值应仍吸住', 216, eq.GetBounds.Y);
 
     eq.MoveTo(100, 216 + releasePx + 1);
@@ -470,8 +485,8 @@ begin
     AssertTrue(mgr.ConnectedToMain(eq));
 
     mgr.OnDragStarted(eq);
-    eq.MoveTo(100, 228);
-    mgr.OnSubMoved(eq, 0, 12);
+    eq.MoveTo(100, 224);
+    mgr.OnSubMoved(eq, 0, 8);
     AssertEquals('已吸附子窗小幅拖动仍粘住', 216, eq.GetBounds.Y);
 
     eq.MoveTo(100, 250);
@@ -688,6 +703,321 @@ begin
     lyric.ResizeTo(280, 60);
     mgr.OnSubResizeFinished(lyric, [seRight]);
     AssertEquals('松手缩放吸附', 275, lyric.GetBounds.W);
+  finally
+    mgr.Free;
+  end;
+end;
+
+{ 换肤后按贴合边重新贴紧 }
+
+procedure TWindowSnapTest.TestClassifyFitAdjacentBelow;
+var
+  child, anchor: TSnapRect;
+begin
+  anchor := SnapRectXYWH(100, 100, 275, 116);
+  child := SnapRectXYWH(100, 216, 275, 80);
+  AssertEquals('Y 应贴在下方', Ord(sfyAdjBelow),
+    Ord(ClassifySnapFitY(child, anchor, kSnapFitAlignTolerance)));
+  AssertEquals('X 应左对齐', Ord(sfxAlignLeft),
+    Ord(ClassifySnapFitX(child, anchor, kSnapFitAlignTolerance)));
+end;
+
+procedure TWindowSnapTest.TestClassifyFitSlideKeepsNone;
+var
+  child, anchor: TSnapRect;
+begin
+  // 沿底边滑开 30px：Y 仍相邻，X 既不对齐也不该被判成左右相邻
+  anchor := SnapRectXYWH(100, 100, 275, 116);
+  child := SnapRectXYWH(130, 216, 275, 80);
+  AssertEquals('Y 仍贴下方', Ord(sfyAdjBelow),
+    Ord(ClassifySnapFitY(child, anchor, kSnapFitAlignTolerance)));
+  AssertEquals('滑开的 X 保持 None', Ord(sfxNone),
+    Ord(ClassifySnapFitX(child, anchor, kSnapFitAlignTolerance)));
+end;
+
+procedure TWindowSnapTest.TestForceDockFitGappedBelow;
+var
+  child, anchor: TSnapRect;
+  fx: TSnapFitX;
+  fy: TSnapFitY;
+begin
+  anchor := SnapRectXYWH(100, 100, 275, 150);
+  child := SnapRectXYWH(100, 216, 275, 80); // 重叠 34px
+  ForceDockFit(child, anchor, fx, fy);
+  AssertEquals('强制贴下方', Ord(sfyAdjBelow), Ord(fy));
+  AssertEquals('强制左对齐', Ord(sfxAlignLeft), Ord(fx));
+  AssertEquals('新 Y', 250, ApplySnapFitY(child, anchor, fy, 0));
+end;
+
+procedure TWindowSnapTest.TestClassifyFitOverlapStillAdjacent;
+var
+  child, anchor: TSnapRect;
+begin
+  // 主窗变高后重叠 34px，仍应认出「贴在下方」而不是底边对齐
+  anchor := SnapRectXYWH(100, 100, 275, 150);
+  child := SnapRectXYWH(100, 216, 275, 80);
+  AssertEquals('重叠仍判下方相邻', Ord(sfyAdjBelow),
+    Ord(ClassifySnapFitY(child, anchor, kSnapFitAlignTolerance)));
+end;
+
+procedure TWindowSnapTest.TestRefitAfterMainGrowsBelow;
+var
+  mgr: TWindowSnapManager;
+  main, eq: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     100, 216, 275, 80);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.RebuildSnapGraph;
+    AssertEquals(216, eq.GetBounds.Y);
+
+    mgr.CaptureSnapFits;
+    main.ResizeTo(275, 150);
+    mgr.RefitSnappedWindows;
+    AssertEquals('主窗变高后 eq 仍贴紧下沿', 250, eq.GetBounds.Y);
+    AssertEquals('X 保持左对齐', 100, eq.GetBounds.X);
+    AssertTrue(mgr.ConnectedToMain(eq));
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestRefitAfterMainShrinksBelow;
+var
+  mgr: TWindowSnapManager;
+  main, eq: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     100, 216, 275, 80);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.RebuildSnapGraph;
+
+    mgr.CaptureSnapFits;
+    main.ResizeTo(275, 80);
+    mgr.RefitSnappedWindows;
+    AssertEquals('主窗变矮后合上间隙', 180, eq.GetBounds.Y);
+    AssertTrue(mgr.ConnectedToMain(eq));
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestRefitAfterMainGrowsRight;
+var
+  mgr: TWindowSnapManager;
+  main, pl: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    pl   := MakeWin('playlist', 375, 100, 200, 300);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(pl);
+    mgr.RebuildSnapGraph;
+    AssertEquals(375, pl.GetBounds.X);
+
+    mgr.CaptureSnapFits;
+    main.ResizeTo(350, 116);
+    mgr.RefitSnappedWindows;
+    AssertEquals('主窗变宽后 playlist 贴紧右侧', 450, pl.GetBounds.X);
+    AssertEquals('Y 保持顶对齐', 100, pl.GetBounds.Y);
+    AssertTrue(mgr.ConnectedToMain(pl));
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestRefitStackDoesNotOverlap;
+var
+  mgr: TWindowSnapManager;
+  main, eq, lyric: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main  := MakeWin('player', 100, 100, 275, 116);
+    eq    := MakeWin('eq',     100, 216, 275, 80);
+    lyric := MakeWin('lyric',  100, 296, 275, 60);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.AddSubWindow(lyric);
+    mgr.RebuildSnapGraph;
+    mgr.CaptureSnapFits;
+    main.ResizeTo(275, 150);
+    eq.ResizeTo(280, 90);
+    lyric.ResizeTo(250, 70);
+    mgr.RefitSnappedWindows;
+    AssertEquals('eq 在主窗下', 250, eq.GetBounds.Y);
+    AssertEquals('lyric 在 eq 下', 340, lyric.GetBounds.Y);
+    AssertTrue('eq 与 lyric 不重叠',
+      eq.GetBounds.Y + eq.GetBounds.H <= lyric.GetBounds.Y);
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestRefitChainBelow;
+var
+  mgr: TWindowSnapManager;
+  main, eq, pl: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     100, 216, 275, 80);
+    pl   := MakeWin('playlist', 100, 296, 275, 200);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.AddSubWindow(pl);
+    mgr.RebuildSnapGraph;
+    AssertTrue(mgr.ConnectedToMain(eq));
+    AssertTrue(mgr.ConnectedToMain(pl));
+
+    mgr.CaptureSnapFits;
+    main.ResizeTo(275, 150);
+    eq.ResizeTo(280, 90);
+    pl.ResizeTo(250, 180);
+    mgr.RefitSnappedWindows;
+    AssertEquals('eq 贴在新主窗下', 250, eq.GetBounds.Y);
+    AssertEquals('playlist 贴在新 eq 下', 340, pl.GetBounds.Y);
+    AssertEquals(100, eq.GetBounds.X);
+    AssertEquals(100, pl.GetBounds.X);
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestRefitKeepsUnsnapped;
+var
+  mgr: TWindowSnapManager;
+  main, eq, lyric: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main  := MakeWin('player', 100, 100, 275, 116);
+    eq    := MakeWin('eq',     100, 216, 275, 80);
+    lyric := MakeWin('lyric',  800, 400, 268, 60);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.AddSubWindow(lyric);
+    mgr.RebuildSnapGraph;
+    AssertFalse(mgr.ConnectedToMain(lyric));
+
+    mgr.CaptureSnapFits;
+    main.ResizeTo(275, 150);
+    mgr.RefitSnappedWindows;
+    AssertEquals('未吸附窗口不移动 X', 800, lyric.GetBounds.X);
+    AssertEquals('未吸附窗口不移动 Y', 400, lyric.GetBounds.Y);
+    AssertEquals(250, eq.GetBounds.Y);
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestRefitKeepsSlideOffset;
+var
+  mgr: TWindowSnapManager;
+  main, eq: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     130, 216, 275, 80); // 沿底边滑开 30px
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.RebuildSnapGraph;
+    AssertEquals('滑开后 Y 仍贴紧', 216, eq.GetBounds.Y);
+    AssertEquals('滑开后 X 不变', 130, eq.GetBounds.X);
+
+    mgr.CaptureSnapFits;
+    main.ResizeTo(275, 150);
+    mgr.RefitSnappedWindows;
+    AssertEquals('换肤后 Y 贴紧新下沿', 250, eq.GetBounds.Y);
+    AssertEquals('沿边滑开的 X 偏移保留', 130, eq.GetBounds.X);
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestRefitGappedStillFlush;
+var
+  mgr: TWindowSnapManager;
+  main, eq: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     100, 216, 275, 80);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.RebuildSnapGraph;
+    // 模拟「上次换肤没重贴」留下的重叠，再 Capture + Refit
+    main.ResizeTo(275, 150);
+    AssertEquals('重叠尚未修复', 216, eq.GetBounds.Y);
+    mgr.CaptureSnapFits;
+    mgr.RefitSnappedWindows;
+    AssertEquals('已重叠仍能重新贴紧', 250, eq.GetBounds.Y);
+    AssertTrue(mgr.ConnectedToMain(eq));
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestRefitSurvivesRebuildDuringLayoutChange;
+var
+  mgr: TWindowSnapManager;
+  main, eq: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     100, 216, 275, 80);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.RebuildSnapGraph;
+    AssertTrue(mgr.ConnectedToMain(eq));
+
+    mgr.BeginLayoutChange;
+    try
+      main.ResizeTo(275, 150);
+      // 换肤过程中 Show/Hide 会 RebuildSnapGraph；锁住后不得清掉吸附边。
+      mgr.RebuildSnapGraph;
+      AssertTrue('换肤中重建不得拆边', mgr.ConnectedToMain(eq));
+      mgr.RefitSnappedWindows;
+    finally
+      mgr.EndLayoutChange;
+    end;
+    AssertEquals('锁住重建后仍能贴紧', 250, eq.GetBounds.Y);
+    AssertTrue(mgr.ConnectedToMain(eq));
+  finally
+    mgr.Free;
+  end;
+end;
+
+procedure TWindowSnapTest.TestLayoutChangeEndKeepsSnap;
+var
+  mgr: TWindowSnapManager;
+  main, eq: ISnapWindow;
+begin
+  mgr := TWindowSnapManager.Create;
+  try
+    main := MakeWin('player', 100, 100, 275, 116);
+    eq   := MakeWin('eq',     100, 216, 275, 80);
+    mgr.SetMainWindow(main);
+    mgr.AddSubWindow(eq);
+    mgr.RebuildSnapGraph;
+    mgr.BeginLayoutChange;
+    try
+      main.ResizeTo(275, 150);
+    finally
+      mgr.EndLayoutChange;
+    end;
+    AssertTrue('结束换肤不得拆掉吸附', mgr.ConnectedToMain(eq));
   finally
     mgr.Free;
   end;

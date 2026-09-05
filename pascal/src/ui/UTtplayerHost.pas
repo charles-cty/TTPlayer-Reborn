@@ -73,6 +73,8 @@ type
     procedure HandleAppRestore(Sender: TObject);
     procedure ApplyAlwaysOnTop(Enabled: Boolean);
     procedure ApplySkinFile(const SknPath: string);
+    procedure MoveSkinForm(AForm: TForm; AX, AY: Integer);
+    procedure RefitSkinForms;
     procedure ApplyLoadedConfig;
     procedure RestoreGeometry;
     procedure LoadPlaylists;
@@ -91,7 +93,7 @@ type
 implementation
 
 uses
-  LazFileUtils, Math
+  LazFileUtils, Math, UWindowSnapMath
   {$IFDEF WINDOWS}, Windows{$ENDIF};
 
 function TTtplayerHost.RepoRoot: string;
@@ -783,14 +785,104 @@ begin
     FPlaylist.PlayNext;
 end;
 
+procedure AppendSkinRefitLog(const Msg: string);
+var
+  f: TextFile;
+  p: string;
+begin
+  p := ExtractFilePath(ParamStr(0)) + 'skin-refit.log';
+  AssignFile(f, p);
+  {$I-}
+  if FileExists(p) then
+    Append(f)
+  else
+    Rewrite(f);
+  if IOResult = 0 then
+  begin
+    WriteLn(f, FormatDateTime('hh:nn:ss.zzz', Now), ' ', Msg);
+    CloseFile(f);
+  end;
+  {$I+}
+end;
+
+procedure TTtplayerHost.MoveSkinForm(AForm: TForm; AX, AY: Integer);
+begin
+  if AForm = nil then Exit;
+  AppendSkinRefitLog(Format('Move %s from %d,%d %dx%d -> %d,%d',
+    [AForm.ClassName, AForm.Left, AForm.Top, AForm.Width, AForm.Height, AX, AY]));
+  if AForm.HandleAllocated then
+    ClearWindowShape(AForm.Handle);
+  AForm.SetBounds(AX, AY, AForm.Width, AForm.Height);
+  AForm.Left := AX;
+  AForm.Top := AY;
+{$IFDEF WINDOWS}
+  if AForm.HandleAllocated then
+    Windows.SetWindowPos(AForm.Handle, 0, AX, AY, 0, 0,
+      SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
+{$ENDIF}
+end;
+
+procedure TTtplayerHost.RefitSkinForms;
+begin
+  if (FSnap = nil) or (FPlayerWin = nil) then Exit;
+  AppendSkinRefitLog(Format(
+    'before player=%d,%d %dx%d eq=%d,%d %dx%d lyric=%d,%d %dx%d pl=%d,%d %dx%d snapped eq=%s lyric=%s pl=%s',
+    [FPlayer.Left, FPlayer.Top, FPlayer.Width, FPlayer.Height,
+     FEq.Left, FEq.Top, FEq.Width, FEq.Height,
+     FLyric.Left, FLyric.Top, FLyric.Width, FLyric.Height,
+     FPlaylist.Left, FPlaylist.Top, FPlaylist.Width, FPlaylist.Height,
+     BoolToStr(FSnap.IsSnapped(FEqWin), True),
+     BoolToStr(FSnap.IsSnapped(FLyricWin), True),
+     BoolToStr(FSnap.IsSnapped(FPlaylistWin), True)]));
+  if FPlayer.HandleAllocated then ClearWindowShape(FPlayer.Handle);
+  if FEq.HandleAllocated then ClearWindowShape(FEq.Handle);
+  if FLyric.HandleAllocated then ClearWindowShape(FLyric.Handle);
+  if FPlaylist.HandleAllocated then ClearWindowShape(FPlaylist.Handle);
+  FSnap.RefitSnappedWindows;
+  // HWND 与 LCL 对齐（不重新计算，避免把已排好的链再挤到同一条边上）
+  MoveSkinForm(FEq, FEq.Left, FEq.Top);
+  MoveSkinForm(FLyric, FLyric.Left, FLyric.Top);
+  MoveSkinForm(FPlaylist, FPlaylist.Left, FPlaylist.Top);
+  FPlayer.RebuildWindowShape;
+  FEq.RebuildWindowShape;
+  FLyric.RebuildWindowShape;
+  FPlaylist.RebuildWindowShape;
+  AppendSkinRefitLog(Format(
+    'after  player=%d,%d %dx%d eq=%d,%d %dx%d lyric=%d,%d %dx%d pl=%d,%d %dx%d',
+    [FPlayer.Left, FPlayer.Top, FPlayer.Width, FPlayer.Height,
+     FEq.Left, FEq.Top, FEq.Width, FEq.Height,
+     FLyric.Left, FLyric.Top, FLyric.Width, FLyric.Height,
+     FPlaylist.Left, FPlaylist.Top, FPlaylist.Width, FPlaylist.Height]));
+end;
+
 procedure TTtplayerHost.ApplySkinFile(const SknPath: string);
 begin
   if (SknPath = '') or (not FileExists(SknPath)) then Exit;
   if not FEngine.LoadFromFile(SknPath) then Exit;
-  FPlayer.ApplySkin(FEngine.SkinPtr);
-  FEq.ApplySkin(FEngine.SkinPtr);
-  FLyric.ApplySkin(FEngine.SkinPtr);
-  FPlaylist.ApplySkin(FEngine.SkinPtr);
+  // 换肤只改尺寸。期间禁止 Show/Hide 重建吸附图（10px 阈值会把贴合边丢掉），
+  // 必须在改尺寸之前记贴合边，落地后再按原边重新贴紧。
+  if FSnap <> nil then
+  begin
+    FSnap.BeginLayoutChange;
+    try
+      FSnap.CaptureSnapFits;
+      FPlayer.ApplySkin(FEngine.SkinPtr);
+      FEq.ApplySkin(FEngine.SkinPtr);
+      FLyric.ApplySkin(FEngine.SkinPtr);
+      FPlaylist.ApplySkin(FEngine.SkinPtr);
+      // SetWindowRgn 会卡住后续 SetBounds。先清 Region，移动窗口，再重建。
+      RefitSkinForms;
+    finally
+      FSnap.EndLayoutChange;
+    end;
+  end
+  else
+  begin
+    FPlayer.ApplySkin(FEngine.SkinPtr);
+    FEq.ApplySkin(FEngine.SkinPtr);
+    FLyric.ApplySkin(FEngine.SkinPtr);
+    FPlaylist.ApplySkin(FEngine.SkinPtr);
+  end;
   if FConfig.AlwaysOnTop then
     ApplyAlwaysOnTop(True);
 end;

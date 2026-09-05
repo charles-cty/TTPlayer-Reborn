@@ -11,10 +11,12 @@ unit UWindowSnapManager;
 //   - 拖动中磁吸按「光标推出的逻辑位置」判定，而不是已经吸住的窗口
 //     矩形。否则 Win32 HTCAPTION 会把拖动原点重定到窗口上，永远拉不开。
 //   - X/Y 独立吸住：沿贴边滑动不会把另一轴一起松开。某轴要垂直拉开
-//     SnapReleaseThreshold（2× 吸入）才脱离。LiveAttachOnMainDragEnabled=False
+//     SnapReleaseThreshold（1× 吸入）才脱离。LiveAttachOnMainDragEnabled=False
 //     时只联动、松手再吸。
 //   - 任务栏激活/Z 序成组不在本单元：宿主把辅助窗口绑成主窗口的
 //     owned/transient 子窗口（见 PrepareAuxOwnedWindow），与是否吸附无关。
+//   - 换肤只改尺寸、左上角不动。CaptureSnapFits 记下贴合边，
+//     RefitSnappedWindows 按新尺寸重新贴紧，吸附图本身不拆。
 //
 // 本单元不依赖 LCL：窗口通过 ISnapWindow 抽象，测试用 TMemorySnapWindow，
 // 真实 Form 由 UFormSnap.TFormSnapWindow 包装。
@@ -33,6 +35,8 @@ type
   ISnapWindow = interface
     ['{B8E4C2A1-7F3D-4A90-9C15-8D6E4F2A1B03}']
     function GetBounds: TSnapRect;
+    // 换肤重贴用 LCL 客户区，避免 Win32 把 native/DPI 坐标和 SetBounds 混用。
+    function GetLayoutBounds: TSnapRect;
     procedure MoveTo(AX, AY: Integer);
     procedure ResizeTo(AW, AH: Integer);
     function GetVisible: Boolean;
@@ -50,6 +54,7 @@ type
   public
     constructor Create(const AName: string; AX, AY, AW, AH: Integer);
     function GetBounds: TSnapRect;
+    function GetLayoutBounds: TSnapRect;
     procedure MoveTo(AX, AY: Integer);
     procedure ResizeTo(AW, AH: Integer);
     function GetVisible: Boolean;
@@ -92,6 +97,14 @@ type
     procedure OnDragStarted(ALeader: ISnapWindow);
     procedure OnDragFinished(ALeader: ISnapWindow);
     procedure RebuildSnapGraph;
+    // 换肤期间禁止 Show/Hide 重建吸附图（会清掉贴合边、用 10px 阈值重吸）。
+    procedure BeginLayoutChange;
+    procedure EndLayoutChange;
+    // 按当前几何记下每条吸附边（对边相贴 / 同侧对齐）。
+    procedure CaptureSnapFits;
+    // 换肤改尺寸后：按贴合边把窗口重新贴紧，不拆吸附图。
+    procedure RefitSnappedWindows;
+    function  LayoutRefitXY(AWin: ISnapWindow; out X, Y: Integer): Boolean;
 
     // 测试/诊断
     function SubCount: Integer;
@@ -105,6 +118,10 @@ type
         Win: ISnapWindow;
         Anchor: Integer;
         SnapOffset: TSnapPoint;
+        FitTarget: Integer; // 重贴时对齐的窗口；可能与 Anchor 不同
+        FitX: TSnapFitX;
+        FitY: TSnapFitY;
+        CaptureX, CaptureY: Integer;
       end;
 
     var
@@ -114,6 +131,7 @@ type
       FScreenRect: TSnapRect;
       FLiveAttachOnMainDragEnabled: Boolean;
       FSyncing: Boolean;
+      FLayoutChangeLock: Integer;
 
       FDragLeader: ISnapWindow;
       FDragLeaderIndex: Integer;
@@ -135,6 +153,8 @@ type
     function  TrySnap(MovingIndex: Integer; MoveToSnap: Boolean): Boolean;
     procedure ClearAllAnchors;
     procedure RefreshOffsets;
+    procedure RecordFits(SubIndex: Integer);
+    function  FitTargetWin(SubIndex: Integer): ISnapWindow;
     procedure BeginDragSession(ALeader: ISnapWindow);
     procedure FinishDragSession(ALeader: ISnapWindow);
     function  MoveDragGroup(const TotalDelta: TSnapPoint): Integer;
@@ -159,6 +179,11 @@ end;
 function TMemorySnapWindow.GetBounds: TSnapRect;
 begin
   Result := SnapRectXYWH(FX, FY, FW, FH);
+end;
+
+function TMemorySnapWindow.GetLayoutBounds: TSnapRect;
+begin
+  Result := GetBounds;
 end;
 
 procedure TMemorySnapWindow.MoveTo(AX, AY: Integer);
@@ -202,6 +227,7 @@ begin
   FScreenRect := SnapRectXYWH(0, 0, 0, 0);
   FLiveAttachOnMainDragEnabled := True;
   FSyncing := False;
+  FLayoutChangeLock := 0;
   ClearDrag;
 end;
 
@@ -230,6 +256,11 @@ begin
   FSubs[n].Win := AWin;
   FSubs[n].Anchor := SNAP_NO_ANCHOR;
   FSubs[n].SnapOffset := SnapPointXY(0, 0);
+  FSubs[n].FitTarget := SNAP_NO_ANCHOR;
+  FSubs[n].FitX := sfxNone;
+  FSubs[n].FitY := sfyNone;
+  FSubs[n].CaptureX := 0;
+  FSubs[n].CaptureY := 0;
 end;
 
 procedure TWindowSnapManager.RemoveSubWindow(AWin: ISnapWindow);
@@ -248,6 +279,10 @@ begin
       FSubs[i].Anchor := SNAP_NO_ANCHOR
     else if (idx <> last) and (FSubs[i].Anchor = last) then
       FSubs[i].Anchor := idx;
+    if FSubs[i].FitTarget = idx then
+      FSubs[i].FitTarget := SNAP_NO_ANCHOR
+    else if (idx <> last) and (FSubs[i].FitTarget = last) then
+      FSubs[i].FitTarget := idx;
   end;
   if idx <> last then
     FSubs[idx] := FSubs[last];
@@ -352,7 +387,7 @@ end;
 
 function TWindowSnapManager.GetSnapReleaseThreshold: Integer;
 begin
-  Result := FSnapThreshold * 1;
+  Result := FSnapThreshold; // 1× 吸入阈值
 end;
 
 procedure TWindowSnapManager.MoveLeaderTo(AX, AY: Integer);
@@ -503,6 +538,9 @@ begin
   begin
     FSubs[i].Anchor := SNAP_NO_ANCHOR;
     FSubs[i].SnapOffset := SnapPointXY(0, 0);
+    FSubs[i].FitTarget := SNAP_NO_ANCHOR;
+    FSubs[i].FitX := sfxNone;
+    FSubs[i].FitY := sfyNone;
   end;
 end;
 
@@ -520,6 +558,9 @@ begin
     begin
       FSubs[i].Anchor := SNAP_NO_ANCHOR;
       FSubs[i].SnapOffset := SnapPointXY(0, 0);
+      FSubs[i].FitTarget := SNAP_NO_ANCHOR;
+      FSubs[i].FitX := sfxNone;
+      FSubs[i].FitY := sfyNone;
       Continue;
     end;
     wb := FSubs[i].Win.GetBounds;
@@ -528,12 +569,374 @@ begin
   end;
 end;
 
+function TWindowSnapManager.FitTargetWin(SubIndex: Integer): ISnapWindow;
+var
+  t: Integer;
+begin
+  Result := nil;
+  if (SubIndex < 0) or (SubIndex > High(FSubs)) then Exit;
+  t := FSubs[SubIndex].FitTarget;
+  if t = SNAP_MAIN_ANCHOR then
+    Result := FMain
+  else if (t >= 0) and (t <= High(FSubs)) then
+    Result := FSubs[t].Win
+  else
+    Result := AnchorWin(SubIndex);
+end;
+
+procedure TWindowSnapManager.RecordFits(SubIndex: Integer);
+var
+  child: TSnapRect;
+  fx: TSnapFitX;
+  fy: TSnapFitY;
+  i, score, bestScore: Integer;
+  prefer: Integer;
+
+  procedure Consider(Target: Integer; const R: TSnapRect);
+  begin
+    if not R.IsValid then Exit;
+    fx := ClassifySnapFitX(child, R, kSnapFitAlignTolerance);
+    fy := ClassifySnapFitY(child, R, kSnapFitAlignTolerance);
+    if (fx = sfxNone) and (fy = sfyNone) then Exit;
+    score := SnapFitXDistance(child, R, fx) + SnapFitYDistance(child, R, fy);
+    if score < bestScore then
+    begin
+      bestScore := score;
+      FSubs[SubIndex].FitTarget := Target;
+      FSubs[SubIndex].FitX := fx;
+      FSubs[SubIndex].FitY := fy;
+    end
+    else if (score = bestScore) and (Target = prefer) then
+    begin
+      FSubs[SubIndex].FitTarget := Target;
+      FSubs[SubIndex].FitX := fx;
+      FSubs[SubIndex].FitY := fy;
+    end;
+  end;
+
+begin
+  if (SubIndex < 0) or (SubIndex > High(FSubs)) then Exit;
+  FSubs[SubIndex].FitTarget := SNAP_NO_ANCHOR;
+  FSubs[SubIndex].FitX := sfxNone;
+  FSubs[SubIndex].FitY := sfyNone;
+  if not IsSnappedIndex(SubIndex) or (FSubs[SubIndex].Win = nil) then Exit;
+  child := FSubs[SubIndex].Win.GetLayoutBounds;
+  prefer := FSubs[SubIndex].Anchor;
+  bestScore := High(Integer);
+  if (FMain <> nil) and FMain.GetVisible then
+    Consider(SNAP_MAIN_ANCHOR, FMain.GetLayoutBounds);
+  for i := 0 to High(FSubs) do
+  begin
+    if i = SubIndex then Continue;
+    if (FSubs[i].Win = nil) or not FSubs[i].Win.GetVisible then Continue;
+    if not IsConnectedToMain(i) then Continue;
+    Consider(i, FSubs[i].Win.GetLayoutBounds);
+  end;
+  if FSubs[SubIndex].FitTarget = SNAP_NO_ANCHOR then
+    FSubs[SubIndex].FitTarget := prefer;
+  if (FSubs[SubIndex].FitX = sfxNone) and (FSubs[SubIndex].FitY = sfyNone) then
+  begin
+    if prefer = SNAP_MAIN_ANCHOR then
+    begin
+      if FMain <> nil then
+        ForceDockFit(child, FMain.GetLayoutBounds, fx, fy);
+    end
+    else if (prefer >= 0) and (prefer <= High(FSubs)) and (FSubs[prefer].Win <> nil) then
+      ForceDockFit(child, FSubs[prefer].Win.GetLayoutBounds, fx, fy);
+    FSubs[SubIndex].FitX := fx;
+    FSubs[SubIndex].FitY := fy;
+  end;
+end;
+
+procedure TWindowSnapManager.BeginLayoutChange;
+begin
+  Inc(FLayoutChangeLock);
+end;
+
+procedure TWindowSnapManager.EndLayoutChange;
+begin
+  if FLayoutChangeLock <= 0 then Exit;
+  Dec(FLayoutChangeLock);
+  // 不要在这里 RebuildSnapGraphInPlace：尺寸差常大于 2px，就地重建会拆掉吸附。
+  // 贴合边已由 RefitSnappedWindows 按新尺寸对齐，RefreshOffsets 保持连通。
+end;
+
+procedure TWindowSnapManager.CaptureSnapFits;
+var
+  assigned: array of Boolean;
+  i, j, n: Integer;
+  child, ab: TSnapRect;
+  fx: TSnapFitX;
+  fy: TSnapFitY;
+  changed: Boolean;
+begin
+  n := Length(FSubs);
+  SetLength(assigned, n);
+  for i := 0 to n - 1 do
+  begin
+    assigned[i] := False;
+    FSubs[i].FitTarget := SNAP_NO_ANCHOR;
+    FSubs[i].FitX := sfxNone;
+    FSubs[i].FitY := sfyNone;
+    if FSubs[i].Win <> nil then
+    begin
+      child := FSubs[i].Win.GetLayoutBounds;
+      FSubs[i].CaptureX := child.X;
+      FSubs[i].CaptureY := child.Y;
+    end;
+  end;
+
+  // 从主窗向外：只把真正挨着的窗口链起来，避免 EQ/歌词/列表都贴到主窗底边。
+  changed := True;
+  while changed do
+  begin
+    changed := False;
+    for i := 0 to n - 1 do
+    begin
+      if assigned[i] then Continue;
+      if not IsSnappedIndex(i) then Continue;
+      if (FSubs[i].Win = nil) or not FSubs[i].Win.GetVisible then Continue;
+      child := FSubs[i].Win.GetLayoutBounds;
+      if (FMain <> nil) and FMain.GetVisible then
+      begin
+        ab := FMain.GetLayoutBounds;
+        if TouchingDock(child, ab, fx, fy) then
+        begin
+          FSubs[i].FitTarget := SNAP_MAIN_ANCHOR;
+          FSubs[i].FitX := fx;
+          FSubs[i].FitY := fy;
+          assigned[i] := True;
+          changed := True;
+          Continue;
+        end;
+      end;
+      for j := 0 to n - 1 do
+      begin
+        if not assigned[j] then Continue;
+        if (FSubs[j].Win = nil) or not FSubs[j].Win.GetVisible then Continue;
+        ab := FSubs[j].Win.GetLayoutBounds;
+        if TouchingDock(child, ab, fx, fy) then
+        begin
+          FSubs[i].FitTarget := j;
+          FSubs[i].FitX := fx;
+          FSubs[i].FitY := fy;
+          assigned[i] := True;
+          changed := True;
+          Break;
+        end;
+      end;
+    end;
+  end;
+
+  for i := 0 to n - 1 do
+  begin
+    if assigned[i] then Continue;
+    if not IsSnappedIndex(i) then Continue;
+    if (FSubs[i].Win = nil) or (FMain = nil) then Continue;
+    child := FSubs[i].Win.GetLayoutBounds;
+    ForceDockFit(child, FMain.GetLayoutBounds, fx, fy);
+    FSubs[i].FitTarget := SNAP_MAIN_ANCHOR;
+    FSubs[i].FitX := fx;
+    FSubs[i].FitY := fy;
+  end;
+end;
+
+function TWindowSnapManager.LayoutRefitXY(AWin: ISnapWindow; out X, Y: Integer): Boolean;
+var
+  idx: Integer;
+  child, dock: TSnapRect;
+  target: ISnapWindow;
+begin
+  Result := False;
+  X := 0;
+  Y := 0;
+  idx := FindSubIndex(AWin);
+  if not IsSnappedIndex(idx) or (AWin = nil) then Exit;
+  if (FSubs[idx].FitX = sfxNone) and (FSubs[idx].FitY = sfyNone) then
+    RecordFits(idx);
+  target := FitTargetWin(idx);
+  if target = nil then Exit;
+  child := AWin.GetLayoutBounds;
+  dock := target.GetLayoutBounds;
+  if not dock.IsValid then Exit;
+  if FSubs[idx].FitX = sfxNone then
+    X := child.X
+  else
+    X := ApplySnapFitX(child, dock, FSubs[idx].FitX, 0);
+  if FSubs[idx].FitY = sfyNone then
+    Y := child.Y
+  else
+    Y := ApplySnapFitY(child, dock, FSubs[idx].FitY, 0);
+  Result := True;
+end;
+
+procedure TWindowSnapManager.RefitSnappedWindows;
+var
+  placed: array of Boolean;
+  i, j, n, a, b, tmp, newX, newY, cursor, guard: Integer;
+  order: array of Integer;
+  cnt: Integer;
+  child, dock: TSnapRect;
+  progress: Boolean;
+
+  procedure PlaceGroup(FitTarget: Integer; ATarget: ISnapWindow);
+  var
+    sideY: TSnapFitY;
+    sideX: TSnapFitX;
+    p, q: Integer;
+  begin
+    if ATarget = nil then Exit;
+    dock := ATarget.GetLayoutBounds;
+    if not dock.IsValid then Exit;
+
+    for sideY := sfyAdjBelow to sfyAdjAbove do
+    begin
+      cnt := 0;
+      SetLength(order, n);
+      for p := 0 to n - 1 do
+      begin
+        if placed[p] then Continue;
+        if not IsSnappedIndex(p) then Continue;
+        if (FSubs[p].Win = nil) or not FSubs[p].Win.GetVisible then Continue;
+        if FSubs[p].FitTarget <> FitTarget then Continue;
+        if FSubs[p].FitY <> sideY then Continue;
+        order[cnt] := p;
+        Inc(cnt);
+      end;
+      for p := 0 to cnt - 2 do
+        for q := p + 1 to cnt - 1 do
+        begin
+          a := order[p];
+          b := order[q];
+          if ((sideY = sfyAdjBelow) and (FSubs[a].CaptureY > FSubs[b].CaptureY)) or
+             ((sideY = sfyAdjAbove) and (FSubs[a].CaptureY < FSubs[b].CaptureY)) then
+          begin
+            tmp := order[p];
+            order[p] := order[q];
+            order[q] := tmp;
+          end;
+        end;
+      if sideY = sfyAdjBelow then
+        cursor := dock.BottomExcl
+      else
+        cursor := dock.Y;
+      for p := 0 to cnt - 1 do
+      begin
+        i := order[p];
+        child := FSubs[i].Win.GetLayoutBounds;
+        if sideY = sfyAdjBelow then
+          newY := cursor
+        else
+          newY := cursor - child.H;
+        if FSubs[i].FitX = sfxNone then
+          newX := child.X
+        else
+          newX := ApplySnapFitX(child, dock, FSubs[i].FitX, 0);
+        FSyncing := True;
+        try
+          FSubs[i].Win.MoveTo(newX, newY);
+        finally
+          FSyncing := False;
+        end;
+        placed[i] := True;
+        progress := True;
+        child := FSubs[i].Win.GetLayoutBounds;
+        if sideY = sfyAdjBelow then
+          cursor := child.Y + child.H
+        else
+          cursor := child.Y;
+      end;
+    end;
+
+    for sideX := sfxAdjRight to sfxAdjLeft do
+    begin
+      cnt := 0;
+      SetLength(order, n);
+      for p := 0 to n - 1 do
+      begin
+        if placed[p] then Continue;
+        if not IsSnappedIndex(p) then Continue;
+        if (FSubs[p].Win = nil) or not FSubs[p].Win.GetVisible then Continue;
+        if FSubs[p].FitTarget <> FitTarget then Continue;
+        if FSubs[p].FitX <> sideX then Continue;
+        if FSubs[p].FitY in [sfyAdjBelow, sfyAdjAbove] then Continue;
+        order[cnt] := p;
+        Inc(cnt);
+      end;
+      for p := 0 to cnt - 2 do
+        for q := p + 1 to cnt - 1 do
+        begin
+          a := order[p];
+          b := order[q];
+          if ((sideX = sfxAdjRight) and (FSubs[a].CaptureX > FSubs[b].CaptureX)) or
+             ((sideX = sfxAdjLeft) and (FSubs[a].CaptureX < FSubs[b].CaptureX)) then
+          begin
+            tmp := order[p];
+            order[p] := order[q];
+            order[q] := tmp;
+          end;
+        end;
+      if sideX = sfxAdjRight then
+        cursor := dock.RightExcl
+      else
+        cursor := dock.X;
+      for p := 0 to cnt - 1 do
+      begin
+        i := order[p];
+        child := FSubs[i].Win.GetLayoutBounds;
+        if sideX = sfxAdjRight then
+          newX := cursor
+        else
+          newX := cursor - child.W;
+        if FSubs[i].FitY = sfyNone then
+          newY := child.Y
+        else
+          newY := ApplySnapFitY(child, dock, FSubs[i].FitY, 0);
+        FSyncing := True;
+        try
+          FSubs[i].Win.MoveTo(newX, newY);
+        finally
+          FSyncing := False;
+        end;
+        placed[i] := True;
+        progress := True;
+        child := FSubs[i].Win.GetLayoutBounds;
+        if sideX = sfxAdjRight then
+          cursor := child.X + child.W
+        else
+          cursor := child.X;
+      end;
+    end;
+  end;
+
+begin
+  if FMain = nil then Exit;
+  if DragActive then Exit;
+  n := Length(FSubs);
+  SetLength(placed, n);
+  for i := 0 to n - 1 do
+    placed[i] := False;
+  guard := 0;
+  progress := True;
+  while progress and (guard <= n + 1) do
+  begin
+    Inc(guard);
+    progress := False;
+    PlaceGroup(SNAP_MAIN_ANCHOR, FMain);
+    for j := 0 to n - 1 do
+      if placed[j] then
+        PlaceGroup(j, FSubs[j].Win);
+  end;
+  RefreshOffsets;
+end;
+
 procedure TWindowSnapManager.RebuildSnapGraph;
 var
   changed: Boolean;
   i: Integer;
 begin
   if FMain = nil then Exit;
+  if FLayoutChangeLock > 0 then Exit;
   ClearAllAnchors;
   changed := True;
   while changed do
@@ -556,6 +959,7 @@ var
   i: Integer;
 begin
   if FMain = nil then Exit;
+  if FLayoutChangeLock > 0 then Exit;
   ClearAllAnchors;
   changed := True;
   while changed do
@@ -684,6 +1088,7 @@ begin
     FSubs[MovingIndex].SnapOffset :=
       SnapPointXY(movingRect.X - anchorRect.X, movingRect.Y - anchorRect.Y);
   end;
+  RecordFits(MovingIndex);
   Result := True;
 end;
 
