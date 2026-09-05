@@ -146,7 +146,7 @@ Lazarus 工程（全自绘）
 | WindowSnap | `pascal/src/ui/UWindowSnapMath` + `UWindowSnapManager` + `UFormSnap` |
 | 平台窗口 | `pascal/src/ui/platform/UPlatformWindow` + `UAlphaShape` + `UDpiScale` + `USkinView` + `UWinDpiAware` + `UGdkX11Backend`（Win `SetWindowRgn` / X11 Shape + EWMH；GTK3 Handle→`TGtk3Widget`；强制 XWayland；DPI 视图缩放 + Per-Monitor V2） |
 | Pascal 工具集 | `pascal/ttdump.lpi`、`pascal/skinpreview.lpi`、`pascal/ttplayer.lpi`、`pascal/tests.lpi` |
-| Linux GTK3 构建 | `tools/build-pascal-linux.sh`（用户目录 FPC 3.2.2 + Lazarus 4.8，`--ws=gtk3`） |
+| Linux GTK3 构建 | `tools/build-pascal-linux.sh`（`FPC` + `LAZARUS_DIR` / PATH 上的 lazbuild，`--ws=gtk3`） |
 | GTK3 探测 | `skinpreview --probe` + `tools/test-gtk3-wayland.sh` + `tools/smoke_gtk3_wayland.py` |
 | Qt SkinDumper | `src/tools/SkinDumper.{h,cpp}` + `--dump-skin` |
 | Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames`（捕帧前 `clearMask`，playlist/lyric 按 `baseSize`） |

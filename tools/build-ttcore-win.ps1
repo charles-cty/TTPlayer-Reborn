@@ -2,6 +2,11 @@
 .SYNOPSIS
     用 MSYS2 MinGW64 + Ninja 只编 ttcore.dll（BUILD_QT_APP=OFF），并复制到 pascal\bin。
     FFmpeg 与 MinGW CRT 静态打进 DLL；SDL2.dll 复制到同一目录。
+    路径来自环境变量或 PATH，不写死 C:\msys64：
+
+      MSYS2_ROOT   MSYS2 安装根目录
+      MINGW64_BIN  可选，MinGW64 bin
+      SDL2_PREFIX  可选，官方 MinGW SDL2 根目录
 
 .PARAMETER Config
     Debug / Release / Profile（默认 Debug）。
@@ -27,11 +32,16 @@ if (-not (Test-Path -LiteralPath $ffmpegLib)) {
     & (Join-Path $PSScriptRoot 'build-ffmpeg-win.ps1')
 }
 
-$env:PATH = 'C:\msys64\mingw64\bin;C:\msys64\usr\bin;' + $env:PATH
+. (Join-Path $PSScriptRoot 'WinToolchain.ps1')
+if ($env:MSYS2_ROOT -or $env:MINGW64_BIN) {
+    Add-Mingw64ToPath
+}
 
 foreach ($name in @('cmake.exe', 'ninja.exe', 'pkg-config.exe', 'g++.exe')) {
     $c = Get-Command $name -ErrorAction SilentlyContinue
-    if (-not $c) { throw "找不到 $name（需要 MSYS2 mingw-w64 工具链）" }
+    if (-not $c) {
+        throw "找不到 $name。设置 MSYS2_ROOT（或 MINGW64_BIN）或把 MinGW64 bin 加入 PATH。"
+    }
 }
 
 $cv2pdb = $null
@@ -79,8 +89,9 @@ if ($Config -ne 'Release') {
     Write-Host "[build-ttcore-win] $pdb ($((Get-Item -LiteralPath $pdb).Length) bytes)"
 }
 
-$objdump = Join-Path 'C:\msys64\mingw64\bin' 'objdump.exe'
-if (Test-Path -LiteralPath $objdump) {
+$objdumpCmd = Get-Command objdump.exe -ErrorAction SilentlyContinue
+$objdump = if ($objdumpCmd) { $objdumpCmd.Source } else { $null }
+if ($objdump -and (Test-Path -LiteralPath $objdump)) {
     $allowed = @('bcrypt.dll', 'kernel32.dll', 'msvcrt.dll', 'sdl2.dll')
     $deps = @(& $objdump -p $dll | ForEach-Object {
         if ($_ -match 'DLL Name:\s+(\S+)') { $Matches[1] }

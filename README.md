@@ -77,8 +77,8 @@ TTPlayer-Reborn/
 │   ├── test-all.ps1          # ★ 统一测试入口（Layer 1-4 全部测试）
 │   ├── test-layer1.ps1       # Layer 1 差分测试
 │   ├── gen-golden.ps1        # 从 Qt 版生成 golden 基准数据
-│   ├── build-pascal.ps1      # lazbuild 构建全部 Lazarus 工程（Windows）
-│   ├── build-pascal-linux.sh # 用户目录 FPC + Lazarus GTK3 构建
+│   ├── build-pascal.ps1      # lazbuild 构建全部 Lazarus 工程（Windows；LAZARUS_DIR）
+│   ├── build-pascal-linux.sh # FPC + Lazarus GTK3 构建（FPC / LAZARUS_DIR）
 │   └── test-gtk3-wayland.sh  # Linux FPCUnit + XWayland/X11 --probe
 │
 └── docs/
@@ -100,20 +100,11 @@ TTPlayer-Reborn/
 
 ---
 
-## 构建（Qt 版）
+## 构建
 
-**依赖**
+产品 GUI 是 Lazarus/FPC（`pascal/` 的 `ttplayer`）。音频是无 Qt 的 C++ 库 `ttcore`（Windows `ttcore.dll`，Linux `libttcore.so`）。仓库里的 Qt 程序是对照/遗留实现。
 
-| 依赖 | 用途 |
-|---|---|
-| Qt6 Widgets | GUI |
-| FFmpeg（avformat/avcodec/avutil/swresample） | 音频解码、重采样、标签读写。Linux 用发行版共享库；Windows 用 `third_party/ffmpeg`（shallow submodule，pin n8.1.2）编音频-only 静态库打进 `ttcore.dll` |
-| SDL2 | 音频输出（Windows 运行时旁放 `SDL2.dll`） |
-| QuaZip-Qt6 | 皮肤文件（ZIP）解压 |
-| Qt6 DBus（可选，Linux） | MPRIS 媒体控制 |
-| X11（可选，Linux） | 全局快捷键 |
-
-已在 **Windows（MSYS2/MinGW64）** 和 **Kubuntu（Linux）** 编译成功。
+脚本**不写死** Lazarus / MSYS2 / FPC 安装路径，一律用环境变量或 `PATH`。已在 Windows（MSYS2 MinGW64 + 官方 Lazarus）和 Linux（发行版包 + 自装 FPC/Lazarus GTK3）编译成功。
 
 构建配置三种（CMake `CMAKE_BUILD_TYPE` / Lazarus `--bm` 同名）：
 
@@ -125,71 +116,116 @@ TTPlayer-Reborn/
 
 另有 Lazarus **HeapTrc**（`-gh`），只用于堆诊断，不是第四种发布配置。HeapTrc / PageHeap、WinDbg、ETW、DTrace 见 [docs/debugging-and-profiling.md](docs/debugging-and-profiling.md)。
 
-**Linux / macOS**
+### 环境变量
 
-FFmpeg / SDL2 走发行版包管理（pkg-config），不要自备 kitchen-sink 前缀：
+| 变量 | 平台 | 含义 |
+|---|---|---|
+| `MSYS2_ROOT` | Windows | MSYS2 安装根目录（含 `usr\bin\bash.exe` 与 `mingw64\bin`） |
+| `MSYS2_BASH` | Windows | 可选，MSYS2 `bash.exe` 的完整路径 |
+| `MINGW64_BIN` | Windows | 可选，MinGW64 `bin` 目录；不设则用 `%MSYS2_ROOT%\mingw64\bin` |
+| `LAZARUS_DIR` | 两端 | Lazarus 根目录（含 `lazbuild` / `lazbuild.exe`） |
+| `LAZBUILD` | 两端 | 可选，`lazbuild` 可执行文件的完整路径 |
+| `FPC` | Linux | `fpc` 可执行文件路径；不设则用 `PATH` 上的 `fpc` |
+| `LCL_PLATFORM` | Linux | LCL widgetset，默认 `gtk3` |
+| `SDL2_PREFIX` | Windows | 可选，官方 MinGW SDL2 根目录（含 `include/SDL2` 与 `bin/SDL2.dll`）。不设则用 mingw64 的 `pkg-config sdl2` |
+| `CV2PDB` | Windows | 可选，`cv2pdb64.exe` 路径；Debug/Profile 未设时脚本会下载 |
+
+Windows 上若已把 MinGW64 `bin` 和 `lazbuild` 加入 `PATH`，对应变量可省略；找不到工具时脚本会提示要设哪一个。
+
+### Linux 依赖包
+
+不要用 Ubuntu apt 的 `lazarus` / `fp-compiler`（当前是 3.0，没有 LCL GTK3）。FPC 与 Lazarus（GTK3 widgetset）自行安装，再用上表变量指向它们。其余用发行版包：
 
 ```bash
-sudo apt install cmake g++ pkg-config \
-  libavformat-dev libavcodec-dev libavutil-dev libswresample-dev libsdl2-dev
-# Qt 版另需 Qt6 Widgets 等
-cmake --preset debug     # 或 release / profile；Qt 版仍可 cmake -B build ...
-cmake --build --preset debug
-# ttcore 快捷脚本（默认 Debug）：
-bash tools/build-ttcore-linux.sh
-bash tools/build-ttcore-linux.sh --config Profile
+sudo apt install git cmake g++ pkg-config make \
+  libavformat-dev libavcodec-dev libavutil-dev libswresample-dev libsdl2-dev \
+  libgtk-3-dev libx11-dev libxext-dev
 ```
 
-**Windows（MSYS2/MinGW64 工具链，PowerShell）**
+| 包 | 用途 |
+|---|---|
+| `git` `cmake` `g++` `pkg-config` `make` | 检出 submodule、编 `ttcore` |
+| `libavformat-dev` `libavcodec-dev` `libavutil-dev` `libswresample-dev` | FFmpeg 音频解码/重采样/标签（`libttcore.so`） |
+| `libsdl2-dev` | SDL2 音频输出 |
+| `libgtk-3-dev` | LCL GTK3（`ttplayer` / `skinpreview`） |
+| `libx11-dev` `libxext-dev` | X11 与 XShape（无边框异形窗；Linux 只支持 X11 / XWayland） |
 
-编译器仍用 MSYS2 gcc。FFmpeg 不走 pacman 共享包：先编音频-only 静态库，再编程序。
+运行 GUI 需要 `DISPLAY`（Xorg 或 XWayland）。不要自备 kitchen-sink FFmpeg 前缀，走 pkg-config。
 
-**运行时自包含**：只要 `ttcore.dll`（FFmpeg + MinGW CRT 已静态打进 DLL）和旁边的 `SDL2.dll`。不依赖 MSYS2、不依赖 MinGW CRT DLL、也不读 `C:\Programs` 这类硬编码路径。构建机用 `SDL2_PREFIX` 或 mingw64 的 `pkg-config sdl2` 找到 SDK，CMake 把 `SDL2.dll` 复制到输出目录。
+Qt 对照版另需 Qt6 Widgets、QuaZip-Qt6；Linux 可选 Qt6 DBus（MPRIS）、X11 全局快捷键。
 
-Debug / Profile 会下载 `cv2pdb`（rainers/cv2pdb 0.54）并把 PDB 放到 `pascal\bin\`（WinDbg / WPA 用）。需要本机 Visual Studio 的 `mspdb140.dll`。调试、采样与已知限制见 [docs/debugging-and-profiling.md](docs/debugging-and-profiling.md)。
+### Windows 依赖
 
-```powershell
-git submodule update --init --depth 1 third_party/ffmpeg
-pwsh tools/build-ffmpeg-win.ps1
-pwsh tools/build-ttcore-win.ps1                 # 默认 Debug
-pwsh tools/build-ttcore-win.ps1 -Config Profile
-pwsh tools/build-ttcore-win.ps1 -Config Release
-# 可选：官方 MinGW SDL2 根目录（含 include/SDL2 与 bin/SDL2.dll）
-# $env:SDL2_PREFIX = 'D:\sdl2\x86_64-w64-mingw32'
+1. **MSYS2 MinGW64**（编 `ttcore` 与静态 FFmpeg，不是 MSVC）：
+
+```bash
+pacman -S --needed git make \
+  mingw-w64-x86_64-gcc \
+  mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-ninja \
+  mingw-w64-x86_64-pkgconf \
+  mingw-w64-x86_64-SDL2 \
+  mingw-w64-x86_64-zlib \
+  mingw-w64-x86_64-libiconv
 ```
 
----
+2. **Lazarus**（官方安装包，内含 FPC；编 `ttplayer`）。不要用 MSYS2 里的 Lazarus。
 
-## 构建（Lazarus 重写版）
+3. Debug / Profile 转 PDB 需要本机 Visual Studio 的 `mspdb140.dll`（`cv2pdb`）。MSVC **不**用来编译。详见 [docs/debugging-and-profiling.md](docs/debugging-and-profiling.md)。
 
-> 详见 [docs/lazarus-rewrite.md](docs/lazarus-rewrite.md)
+**运行时自包含**：只要 `ttcore.dll`（FFmpeg + MinGW CRT 已静态打进 DLL）和旁边的 `SDL2.dll`。不依赖 MSYS2、不依赖 MinGW CRT DLL。
 
-**Windows**
+### 构建 ttcore + Pascal `ttplayer`
 
-```powershell
-# BGRABitmap + FFmpeg（FFmpeg 在 .gitmodules 里 shallow=true，depth 1）
+**Linux**
+
+```bash
 git submodule update --init --depth 1
-
-# 音频-only 静态 FFmpeg + ttcore.dll（旁放 SDL2.dll）
-pwsh tools/build-ffmpeg-win.ps1
-pwsh tools/build-ttcore-win.ps1
-
-# 构建全部 Pascal 工程（ttdump + tests + skinpreview + ttplayer，默认 Debug）
-pwsh tools/build-pascal.ps1
-pwsh tools/build-pascal.ps1 -Config Profile
-```
-
-**Linux（GTK3 + XWayland，用户目录 FPC/Lazarus）**
-
-```bash
-sudo apt install cmake g++ pkg-config \
-  libavformat-dev libavcodec-dev libavutil-dev libswresample-dev libsdl2-dev
-bash tools/build-ttcore-linux.sh
-# 构建全部 Pascal 工程（ttdump + tests + skinpreview + ttplayer，默认 Debug）
-bash tools/build-pascal-linux.sh
+export FPC=/path/to/fpc
+export LAZARUS_DIR=/path/to/lazarus
+bash tools/build-ttcore-linux.sh              # 默认 Debug；可 --config Profile
+bash tools/build-pascal-linux.sh              # ttdump + tests + skinpreview + ttplayer
 bash tools/build-pascal-linux.sh --config Debug
 bash tools/test-gtk3-wayland.sh
 ```
+
+**Windows（PowerShell）**
+
+FFmpeg 不走 pacman 共享包：从 `third_party/ffmpeg`（shallow submodule，pin n8.1.2）编音频-only 静态库，再打进 `ttcore.dll`。CMake 把 `SDL2.dll` 复制到 `pascal\bin`。
+
+```powershell
+$env:MSYS2_ROOT  = 'X:\path\to\msys64'
+$env:LAZARUS_DIR = 'X:\path\to\lazarus'
+# 可选：$env:SDL2_PREFIX = 'X:\path\to\SDL2'   # 含 include\SDL2 与 bin\SDL2.dll
+
+git submodule update --init --depth 1
+pwsh tools/build-ffmpeg-win.ps1
+pwsh tools/build-ttcore-win.ps1                 # 默认 Debug
+pwsh tools/build-ttcore-win.ps1 -Config Profile
+pwsh tools/build-pascal.ps1                     # ttdump + tests + skinpreview + ttplayer
+pwsh tools/build-pascal.ps1 -Config Profile
+```
+
+`tools/build-ttcore-win.ps1` 在静态 FFmpeg 前缀缺失时会自动调用 `build-ffmpeg-win.ps1`。
+
+### 构建 Qt 对照版
+
+| 依赖 | 用途 |
+|---|---|
+| Qt6 Widgets | GUI |
+| FFmpeg（avformat/avcodec/avutil/swresample） | 与 ttcore 相同 |
+| SDL2 | 音频输出 |
+| QuaZip-Qt6 | 皮肤 ZIP |
+| Qt6 DBus（可选，Linux） | MPRIS |
+| X11（可选，Linux） | 全局快捷键 |
+
+```bash
+# Linux：先装上一节的发行版包，再装发行版 Qt6 Widgets / QuaZip-Qt6
+cmake --preset debug     # 或 release / profile
+cmake --build --preset debug
+```
+
+Windows 同样用 MSYS2 MinGW64（`MSYS2_ROOT`），不要写死安装路径。
 
 ---
 

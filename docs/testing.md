@@ -187,15 +187,16 @@ Layer 5（`tools/smoke_skinpreview.py`）在四个窗口渲染之外，还会：
 
 Linux 只测 X11（XWayland 或 Xorg）。`skinpreview` / `ttplayer` 启动时强制 `GDK_BACKEND=x11`，需要 `DISPLAY`。原生 Wayland 不支持。
 
-Ubuntu apt 的 Lazarus 3.0 只有 GTK2/Qt5，没有 LCL GTK3 包。用用户目录 FPC + Lazarus 4.8。音频库走发行版 FFmpeg/SDL2（pkg-config），不要 `~/.local/ttcore-deps` 那种 kitchen-sink 前缀：
+Ubuntu apt 的 Lazarus 3.0 只有 GTK2/Qt5，没有 LCL GTK3 包。自行安装 FPC + Lazarus（GTK3），用 `FPC` / `LAZARUS_DIR` 指向它们。音频库走发行版 FFmpeg/SDL2（pkg-config）。包列表与环境变量见 README 构建一节。
 
 ```bash
-# FFmpeg / SDL2 开发包（libttcore.so）
-sudo apt install cmake g++ pkg-config \
-  libavformat-dev libavcodec-dev libavutil-dev libswresample-dev libsdl2-dev
+# FFmpeg / SDL2 / GTK3 / X11 开发包（libttcore.so + LCL GTK3）
+sudo apt install git cmake g++ pkg-config make \
+  libavformat-dev libavcodec-dev libavutil-dev libswresample-dev libsdl2-dev \
+  libgtk-3-dev libx11-dev libxext-dev
+export FPC=.../fpc
+export LAZARUS_DIR=.../lazarus
 bash tools/build-ttcore-linux.sh
-
-# FPC: $HOME/opt/fpc    Lazarus: $HOME/opt/lazarus（make lazbuild）
 bash tools/build-pascal-linux.sh          # ttdump + tests + skinpreview + ttplayer --ws=gtk3
 bash tools/test-gtk3-wayland.sh           # FPCUnit + X11 --probe + GDK_SCALE=2
 ```

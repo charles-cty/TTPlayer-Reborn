@@ -28,8 +28,11 @@ $JsonDir  = Join-Path $RepoRoot 'tests\golden\skinjson'
 $FrameDir = Join-Path $RepoRoot 'tests\golden\frames'
 $MaskDir  = Join-Path $RepoRoot 'tests\golden\masks'
 
-# 运行时依赖（Qt/FFmpeg 等 DLL）来自 MSYS2，无论是否构建都需要在 PATH 中。
-$env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
+# 运行时依赖（Qt/FFmpeg 等 DLL）来自 MinGW64，无论是否构建都需要在 PATH 中。
+. (Join-Path $PSScriptRoot 'WinToolchain.ps1')
+if ($env:MSYS2_ROOT -or $env:MINGW64_BIN) {
+    Add-Mingw64ToPath
+}
 
 # 抑制"找不到 DLL"等系统错误弹窗（SetErrorMode 会被子进程继承），
 # 否则批量运行时一旦出错会挂起等待人工点击。

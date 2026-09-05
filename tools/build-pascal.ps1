@@ -1,6 +1,10 @@
 <#
 .SYNOPSIS
     用 lazbuild 命令行构建 pascal/ 下的全部 Lazarus 工程（不依赖 IDE 安装包）。
+    路径来自环境变量或 PATH，不写死安装目录：
+
+      LAZARUS_DIR  Lazarus 根目录（含 lazbuild.exe）
+      LAZBUILD     可选，lazbuild.exe 的完整路径
 
 .PARAMETER Project
     只构建指定工程（如 ttdump）；缺省全部构建。
@@ -29,12 +33,12 @@ if ($HeapTrace) { $Config = 'HeapTrc' }
 
 $RepoRoot  = Split-Path -Parent $PSScriptRoot
 $PascalDir = Join-Path $RepoRoot 'pascal'
-$LazBuild  = 'C:\lazarus\lazbuild.exe'
-$LazDir    = 'C:\lazarus'
-
-if (-not (Test-Path $LazBuild)) { throw "找不到 lazbuild：$LazBuild" }
-
+. (Join-Path $PSScriptRoot 'WinToolchain.ps1')
 . (Join-Path $PSScriptRoot 'Cv2pdb.ps1')
+
+$LazBuild = Get-LazbuildPath
+$LazDir   = Get-LazarusDir
+Write-Host "[build-pascal] lazbuild=$LazBuild  lazarusdir=$LazDir"
 
 # vendor 包只需注册一次（lazbuild 会记录到本地包链接），重复执行无害。
 $Packages = @(

@@ -4,8 +4,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-export PATH="${FPC:+$(dirname "$FPC"):}${PATH:-}"
-export PATH="${HOME}/opt/fpc/bin:$PATH"
+if [[ -n "${FPC:-}" ]]; then
+  export PATH="$(dirname "$FPC"):${PATH:-}"
+fi
 export NO_AT_BRIDGE=1
 export GDK_BACKEND=x11
 export GTK_CSD=0

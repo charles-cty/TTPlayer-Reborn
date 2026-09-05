@@ -16,9 +16,10 @@ if [[ ! -f "$SRC/configure" ]]; then
   exit 1
 fi
 
-export PATH="/mingw64/bin:/usr/bin:${PATH:-}"
-export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-export PKG_CONFIG="/mingw64/bin/pkg-config"
+MINGW_PREFIX="${MINGW_PREFIX:-${MSYSTEM_PREFIX:-/mingw64}}"
+export PATH="${MINGW_PREFIX}/bin:/usr/bin:${PATH:-}"
+export PKG_CONFIG_PATH="${MINGW_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export PKG_CONFIG="${MINGW_PREFIX}/bin/pkg-config"
 
 if ! command -v gcc >/dev/null || ! command -v make >/dev/null; then
   echo "need MSYS2 mingw-w64 gcc and make on PATH" >&2

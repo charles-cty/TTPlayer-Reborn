@@ -13,10 +13,8 @@ if (-not (Test-Path -LiteralPath $Src)) {
     throw "缺少 third_party\ffmpeg（git submodule update --init --depth 1 third_party/ffmpeg）"
 }
 
-$bash = 'C:\msys64\usr\bin\bash.exe'
-if (-not (Test-Path -LiteralPath $bash)) {
-    throw '找不到 C:\msys64\usr\bin\bash.exe（需要 MSYS2）'
-}
+. (Join-Path $PSScriptRoot 'WinToolchain.ps1')
+$bash = Get-Msys2Bash
 
 $drive = $RepoRoot.Substring(0, 1).ToLowerInvariant()
 $unixRoot = '/' + $drive + ($RepoRoot.Substring(2) -replace '\\', '/')
