@@ -19,7 +19,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, LCLType, LCLIntf, LMessages, Types,
-  UWindowSnapMath, UWindowSnapManager, UPlatformWindow, USkinView
+  UWindowSnapMath, UWindowSnapManager, UPlatformWindow, USkinView, UTracy
 {$IFDEF WINDOWS}
   , UDpiScale
 {$ENDIF}
@@ -335,6 +335,7 @@ end;
 procedure TSnapFormAdapter.HandleEnterSizeMove;
 var
   b: TSnapRect;
+  zone: TTracyZone;
 begin
   if (FManager = nil) or (FWin = nil) then Exit;
   b := FWin.GetBounds;
@@ -345,16 +346,27 @@ begin
   ReadPointerRoot(FGrabOffX, FGrabOffY);
   FDragTracking := True;
   UpdateScreenRect;
-  FManager.OnDragStarted(FWin);
+  zone := TracyZoneBegin('Drag.Begin');
+  try
+    FManager.OnDragStarted(FWin);
+  finally
+    TracyZoneEnd(zone);
+  end;
 end;
 
 procedure TSnapFormAdapter.HandleExitSizeMove;
 var
   b: TSnapRect;
+  zone: TTracyZone;
 begin
   if (FManager = nil) or (FWin = nil) then Exit;
   FDragTracking := False;
-  FManager.OnDragFinished(FWin);
+  zone := TracyZoneBegin('Drag.End');
+  try
+    FManager.OnDragFinished(FWin);
+  finally
+    TracyZoneEnd(zone);
+  end;
   b := FWin.GetBounds;
   FLastX := b.X;
   FLastY := b.Y;
@@ -364,6 +376,7 @@ procedure TSnapFormAdapter.ApplyPointerLogicalPos;
 var
   curX, curY, lx, ly: Integer;
   b: TSnapRect;
+  zone: TTracyZone;
 begin
   if (not FDragTracking) or FApplyingDrag or (FWin = nil) or (FManager = nil) then Exit;
   ReadPointerRoot(curX, curY);
@@ -371,7 +384,12 @@ begin
   ly := FDragOriginY + curY - FGrabOffY;
   FApplyingDrag := True;
   try
-    FManager.OnDragLogicalMove(lx, ly);
+    zone := TracyZoneBegin('Drag.SnapMove');
+    try
+      FManager.OnDragLogicalMove(lx, ly);
+    finally
+      TracyZoneEnd(zone);
+    end;
   finally
     FApplyingDrag := False;
   end;

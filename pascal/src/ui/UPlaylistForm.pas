@@ -89,6 +89,7 @@ type
     FResizeEdgeBottom: Boolean;
     FResizeStartX, FResizeStartY, FResizeStartW, FResizeStartH: Integer;
     FResizeSession: TLiveResizeSession;
+    FResizeTraceActive: Boolean;
     FResizeCoalesce: TTimer;
     FDeferLiveChrome: Boolean;
     FLivePaintLocked: Boolean;
@@ -141,6 +142,7 @@ type
     procedure InvalidateFrame;
     procedure MapHit(var X, Y: Integer);
     procedure ApplyResizeDecision(const D: TLiveResizeDecision);
+    procedure ExecuteResizeDecision(const D: TLiveResizeDecision);
     procedure HandleResizeCoalesce(Sender: TObject);
     procedure ApplyListFont;
     function SX(V: Integer): Integer;
@@ -277,7 +279,7 @@ type
 implementation
 
 uses
-  UFormSnap, UDpiScale, UPlayerMenuSpec;
+  UFormSnap, UDpiScale, UPlayerMenuSpec, UTracy;
 
 const
   kResizeSense              = 8;
@@ -466,10 +468,36 @@ begin
 end;
 
 procedure TPlaylistForm.ApplyResizeDecision(const D: TLiveResizeDecision);
+const
+  UpdateFrameName: PAnsiChar = 'Resize.Playlist.Update';
+var
+  UpdateZone: TTracyZone;
+begin
+  if D.Kind = lrkIdle then Exit;
+  if (not D.ApplyWindowSize) and (not D.RebuildNinePatch) then Exit;
+  if FResizeTraceActive then
+  begin
+    ExecuteResizeDecision(D);
+    Exit;
+  end;
+  FResizeTraceActive := True;
+  TracyFrameStart(UpdateFrameName);
+  UpdateZone := TracyZoneBegin(UpdateFrameName);
+  try
+    ExecuteResizeDecision(D);
+  finally
+    TracyZoneEnd(UpdateZone);
+    TracyFrameEnd(UpdateFrameName);
+    FResizeTraceActive := False;
+  end;
+end;
+
+procedure TPlaylistForm.ExecuteResizeDecision(const D: TLiveResizeDecision);
 var
   s: Double;
   fw, fh: Integer;
   growing, moved: Boolean;
+  PhaseZone: TTracyZone;
 begin
   if D.Kind = lrkIdle then Exit;
   // 合帧：逻辑尺寸在 session 里，HWND 未到点则不动，避免把新布局画进旧客户区。
@@ -493,16 +521,35 @@ begin
   // 缩小：先裁 HWND，再画再 BuildRegion。
   if growing then
   begin
-    RenderFrame;
+    PhaseZone := TracyZoneBegin('Resize.Playlist.Render');
+    try
+      RenderFrame;
+    finally
+      TracyZoneEnd(PhaseZone);
+    end;
     FLastPaintChromeUs := LiveNowUs;
     if D.ApplyWindowSize and HandleAllocated then
-      BuildRegion;
+    begin
+      PhaseZone := TracyZoneBegin('Resize.Playlist.Region');
+      try
+        BuildRegion;
+      finally
+        TracyZoneEnd(PhaseZone);
+      end;
+    end;
     if D.ApplyWindowSize then
     begin
       FDeferLiveChrome := True;
       try
         if moved then
-          SetBounds(Left, Top, fw, fh);
+        begin
+          PhaseZone := TracyZoneBegin('Resize.Playlist.Bounds');
+          try
+            SetBounds(Left, Top, fw, fh);
+          finally
+            TracyZoneEnd(PhaseZone);
+          end;
+        end;
       finally
         FDeferLiveChrome := False;
       end;
@@ -515,20 +562,44 @@ begin
       FDeferLiveChrome := True;
       try
         if moved then
-          SetBounds(Left, Top, fw, fh);
+        begin
+          PhaseZone := TracyZoneBegin('Resize.Playlist.Bounds');
+          try
+            SetBounds(Left, Top, fw, fh);
+          finally
+            TracyZoneEnd(PhaseZone);
+          end;
+        end;
       finally
         FDeferLiveChrome := False;
       end;
     end;
-    RenderFrame;
+    PhaseZone := TracyZoneBegin('Resize.Playlist.Render');
+    try
+      RenderFrame;
+    finally
+      TracyZoneEnd(PhaseZone);
+    end;
     FLastPaintChromeUs := LiveNowUs;
     if HandleAllocated then
-      BuildRegion;
+    begin
+      PhaseZone := TracyZoneBegin('Resize.Playlist.Region');
+      try
+        BuildRegion;
+      finally
+        TracyZoneEnd(PhaseZone);
+      end;
+    end;
   end;
 
-  Invalidate;
-  if HandleAllocated then
-    Update;
+  PhaseZone := TracyZoneBegin('Resize.Playlist.Paint');
+  try
+    Invalidate;
+    if HandleAllocated then
+      Update;
+  finally
+    TracyZoneEnd(PhaseZone);
+  end;
 end;
 
 procedure TPlaylistForm.HandleResizeCoalesce(Sender: TObject);

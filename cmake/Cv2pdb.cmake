@@ -29,9 +29,10 @@ endif()
 
 if (_TTPLAYER_NEED_CV2PDB AND NOT CV2PDB_EXECUTABLE)
     message(FATAL_ERROR
-        "cv2pdb not found (needed for ${CMAKE_BUILD_TYPE} PDB on Windows).\n"
-        "Run: pwsh -File tools/build-ttcore-win.ps1 -Config ${CMAKE_BUILD_TYPE}\n"
-        "or set -DCV2PDB_EXECUTABLE=... to cv2pdb64.exe.")
+        "cv2pdb not found (needed for Windows Debug/Profile PDB generation).\n"
+        "Configure with -DCMAKE_BUILD_TYPE=Profile and either run the Windows build script first\n"
+        "or set -DCV2PDB_EXECUTABLE=... to cv2pdb64.exe.\n"
+        "Example: pwsh -File tools/build-ttcore-win.ps1 -Config Profile")
 endif()
 
 if (CV2PDB_EXECUTABLE)

@@ -5,3 +5,7 @@
 	path = third_party/ffmpeg
 	url = https://github.com/FFmpeg/FFmpeg.git
 	shallow = true
+[submodule "third_party/tracy"]
+	path = third_party/tracy
+	url = https://github.com/wolfpld/tracy.git
+	shallow = true

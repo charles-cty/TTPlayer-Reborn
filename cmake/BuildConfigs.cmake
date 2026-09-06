@@ -19,7 +19,8 @@ endif()
 # project() with CMAKE_BUILD_TYPE=Profile can cache an empty
 # CMAKE_*_FLAGS_PROFILE from a missing INIT. Fill from Release if so.
 foreach (_lang IN ITEMS C CXX)
-    if (NOT CMAKE_${_lang}_FLAGS_PROFILE MATCHES "(-O[123s]|[/-]O2)")
+    if ((MSVC AND NOT CMAKE_${_lang}_FLAGS_PROFILE MATCHES "[/-]O2") OR
+        (NOT MSVC AND NOT CMAKE_${_lang}_FLAGS_PROFILE MATCHES "(-O[123s]|[/-]O2)"))
         set(CMAKE_${_lang}_FLAGS_PROFILE "${CMAKE_${_lang}_FLAGS_RELEASE}"
             CACHE STRING "${_lang} flags for Profile" FORCE)
     endif()
@@ -33,7 +34,16 @@ foreach (_kind IN ITEMS EXE SHARED MODULE STATIC)
     mark_as_advanced(CMAKE_${_kind}_LINKER_FLAGS_PROFILE)
 endforeach()
 
-if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+if (MSVC)
+    add_compile_options(
+        $<$<CONFIG:Profile>:/Zi>
+        $<$<CONFIG:Profile>:/Oy->
+    )
+    add_link_options(
+        $<$<CONFIG:Profile>:/DEBUG>
+        $<$<CONFIG:Profile>:/INCREMENTAL:NO>
+    )
+elseif (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     # -g on Profile: Release flags have no debug info.
     # -fno-omit-frame-pointer: usable stacks in perf / ETW / WPA.
     # -gdwarf-4 on Windows: cv2pdb is more reliable than DWARF-5.

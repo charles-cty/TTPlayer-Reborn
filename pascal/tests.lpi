@@ -63,6 +63,9 @@
               <UseLineInfoUnit Value="True"/>
             </Debugging>
           </Linking>
+          <Other>
+            <CustomOptions Value="-dENABLE_TRACY"/>
+          </Other>
         </CompilerOptions>
       </Item3>
       <Item4 Name="HeapTrc">

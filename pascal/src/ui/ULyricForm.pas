@@ -76,6 +76,7 @@ type
     FResizeStartW: Integer;
     FResizeStartH: Integer;
     FResizeSession: TLiveResizeSession;
+    FResizeTraceActive: Boolean;
     FResizeCoalesce: TTimer;
     FDeferLiveChrome: Boolean;
     FLivePaintLocked: Boolean;
@@ -103,6 +104,7 @@ type
     procedure RenderFrame;
     procedure MapHit(var X, Y: Integer);
     procedure ApplyResizeDecision(const D: TLiveResizeDecision);
+    procedure ExecuteResizeDecision(const D: TLiveResizeDecision);
     procedure HandleResizeCoalesce(Sender: TObject);
 
     procedure OnLyricTick(Sender: TObject);
@@ -139,7 +141,7 @@ type
 implementation
 
 uses
-  LCLProc, Math, UFormSnap, UDpiScale;
+  LCLProc, Math, UFormSnap, UDpiScale, UTracy;
 
 const
   kResizeSense = 8;  // 调整大小感应带宽度（像素）
@@ -404,10 +406,36 @@ begin
 end;
 
 procedure TLyricForm.ApplyResizeDecision(const D: TLiveResizeDecision);
+const
+  UpdateFrameName: PAnsiChar = 'Resize.Lyric.Update';
+var
+  UpdateZone: TTracyZone;
+begin
+  if D.Kind = lrkIdle then Exit;
+  if (not D.ApplyWindowSize) and (not D.RebuildNinePatch) then Exit;
+  if FResizeTraceActive then
+  begin
+    ExecuteResizeDecision(D);
+    Exit;
+  end;
+  FResizeTraceActive := True;
+  TracyFrameStart(UpdateFrameName);
+  UpdateZone := TracyZoneBegin(UpdateFrameName);
+  try
+    ExecuteResizeDecision(D);
+  finally
+    TracyZoneEnd(UpdateZone);
+    TracyFrameEnd(UpdateFrameName);
+    FResizeTraceActive := False;
+  end;
+end;
+
+procedure TLyricForm.ExecuteResizeDecision(const D: TLiveResizeDecision);
 var
   s: Double;
   fw, fh: Integer;
   growing, moved: Boolean;
+  PhaseZone: TTracyZone;
 begin
   if D.Kind = lrkIdle then Exit;
   // 合帧：逻辑尺寸在 session 里，HWND 未到点则不动，避免把新布局画进旧客户区。
@@ -429,16 +457,35 @@ begin
   // 缩小：先裁 HWND，再画再 BuildRegion。
   if growing then
   begin
-    RenderFrame;
+    PhaseZone := TracyZoneBegin('Resize.Lyric.Render');
+    try
+      RenderFrame;
+    finally
+      TracyZoneEnd(PhaseZone);
+    end;
     FLastPaintChromeUs := LiveNowUs;
     if D.ApplyWindowSize and HandleAllocated then
-      BuildRegion;
+    begin
+      PhaseZone := TracyZoneBegin('Resize.Lyric.Region');
+      try
+        BuildRegion;
+      finally
+        TracyZoneEnd(PhaseZone);
+      end;
+    end;
     if D.ApplyWindowSize then
     begin
       FDeferLiveChrome := True;
       try
         if moved then
-          SetBounds(Left, Top, fw, fh);
+        begin
+          PhaseZone := TracyZoneBegin('Resize.Lyric.Bounds');
+          try
+            SetBounds(Left, Top, fw, fh);
+          finally
+            TracyZoneEnd(PhaseZone);
+          end;
+        end;
       finally
         FDeferLiveChrome := False;
       end;
@@ -451,20 +498,44 @@ begin
       FDeferLiveChrome := True;
       try
         if moved then
-          SetBounds(Left, Top, fw, fh);
+        begin
+          PhaseZone := TracyZoneBegin('Resize.Lyric.Bounds');
+          try
+            SetBounds(Left, Top, fw, fh);
+          finally
+            TracyZoneEnd(PhaseZone);
+          end;
+        end;
       finally
         FDeferLiveChrome := False;
       end;
     end;
-    RenderFrame;
+    PhaseZone := TracyZoneBegin('Resize.Lyric.Render');
+    try
+      RenderFrame;
+    finally
+      TracyZoneEnd(PhaseZone);
+    end;
     FLastPaintChromeUs := LiveNowUs;
     if HandleAllocated then
-      BuildRegion;
+    begin
+      PhaseZone := TracyZoneBegin('Resize.Lyric.Region');
+      try
+        BuildRegion;
+      finally
+        TracyZoneEnd(PhaseZone);
+      end;
+    end;
   end;
 
-  Invalidate;
-  if HandleAllocated then
-    Update;
+  PhaseZone := TracyZoneBegin('Resize.Lyric.Paint');
+  try
+    Invalidate;
+    if HandleAllocated then
+      Update;
+  finally
+    TracyZoneEnd(PhaseZone);
+  end;
 end;
 
 procedure TLyricForm.HandleResizeCoalesce(Sender: TObject);

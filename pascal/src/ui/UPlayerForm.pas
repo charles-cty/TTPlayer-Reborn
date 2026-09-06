@@ -123,7 +123,7 @@ type
 implementation
 
 uses
-  LCLProc, UFormSnap;
+  UTracy, LCLProc, UFormSnap;
 
 { TPlayerForm }
 
@@ -494,6 +494,7 @@ var
   info: string;
   showCover: Boolean;
   composed, old: TBGRABitmap;
+  zone: TTracyZone;
 begin
   if FSkin = nil then Exit;
 
@@ -547,10 +548,15 @@ begin
   if showCover then
     SyncCover;
 
-  composed := RenderPlayerWindow(FSkin^,
-    progress, volume,
-    overrideType, overrideState, toggledMute,
-    IsPlaying, ledMs, info, FCoverBmp, showCover);
+  zone := TracyZoneBegin('Render.PlayerFrame');
+  try
+    composed := RenderPlayerWindow(FSkin^,
+      progress, volume,
+      overrideType, overrideState, toggledMute,
+      IsPlaying, ledMs, info, FCoverBmp, showCover);
+  finally
+    TracyZoneEnd(zone);
+  end;
   old := FFrame;
   FFrame := composed;
   old.Free;

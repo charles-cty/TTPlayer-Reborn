@@ -20,7 +20,7 @@ interface
 
 uses
   Classes, SysUtils, Types, Forms, Controls, LCLType,
-  BGRABitmap, BGRABitmapTypes, UAlphaShape, UDpiScale;
+  BGRABitmap, BGRABitmapTypes, UAlphaShape, UDpiScale, UTracy;
 
 type
   TPlatformWindowBackend = (pwbUnknown, pwbWin32, pwbX11, pwbWayland, pwbOther);
@@ -122,14 +122,20 @@ var
   pr: PRect;
   rgn, totalRgn, segRgn, rowRgn: HRGN;
   minX, minY, maxX, maxY: Integer;
+  zone: TTracyZone;
 begin
   if AHandle = 0 then Exit;
   scaled := Rects;
   if (LogicalW > 0) and (LogicalH > 0) then
   begin
+    zone := TracyZoneBegin('Window.ScaleShapeRects');
+    try
     scale := PlatformWindowScale(AHandle, LogicalW, LogicalH);
     if scale > 1.0001 then
       scaled := ScaleShapeRects(Rects, scale, scale);
+    finally
+      TracyZoneEnd(zone);
+    end;
   end;
   n := Length(scaled);
   if n <= 0 then
@@ -166,12 +172,19 @@ begin
     data^.rdh.rcBound.Top := minY;
     data^.rdh.rcBound.Right := maxX;
     data^.rdh.rcBound.Bottom := maxY;
-    rgn := ExtCreateRegion(nil, bytes, data^);
+    zone := TracyZoneBegin('Window.ExtCreateRegion');
+    try
+      rgn := ExtCreateRegion(nil, bytes, data^);
+    finally
+      TracyZoneEnd(zone);
+    end;
   finally
     FreeMem(data);
   end;
   if rgn = 0 then
   begin
+    zone := TracyZoneBegin('Window.RegionFallback');
+    try
     totalRgn := CreateRectRgn(0, 0, 0, 0);
     for i := 0 to n - 1 do
     begin
@@ -184,14 +197,31 @@ begin
       totalRgn := rowRgn;
     end;
     rgn := totalRgn;
+    finally
+      TracyZoneEnd(zone);
+    end;
   end;
-  SetWindowRgn(AHandle, rgn, Redraw);
+  zone := TracyZoneBegin('Window.SetWindowRgn');
+  try
+    SetWindowRgn(AHandle, rgn, Redraw);
+  finally
+    TracyZoneEnd(zone);
+  end;
 end;
 
 procedure ApplyAlphaShape(AHandle: HWND; Bitmap: TBGRABitmap);
+var
+  zone: TTracyZone;
+  rects: TShapeRectArray;
 begin
   if (AHandle = 0) or (Bitmap = nil) then Exit;
-  ApplyShapeRects(AHandle, AlphaRunRects(Bitmap), Bitmap.Width, Bitmap.Height);
+  zone := TracyZoneBegin('Window.AlphaRunRects');
+  try
+    rects := AlphaRunRects(Bitmap);
+  finally
+    TracyZoneEnd(zone);
+  end;
+  ApplyShapeRects(AHandle, rects, Bitmap.Width, Bitmap.Height);
 end;
 
 procedure ApplyRectShape(AHandle: HWND; AWidth, AHeight: Integer);
@@ -293,10 +323,17 @@ begin
 end;
 
 procedure PlatformMoveWindow(AHandle: HWND; AX, AY: Integer);
+var
+  zone: TTracyZone;
 begin
   if AHandle = 0 then Exit;
-  Windows.SetWindowPos(AHandle, 0, AX, AY, 0, 0,
-    SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
+  zone := TracyZoneBegin('Window.SetWindowPos');
+  try
+    Windows.SetWindowPos(AHandle, 0, AX, AY, 0, 0,
+      SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
+  finally
+    TracyZoneEnd(zone);
+  end;
 end;
 
 procedure PlatformBeginLiveSize(AHandle: HWND);

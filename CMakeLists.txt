@@ -1,17 +1,33 @@
 cmake_minimum_required(VERSION 3.20)
-# Profile must be visible before project() so the compiler module
-# initializes CMAKE_<LANG>_FLAGS_PROFILE from these INIT values.
-set(CMAKE_C_FLAGS_PROFILE_INIT "-O3 -g -DNDEBUG -fno-omit-frame-pointer")
-set(CMAKE_CXX_FLAGS_PROFILE_INIT "-O3 -g -DNDEBUG -fno-omit-frame-pointer")
+option(BUILD_QT_APP "Build the Qt TTPlayerReborn GUI executable" ON)
+option(TTPLAYER_TRACY "Build the optional Tracy instrumentation DLL" OFF)
+option(TTPLAYER_TRACY_ONLY "Configure only the Tracy instrumentation DLL" OFF)
+
+if (TTPLAYER_TRACY_ONLY AND NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Profile" CACHE STRING "Build type" FORCE)
+endif()
 project(TTPlayerReborn VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include("${CMAKE_SOURCE_DIR}/cmake/BuildConfigs.cmake")
-include("${CMAKE_SOURCE_DIR}/cmake/Cv2pdb.cmake")
 
-option(BUILD_QT_APP "Build the Qt TTPlayerReborn GUI executable" ON)
+if (TTPLAYER_TRACY AND WIN32)
+    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/tracy/public/TracyClient.cpp")
+        message(FATAL_ERROR "TTPLAYER_TRACY requires Tracy in third_party/tracy (git submodule update --init --recursive)")
+    endif()
+    add_subdirectory(tools/tracyshim)
+endif()
+
+if (TTPLAYER_TRACY_ONLY)
+    if (NOT TTPLAYER_TRACY OR NOT WIN32)
+        message(FATAL_ERROR "TTPLAYER_TRACY_ONLY requires TTPLAYER_TRACY=ON on Windows")
+    endif()
+    return()
+endif()
+
+include("${CMAKE_SOURCE_DIR}/cmake/Cv2pdb.cmake")
 
 if (BUILD_QT_APP)
     set(CMAKE_AUTOMOC ON)

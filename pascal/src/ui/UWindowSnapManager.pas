@@ -25,7 +25,7 @@ unit UWindowSnapManager;
 interface
 
 uses
-  Classes, SysUtils, UWindowSnapMath;
+  Classes, SysUtils, UWindowSnapMath, UTracy;
 
 const
   SNAP_MAIN_ANCHOR = -1;
@@ -521,9 +521,16 @@ begin
 end;
 
 procedure TWindowSnapManager.OnDragLogicalMove(AX, AY: Integer);
+var
+  zone: TTracyZone;
 begin
   if FSyncing or (FMain = nil) then Exit;
-  ApplyDragLogical(AX, AY);
+  zone := TracyZoneBegin('Snap.ApplyDrag');
+  try
+    ApplyDragLogical(AX, AY);
+  finally
+    TracyZoneEnd(zone);
+  end;
 end;
 
 function TWindowSnapManager.IsSnappedIndex(SubIndex: Integer): Boolean;
