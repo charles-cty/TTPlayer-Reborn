@@ -517,7 +517,7 @@ begin
       TracyZoneEnd(PhaseZone);
     end;
     FLastPaintChromeUs := LiveNowUs;
-    if HandleAllocated then
+    if HandleAllocated and (D.RebuildNinePatch or (D.Kind = lrkCommit)) then
     begin
       PhaseZone := TracyZoneBegin('Resize.Lyric.Region');
       try
