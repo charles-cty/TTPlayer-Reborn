@@ -252,7 +252,7 @@ pwsh tools/test-layer1.ps1
 pwsh tools/gen-golden.ps1 -SkipBuild
 ```
 
-**当前测试状态：Layer 1 11/11；Windows / Linux FPCUnit 90/90**
+**测试状态以实际运行为准**：`tools/test-all.ps1` 任一层失败即以非零退出码结束。各层当前覆盖范围见 [docs/testing.md](docs/testing.md)。
 
 | 层级 | 方法 | 覆盖内容 |
 |---|---|---|

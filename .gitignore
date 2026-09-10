@@ -31,6 +31,10 @@ ui_*.h
 *~
 .DS_Store
 
+# ---- Python ----
+# 直接跑 tools/*.py 或把它当模块导入做探针时会生成
+__pycache__/
+
 # ---- 运行时生成 ----
 # 仅忽略仓库根目录的 PlayList/（运行时 TTBL），不要误伤 pascal/src/playlist/
 /PlayList/
