@@ -32,15 +32,24 @@ implementation
 function TLogTest.ReadLog: string;
 var
   sl: TStringList;
+  fs: TFileStream;
 begin
   FlushLog;
   if not FileExists(FPath) then
     Exit('');
+  // logger 从第一次写出到 CloseLog 一直持有写句柄。TStringList.LoadFromFile
+  // 用 fmShareDenyWrite 打开，请求与其他写句柄互斥，在 Windows 上必然撞共享
+  // 冲突；POSIX 不强制共享模式，所以这个失败只在 Windows 暴露。
+  // 改成 fmShareDenyNone 只读：既读到 Flush 后的内容，也不打断 logger 的句柄
+  // （否则下次写出会重开文件、再写一遍 session 头）。
   sl := TStringList.Create;
+  fs := nil;
   try
-    sl.LoadFromFile(FPath);
+    fs := TFileStream.Create(FPath, fmOpenRead or fmShareDenyNone);
+    sl.LoadFromStream(fs);
     Result := sl.Text;
   finally
+    fs.Free;
     sl.Free;
   end;
 end;
