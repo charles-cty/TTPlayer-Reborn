@@ -12,6 +12,11 @@ tools/smoke_skinpreview.py
       修 BGR 双交换；启动前 taskkill 残留进程。
 - v5: 吸附用 EnumWindows 的 Player/EQ HWND + ENTER/SetWindowPos/EXIT
       模拟拖动；先把 Player 拉开再停 EQ，避免 EQ 仍在主窗口联动组里。
+- v6: 子窗口改用 Win32 EnumWindows 枚举。Playlist/Lyric/EQ 是主窗口的
+      owned 工具窗口（WS_EX_TOOLWINDOW，见 cd09200），UIA 顶层树不暴露
+      tool window，Desktop(backend='uia').windows() 只数得到 Player。
+      拖动同时移动光标（app 按光标推算窗口坐标，见 a8803a2），抓点固定在
+      窗口中心，避免 SetCursorPos 在屏幕边缘截断导致落点偏移。
 """
 import sys
 import time
@@ -26,7 +31,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 try:
-    from pywinauto import Application, Desktop
+    from pywinauto import Application
     from pywinauto.timings import wait_until, TimeoutError as PWATimeout
     from PIL import Image
 except ImportError as e:
@@ -240,6 +245,33 @@ def find_hwnd_by_title(pid: int, part: str) -> int | None:
     return found[0] if found else None
 
 
+def visible_windows(pid: int) -> list[int]:
+    """枚举 pid 下可见、且有实际尺寸的顶层窗口，返回 HWND 列表。
+
+    Player/EQ/Lyric/Playlist 都是 LCL 顶层窗口，但后三个是主窗口的 owned
+    工具窗口（WS_EX_TOOLWINDOW）：UIA 的顶层树不暴露 tool window，
+    Desktop(backend='uia').windows() 只能看到 Player。Win32 这边没有这个
+    限制。排除掉的是 TApplication 那个 0×0 的隐藏窗口。
+    """
+    found = []
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+    def cb(hwnd, _):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        proc = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(proc))
+        if int(proc.value) != int(pid):
+            return True
+        w, h = physical_size(hwnd)
+        if w > 0 and h > 0:
+            found.append(int(hwnd))
+        return True
+
+    user32.EnumWindows(WNDENUMPROC(cb), 0)
+    return found
+
+
 def get_window_text(hwnd) -> str:
     n = int(user32.GetWindowTextLengthW(hwnd)) + 1
     buf = ctypes.create_unicode_buffer(n)
@@ -281,16 +313,30 @@ def raise_window(hwnd):
 
 
 def drag_move(hwnd, x, y):
-    """Simulate HTCAPTION drag: ENTERSIZEMOVE + SetWindowPos + EXITSIZEMOVE.
+    """Simulate HTCAPTION drag: ENTERSIZEMOVE + move + EXITSIZEMOVE.
 
     LCL WindowProc does not see cross-process SendMessage of those two;
     skinpreview subclasses the native WndProc so this reaches TWindowSnapManager.
+
+    光标必须和窗口一起走：app 在拖动中按光标推算窗口坐标
+    （UFormSnap.ApplyPointerLogicalPos，a8803a2 起），真实拖动时 Windows 的
+    模态移动循环也正是这样做的。只 SetWindowPos 不动光标，app 会把窗口按
+    光标位置拉回原点（窗口原地不动，吸附断言必然失败）。
+
+    抓点固定在窗口中心，不沿用上一次操作留下的光标位置：SetCursorPos 在
+    屏幕边缘会截断，抓点若贴着左边缘，往左拖得比光标到边的距离还远时窗口
+    就落不到目标点（实测 -219px 的行程被截成 -95px）。
     """
     hwnd = int(hwnd)
+    left, top, right, bottom = window_rect(hwnd)
+    grab_x, grab_y = (left + right) // 2, (top + bottom) // 2
+    user32.SetCursorPos(grab_x, grab_y)
     user32.SendMessageW(hwnd, WM_ENTERSIZEMOVE, 0, 0)
+    user32.SetCursorPos(grab_x + int(x) - left, grab_y + int(y) - top)
     user32.SetWindowPos(
         hwnd, 0, int(x), int(y), 0, 0,
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)
+    time.sleep(0.05)
     user32.SendMessageW(hwnd, WM_EXITSIZEMOVE, 0, 0)
 
 
@@ -311,27 +357,27 @@ def eq_enabled_click_point(skin_name: str) -> tuple[int, int] | None:
 
 
 def identify_subwindows(sub):
-    """按标题识别四个子窗口；标题缺失时按面积回退。"""
+    """按标题识别四个子窗口；标题缺失时按面积回退。sub 为 HWND 列表。"""
     named = {}
-    for w in sub:
-        title = (w.window_text() or '').lower()
+    for hwnd in sub:
+        title = (get_window_text(hwnd) or '').lower()
         if 'playlist' in title:
-            named['playlist'] = w
+            named['playlist'] = hwnd
         elif 'lyric' in title:
-            named['lyric'] = w
+            named['lyric'] = hwnd
         elif 'equalizer' in title:
-            named['eq'] = w
+            named['eq'] = hwnd
         elif 'player' in title:
-            named['player'] = w
+            named['player'] = hwnd
     if all(k in named for k in ('player', 'eq', 'lyric', 'playlist')):
         return named
 
     # 回退：面积升序 → Lyric 最小、Playlist 最大，中间两个为 Player/EQ
-    sized = [(physical_size(w.handle), w) for w in sub]
+    sized = [(physical_size(hwnd), hwnd) for hwnd in sub]
     sized.sort(key=lambda t: t[0][0] * t[0][1])
     named.setdefault('lyric', sized[0][1])
     named.setdefault('playlist', sized[-1][1])
-    mid = [w for _, w in sized[1:-1]]
+    mid = [hwnd for _, hwnd in sized[1:-1]]
     if len(mid) >= 2:
         named.setdefault('player', mid[0])
         named.setdefault('eq', mid[-1])
@@ -372,9 +418,8 @@ def main() -> int:
 
         # ── 3. 四个子窗口：Player / Equalizer / Lyric / Playlist ────────
         def proc_subwins():
-            return [w for w in Desktop(backend='uia').windows(visible_only=True)
-                    if w.process_id() == ctrl_win.process_id()
-                       and w.handle != ctrl_win.handle]
+            return [hwnd for hwnd in visible_windows(ctrl_win.process_id())
+                    if hwnd != int(ctrl_win.handle)]
 
         try:
             wait_until(timeout=8, retry_interval=0.2,
@@ -394,10 +439,10 @@ def main() -> int:
         player_win, eq_win = wins['player'], wins['eq']
         lyric_win, playlist_win = wins['lyric'], wins['playlist']
 
-        lw, lh = physical_size(lyric_win.handle)
-        pw, ph = physical_size(player_win.handle)
-        ew, eh = physical_size(eq_win.handle)
-        plw, plh = physical_size(playlist_win.handle)
+        lw, lh = physical_size(lyric_win)
+        pw, ph = physical_size(player_win)
+        ew, eh = physical_size(eq_win)
+        plw, plh = physical_size(playlist_win)
         assert pw >= 100 and ph >= 50, f'PlayerForm 尺寸异常: {pw}×{ph}'
         assert ew >= 100 and eh >= 50, f'EqualizerForm 尺寸异常: {ew}×{eh}'
         assert lw >= 100 and lh >= 30, f'LyricForm 尺寸异常: {lw}×{lh}'
@@ -406,10 +451,10 @@ def main() -> int:
               f'Lyric {lw}×{lh}  Playlist {plw}×{plh}')
 
         # ── 4. 全部窗口背景已渲染（PrintWindow 截图）───────────────────
-        img_p = grab_window(player_win.handle)
-        img_e = grab_window(eq_win.handle)
-        img_l = grab_window(lyric_win.handle)
-        img_pl = grab_window(playlist_win.handle)
+        img_p = grab_window(player_win)
+        img_e = grab_window(eq_win)
+        img_l = grab_window(lyric_win)
+        img_pl = grab_window(playlist_win)
         assert img_p is not None, 'PlayerForm 截图失败'
         assert img_e is not None, 'EqualizerForm 截图失败'
         assert img_l is not None, 'LyricForm 截图失败'
@@ -445,7 +490,7 @@ def main() -> int:
                 if len(sub2) >= 4:
                     wins2 = identify_subwindows(sub2)
                     p2 = wins2.get('player') or player_win
-                    pw2, ph2 = physical_size(p2.handle)
+                    pw2, ph2 = physical_size(p2)
                     if (pw2, ph2) != (pw, ph):
                         player_win = p2
                         eq_win = wins2.get('eq') or eq_win
@@ -462,14 +507,14 @@ def main() -> int:
                     lyric_win = wins2.get('lyric') or lyric_win
                     playlist_win = wins2.get('playlist') or playlist_win
 
-            pw2, ph2 = physical_size(player_win.handle)
-            ew2, eh2 = physical_size(eq_win.handle)
-            lw2, lh2 = physical_size(lyric_win.handle)
-            plw2, plh2 = physical_size(playlist_win.handle)
-            img_p2 = grab_window(player_win.handle)
-            img_e2 = grab_window(eq_win.handle)
-            img_l2 = grab_window(lyric_win.handle)
-            img_pl2 = grab_window(playlist_win.handle)
+            pw2, ph2 = physical_size(player_win)
+            ew2, eh2 = physical_size(eq_win)
+            lw2, lh2 = physical_size(lyric_win)
+            plw2, plh2 = physical_size(playlist_win)
+            img_p2 = grab_window(player_win)
+            img_e2 = grab_window(eq_win)
+            img_l2 = grab_window(lyric_win)
+            img_pl2 = grab_window(playlist_win)
             if img_p2: save(img_p2, 'player_skin2')
             if img_e2: save(img_e2, 'equalizer_skin2')
             if img_l2: save(img_l2, 'lyric_skin2')
@@ -531,7 +576,7 @@ def main() -> int:
             select_combo_item(ctrl_win.handle, combo_hwnd, 0)
             deadline = time.time() + 3.0
             while time.time() < deadline:
-                if physical_size(player_win.handle) == (pw, ph):
+                if physical_size(player_win) == (pw, ph):
                     break
                 time.sleep(0.15)
             sub3 = proc_subwins()
@@ -542,10 +587,10 @@ def main() -> int:
 
         time.sleep(0.3)
         pid = ctrl_win.process_id()
-        eq_hwnd = find_hwnd_by_title(pid, 'Equalizer') or int(eq_win.handle)
+        eq_hwnd = find_hwnd_by_title(pid, 'Equalizer') or eq_win
         snap_skin = combo_selected_text(combo_hwnd) or 'ArcticAMP'
         pt = eq_enabled_click_point(snap_skin)
-        before_eq = get_window_text(eq_hwnd) or eq_win.window_text()
+        before_eq = get_window_text(eq_hwnd)
         raise_window(eq_hwnd)
         if pt:
             candidates = [(pt[0], pt[1])]
@@ -585,8 +630,8 @@ def main() -> int:
 
         # ── 9. 吸附：按皮肤逻辑宽度留 5px 缝 ───────────────────────────
         pid = ctrl_win.process_id()
-        player_hwnd = find_hwnd_by_title(pid, 'Player') or int(player_win.handle)
-        eq_hwnd = find_hwnd_by_title(pid, 'Equalizer') or int(eq_win.handle)
+        player_hwnd = find_hwnd_by_title(pid, 'Player') or player_win
+        eq_hwnd = find_hwnd_by_title(pid, 'Equalizer') or eq_win
         eq_log = eq_enabled_logical_size(snap_skin)
         eq_phys_w, _ = physical_size(eq_hwnd)
         eq_log_w = eq_log[0] if eq_log else eq_phys_w
