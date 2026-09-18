@@ -137,7 +137,7 @@ type
     FShuffle: Boolean;
     FSkipContextPopup: Boolean;
 
-    procedure BuildRegion;
+    procedure BuildRegion(ARedraw: Boolean = True);
     procedure RenderFrame;
     procedure InvalidateFrame;
     procedure MapHit(var X, Y: Integer);
@@ -532,7 +532,7 @@ begin
     begin
       PhaseZone := TracyZoneBegin('Resize.Playlist.Region');
       try
-        BuildRegion;
+        BuildRegion(False);
       finally
         TracyZoneEnd(PhaseZone);
       end;
@@ -586,7 +586,7 @@ begin
     begin
       PhaseZone := TracyZoneBegin('Resize.Playlist.Region');
       try
-        BuildRegion;
+        BuildRegion(False);
       finally
         TracyZoneEnd(PhaseZone);
       end;
@@ -638,7 +638,7 @@ begin
     BuildRegion;
 end;
 
-procedure TPlaylistForm.BuildRegion;
+procedure TPlaylistForm.BuildRegion(ARedraw: Boolean);
 var
   src, bmp: TBGRABitmap;
   own: Boolean;
@@ -649,7 +649,7 @@ begin
     FShapeRects := MergeShapeRects(AlphaRunRects(FFrame));
     FShapeW := FFrame.Width;
     FShapeH := FFrame.Height;
-    ApplyShapeRects(Handle, FShapeRects, FFrame.Width, FFrame.Height);
+    ApplyShapeRects(Handle, FShapeRects, FFrame.Width, FFrame.Height, ARedraw);
     FLastRgnW := FFrame.Width;
     FLastRgnH := FFrame.Height;
     Exit;
@@ -671,7 +671,7 @@ begin
     FShapeRects := MergeShapeRects(AlphaRunRects(bmp));
     FShapeW := FLogicW;
     FShapeH := FLogicH;
-    ApplyShapeRects(Handle, FShapeRects, bmp.Width, bmp.Height);
+    ApplyShapeRects(Handle, FShapeRects, bmp.Width, bmp.Height, ARedraw);
     FLastRgnW := bmp.Width;
     FLastRgnH := bmp.Height;
   finally

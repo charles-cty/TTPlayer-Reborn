@@ -100,7 +100,7 @@ type
     FOnCloseRequested: TNotifyEvent;
     FSkipContextPopup: Boolean;
 
-    procedure BuildRegion;
+    procedure BuildRegion(ARedraw: Boolean = True);
     procedure RenderFrame;
     procedure MapHit(var X, Y: Integer);
     procedure ApplyResizeDecision(const D: TLiveResizeDecision);
@@ -468,7 +468,7 @@ begin
     begin
       PhaseZone := TracyZoneBegin('Resize.Lyric.Region');
       try
-        BuildRegion;
+        BuildRegion(False);
       finally
         TracyZoneEnd(PhaseZone);
       end;
@@ -522,7 +522,7 @@ begin
     begin
       PhaseZone := TracyZoneBegin('Resize.Lyric.Region');
       try
-        BuildRegion;
+        BuildRegion(False);
       finally
         TracyZoneEnd(PhaseZone);
       end;
@@ -574,7 +574,7 @@ begin
     BuildRegion;
 end;
 
-procedure TLyricForm.BuildRegion;
+procedure TLyricForm.BuildRegion(ARedraw: Boolean);
 var
   src, bmp: TBGRABitmap;
   own: Boolean;
@@ -585,7 +585,7 @@ begin
     FShapeRects := MergeShapeRects(AlphaRunRects(FFrame));
     FShapeW := FFrame.Width;
     FShapeH := FFrame.Height;
-    ApplyShapeRects(Handle, FShapeRects, FFrame.Width, FFrame.Height);
+    ApplyShapeRects(Handle, FShapeRects, FFrame.Width, FFrame.Height, ARedraw);
     FLastRgnW := FFrame.Width;
     FLastRgnH := FFrame.Height;
     Exit;
@@ -606,7 +606,7 @@ begin
     FShapeRects := MergeShapeRects(AlphaRunRects(bmp));
     FShapeW := FLogicW;
     FShapeH := FLogicH;
-    ApplyShapeRects(Handle, FShapeRects, bmp.Width, bmp.Height);
+    ApplyShapeRects(Handle, FShapeRects, bmp.Width, bmp.Height, ARedraw);
     FLastRgnW := bmp.Width;
     FLastRgnH := bmp.Height;
   finally
