@@ -242,16 +242,20 @@ end;
 
 function TTtcoreBackendTest.Mp3FixturePath: string;
 var
-  exeDir, repo: string;
+  currentDir, parentDir: string;
 begin
-  exeDir := IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0)));
-  Result := ExpandFileName(exeDir + '..' + PathDelim + 'tests' + PathDelim +
-    'fixtures' + PathDelim + 'sine.mp3');
-  if FileExists(Result) then
-    Exit;
-  repo := ExpandFileName(exeDir + '..' + PathDelim + '..' + PathDelim);
-  Result := IncludeTrailingPathDelimiter(repo) + 'pascal' + PathDelim +
-    'tests' + PathDelim + 'fixtures' + PathDelim + 'sine.mp3';
+  currentDir := ExcludeTrailingPathDelimiter(
+    ExpandFileName(ExtractFilePath(ParamStr(0))));
+  while currentDir <> '' do
+  begin
+    Result := currentDir + PathDelim + 'pascal' + PathDelim + 'tests' +
+      PathDelim + 'fixtures' + PathDelim + 'sine.mp3';
+    if FileExists(Result) then Exit;
+    parentDir := ExcludeTrailingPathDelimiter(
+      ExpandFileName(currentDir + PathDelim + '..'));
+    if parentDir = currentDir then Break;
+    currentDir := parentDir;
+  end;
 end;
 
 function TTtcoreBackendTest.CopyFileTo(const Src, Dst: string): Boolean;

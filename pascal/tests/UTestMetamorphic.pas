@@ -67,6 +67,25 @@ const
 var
   RepoRoot: string;
 
+function FindRepoRoot: string;
+var
+  currentDir, parentDir: string;
+begin
+  currentDir := ExcludeTrailingPathDelimiter(
+    ExpandFileName(ExtractFilePath(ParamStr(0))));
+  while currentDir <> '' do
+  begin
+    if DirectoryExists(currentDir + PathDelim + 'Skin') and
+       DirectoryExists(currentDir + PathDelim + 'pascal') then
+      Exit(IncludeTrailingPathDelimiter(currentDir));
+    parentDir := ExcludeTrailingPathDelimiter(
+      ExpandFileName(currentDir + PathDelim + '..'));
+    if parentDir = currentDir then Break;
+    currentDir := parentDir;
+  end;
+  raise Exception.Create('Could not locate repository root from ' + ParamStr(0));
+end;
+
 function CountPixelDiffs(A, B: TBGRABitmap): Integer;
 var
   x, y: Integer;
@@ -489,8 +508,7 @@ begin
 end;
 
 initialization
-  RepoRoot := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..' + PathDelim +
-    '..' + PathDelim);
+  RepoRoot := FindRepoRoot;
   RegisterTest(TMetamorphicTest);
 
 end.

@@ -8,7 +8,7 @@
 #   tools/build-ttcore-linux.sh --config Profile
 #   tools/build-ttcore-linux.sh Release
 #
-# Does not use a kitchen-sink FFmpeg prefix. Copy goes to pascal/bin.
+# Does not use a kitchen-sink FFmpeg prefix. Runtime files go to build/linux/pascal/<config>.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -60,7 +60,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 cfg_lc="$(printf '%s' "$CONFIG" | tr '[:upper:]' '[:lower:]')"
-BUILD="${TTCORE_BUILD_DIR:-$ROOT/build/Linux/ttcore-${cfg_lc}}"
+BUILD="${TTCORE_BUILD_DIR:-$ROOT/build/linux/ttcore/$cfg_lc}"
 
 need=(libavformat libavcodec libavutil libswresample sdl2)
 missing=()
@@ -82,10 +82,14 @@ cmake -S "$ROOT" -B "$BUILD" -DBUILD_QT_APP=OFF "-DCMAKE_BUILD_TYPE=$CONFIG"
 echo "[build-ttcore-linux] cmake --build ttcore ttcore_probe"
 cmake --build "$BUILD" --target ttcore ttcore_probe -j"$(nproc 2>/dev/null || echo 4)"
 
-so="$ROOT/pascal/bin/libttcore.so"
+runtime="$ROOT/build/linux/pascal/$cfg_lc"
+mkdir -p "$runtime"
+so="$BUILD/libttcore.so"
 if [[ ! -f "$so" ]]; then
   echo "未生成 $so" >&2
   exit 1
 fi
+cp "$so" "$runtime/"
+cp "$BUILD/ttcore_probe" "$runtime/"
 echo "[build-ttcore-linux] $so ($(wc -c < "$so") bytes)  config=$CONFIG"
 echo "[build-ttcore-linux] ffmpeg $(pkg-config --modversion libavformat)  sdl2 $(pkg-config --modversion sdl2)"

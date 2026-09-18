@@ -3,24 +3,34 @@
     Layer 1 解析差分测试：Pascal 版 ttdump 输出 vs Qt 版 golden skinjson。
 
 .DESCRIPTION
-    对每个皮肤运行 pascal\bin\ttdump.exe，将输出与 tests\golden\skinjson\ 中的
-    Qt 基准做结构化 JSON 比较（键序/缩进无关），失败时打印字段级差异路径。
+    对每个皮肤运行 build\windows\pascal\<config>\ttdump.exe，将输出与 Qt 版生成的
+    build\windows\tests\golden\skinjson\ 缓存做结构化 JSON 比较（键序/缩进无关），
+    失败时打印字段级差异路径。
 #>
 [CmdletBinding()]
 param(
     # 只测指定皮肤名（不含扩展名），缺省全部。
-    [string]$Skin = ''
+    [string]$Skin = '',
+    [ValidateSet('Debug', 'Release', 'Profile')]
+    [string]$Config = 'Debug'
 )
 
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot  = Split-Path -Parent $PSScriptRoot
-$TtDump    = Join-Path $RepoRoot 'pascal\bin\ttdump.exe'
+$configDir = $Config.ToLowerInvariant()
+$TtDump    = Join-Path $RepoRoot "build\windows\pascal\$configDir\ttdump.exe"
 $SkinDir   = Join-Path $RepoRoot 'Skin'
-$GoldenDir = Join-Path $RepoRoot 'tests\golden\skinjson'
-$OutDir    = Join-Path $RepoRoot 'tests\artifacts\layer1'
+$GoldenRoot = Join-Path $RepoRoot 'build\windows\tests\golden'
+$GoldenDir = Join-Path $GoldenRoot 'skinjson'
+$OutDir    = Join-Path $RepoRoot 'build\windows\tests\artifacts\layer1'
 
 if (-not (Test-Path $TtDump)) { throw "找不到 ttdump.exe，请先运行 tools\build-pascal.ps1" }
+if (-not (Test-Path (Join-Path $GoldenRoot '.complete'))) {
+    Write-Host '[layer1] Qt golden 缓存不存在，正在生成...' -ForegroundColor Cyan
+    & (Join-Path $PSScriptRoot 'gen-golden.ps1')
+    if ($LASTEXITCODE -ne 0) { throw "Qt golden 生成失败（退出码 $LASTEXITCODE）" }
+}
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 # 递归比较两个 JSON 值，返回差异路径列表。

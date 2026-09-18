@@ -98,8 +98,7 @@ uses
 
 function TTtplayerHost.RepoRoot: string;
 begin
-  Result := AppendPathDelim(ExpandFileName(
-    ExtractFilePath(ParamStr(0)) + '..' + PathDelim + '..'));
+  Result := AppendPathDelim(ExtractFileDir(SkinDir));
 end;
 
 function TTtplayerHost.ExeDir: string;
@@ -938,8 +937,6 @@ begin
   begin
     if DirectoryExists(RepoRoot + 'PlayList') then
       dir := RepoRoot + 'PlayList'
-    else if DirectoryExists(RepoRoot + 'build-mingw64' + PathDelim + 'PlayList') then
-      dir := RepoRoot + 'build-mingw64' + PathDelim + 'PlayList'
     else
       dir := IncludeTrailingPathDelimiter(ExeDir) + 'PlayList';
   end;

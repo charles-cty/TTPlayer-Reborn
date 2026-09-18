@@ -24,6 +24,7 @@ import os
 import io
 import json
 import ctypes
+from pathlib import Path
 from ctypes import wintypes
 
 # Windows cmd/PowerShell 控制台可能使用 GBK，强制 UTF-8 输出
@@ -38,9 +39,10 @@ except ImportError as e:
     print(f'SMOKE FAIL: missing dependency — {e}', file=sys.stderr)
     sys.exit(1)
 
-EXE          = r'C:\My\Repos\TTPlayer-Reborn\pascal\bin\skinpreview.exe'
-ARTIFACT_DIR = r'C:\My\Repos\TTPlayer-Reborn\tests\artifacts\smoke'
-SKINJSON_DIR = r'C:\My\Repos\TTPlayer-Reborn\tests\golden\skinjson'
+REPO_ROOT = Path(__file__).resolve().parent.parent
+EXE = str(REPO_ROOT / 'build' / 'windows' / 'pascal' / 'debug' / 'skinpreview.exe')
+ARTIFACT_DIR = str(REPO_ROOT / 'build' / 'windows' / 'tests' / 'artifacts' / 'smoke')
+SKINJSON_DIR = str(REPO_ROOT / 'build' / 'windows' / 'tests' / 'golden' / 'skinjson')
 WM_ENTERSIZEMOVE = 0x0231
 WM_EXITSIZEMOVE  = 0x0232
 WM_LBUTTONDOWN   = 0x0201

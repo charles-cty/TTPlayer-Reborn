@@ -44,6 +44,24 @@ type
 
 implementation
 
+function FindRepoRoot: string;
+var
+  currentDir, parentDir: string;
+begin
+  currentDir := ExcludeTrailingPathDelimiter(
+    ExpandFileName(ExtractFilePath(ParamStr(0))));
+  while currentDir <> '' do
+  begin
+    if DirectoryExists(currentDir + PathDelim + 'pascal' + PathDelim + 'src') then
+      Exit(IncludeTrailingPathDelimiter(currentDir));
+    parentDir := ExcludeTrailingPathDelimiter(
+      ExpandFileName(currentDir + PathDelim + '..'));
+    if parentDir = currentDir then Break;
+    currentDir := parentDir;
+  end;
+  raise Exception.Create('Could not locate repository root from ' + ParamStr(0));
+end;
+
 function MakePatchBase(W, H: Integer): TBGRABitmap;
 var
   y: Integer;
@@ -317,8 +335,7 @@ begin
     SkinEraseBkgndHandled, msgResult);
   AssertEquals(1, SkinEraseBkgndHandled);
 
-  root := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..' + PathDelim +
-    '..' + PathDelim);
+  root := FindRepoRoot;
   sl := TStringList.Create;
   try
     path := root + 'pascal' + PathDelim + 'src' + PathDelim + 'ui' +
@@ -499,8 +516,7 @@ begin
     frame.Free;
   end;
 
-  root := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..' + PathDelim +
-    '..' + PathDelim);
+  root := FindRepoRoot;
   sl := TStringList.Create;
   try
     path := root + 'pascal' + PathDelim + 'src' + PathDelim + 'ui' +
@@ -701,8 +717,7 @@ begin
     base.Free;
   end;
 
-  root := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..' + PathDelim +
-    '..' + PathDelim);
+  root := FindRepoRoot;
   sl := TStringList.Create;
   try
     path := root + 'pascal' + PathDelim + 'src' + PathDelim + 'ui' +
@@ -736,8 +751,7 @@ var
   root, path, playlistSrc, lyricSrc, viewSrc: string;
   sl: TStringList;
 begin
-  root := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..' + PathDelim +
-    '..' + PathDelim);
+  root := FindRepoRoot;
   sl := TStringList.Create;
   try
     path := root + 'pascal' + PathDelim + 'src' + PathDelim + 'ui' +

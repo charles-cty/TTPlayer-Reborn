@@ -25,9 +25,9 @@ bash tools/build-ttcore-linux.sh --config Profile
 bash tools/build-pascal-linux.sh --config Profile
 ```
 
-Windows 产物都在 `pascal\bin\`（`ttplayer.exe` / `skinpreview.exe` / `ttcore.dll` 及同名 `.pdb`，旁放 `SDL2.dll`）。Linux 在 `pascal/bin/`，符号是 ELF DWARF，没有 PDB。
+Windows 产物都在 `build/windows/pascal/<config>/`（`ttplayer.exe` / `skinpreview.exe` / `ttcore.dll` 及同名 `.pdb`，旁放 `SDL2.dll`）。Linux 对应使用 `build/linux/pascal/<config>/`，符号是 ELF DWARF，没有 PDB。
 
-`ttplayer` / `skinpreview` 找皮肤：先 `<exe>/Skin/`，没有再 `<exe>/../../Skin/`（仓库根）。两边都没有时仍用 exe 旁路径（安装布局）。
+`ttplayer` / `skinpreview` 找皮肤：先 `<exe>/Skin/`，开发构建再向上查找仓库的 `Skin/`。两边都没有时仍用 exe 旁路径（安装布局）。
 
 ## 符号从哪来
 
@@ -55,13 +55,13 @@ FPC/GCC 的 DWARF 留在二进制里。`gdb`、`perf` 直接用，不必转 PDB�
 
 ## 崩溃与调用栈（Windows）
 
-WinDbg / `cdb` 加载 `pascal\bin\*.pdb` 后，**Pascal 名可用**，活进程 `k` 正常，`sxe av` 能在 Access Violation 停住。这是当前最可靠的函数级栈路径。
+WinDbg / `cdb` 加载 `build\windows\pascal\profile\*.pdb` 后，**Pascal 名可用**，活进程 `k` 正常，`sxe av` 能在 Access Violation 停住。这是当前最可靠的函数级栈路径。
 
 把符号路径指到产物目录（可再加微软公共符号服务器解系统 DLL）：
 
 ```powershell
-$env:_NT_SYMBOL_PATH = 'C:\My\Repos\TTPlayer-Reborn\pascal\bin;srv*C:\symbols*https://msdl.microsoft.com/download/symbols'
-cdb -g -G pascal\bin\ttplayer.exe
+$env:_NT_SYMBOL_PATH = 'C:\My\Repos\TTPlayer-Reborn\build\windows\pascal\profile;srv*C:\symbols*https://msdl.microsoft.com/download/symbols'
+cdb -g -G build\windows\pascal\profile\ttplayer.exe
 ```
 
 GUI 工程是 `-WG`（Windows 子系统），没有控制台。不要指望 `WriteLn` 出现在启动它的终端里；stdout 关闭时 `WriteLn` 会 `EInOutError`「File not open」。`skinpreview --probe` 在 `Output` 关闭时会跳过 `WriteLn`。需要看探测 JSON 时用 `--probe-out <file>`。
@@ -72,7 +72,7 @@ GUI 工程是 `-WG`（Windows 子系统），没有控制台。不要指望 `Wri
 
 单元 `pascal/src/debug/ULog.pas`。任意 Pascal 单元 `uses ULog` 后调用 `LogInfo('topic', '...')` / `LogInfoFmt` / `LogDebug` 等。不依赖 LCL。GUI 默认写文件，不写 stdout。
 
-默认文件是 exe 旁的 `<program>.log`（`ttplayer.exe` → `pascal/bin/ttplayer.log`）。默认级别 **info**。换肤几何走 topic `skin`；吸附/拖拽/缩放的状态变化走 topic `snap`（均为 info）：开始/结束拖拽、轴吸住或拉开、贴上边、重建吸附图、缩放起停。不要用日志记逐像素位移，那是 profiler / DTrace 的事。
+默认文件是 exe 旁的 `<program>.log`（例如 `build/windows/pascal/debug/ttplayer.log`）。默认级别 **info**。换肤几何走 topic `skin`；吸附/拖拽/缩放的状态变化走 topic `snap`（均为 info）：开始/结束拖拽、轴吸住或拉开、贴上边、重建吸附图、缩放起停。不要用日志记逐像素位移，那是 profiler / DTrace 的事。
 
 行格式：
 
@@ -95,7 +95,7 @@ GUI 工程是 `-WG`（Windows 子系统），没有控制台。不要指望 `Wri
 ```powershell
 # 默认 info 已含 skin / snap。只要看吸附：
 $env:TTPLAYER_LOG_TOPICS = 'snap'
-# 然后启动 pascal\bin\ttplayer.exe，看 pascal\bin\ttplayer.log
+# 然后启动 build\windows\pascal\debug\ttplayer.exe，看旁边的 ttplayer.log
 ```
 
 `stdout` / `stderr` 只在控制台程序（`tests`）或已打开的 Output 上有效；`-WG` 的 `ttplayer` 请用文件。写失败不抛、每行 Flush。测试里用 `SetLogDestination` / `SetLogLevel` 指到临时文件，不要依赖进程默认路径。
@@ -113,7 +113,7 @@ Pascal 堆和 C++ / CRT 堆不是同一套。泄漏、UAF、`0xC0000005` / `0xC0
 
 ### HeapTrc
 
-工程开关是 Lazarus `--bm=HeapTrc`（`-gh` + `-gl` + `-dENABLE_HEAPTRC`）。产物是 `pascal/bin/*_heaptrc`（Windows 带 `.exe`），单元目录是 `lib/<proj>_heaptrc/`，与 `lib/<proj>/<Config>/` 隔离，**不要和 Debug/Release/Profile 混编**。
+工程开关是 Lazarus `--bm=HeapTrc`（`-gh` + `-gl` + `-dENABLE_HEAPTRC`）。Windows 产物是 `build/windows/pascal/heaptrc/*_heaptrc.exe`，单元目录是 `build/windows/pascal/obj/<project>/heaptrc/x86_64-win64/`，与其他配置隔离。Linux 使用对应的 `build/linux/...` 路径。
 
 `UHeapTraceConfig` 在 `-dENABLE_HEAPTRC` 时打开 `HaltOnError`，dump 写到环境变量 `HEAPTRACEFILE`，未设则 `<exe>.heaptrc`。GUI（`ttplayer` / `skinpreview`）没有控制台，报告仍进这个文件。
 
@@ -127,14 +127,14 @@ pwsh tools/test-all.ps1 -SkipLayer1 -SkipSmoke -HeapTrace
 
 $env:HEAPTRACEFILE = 'C:\tmp\tests.heaptrc'
 $env:HEAPTRC_KEEP_RELEASED = '1'
-.\pascal\bin\ttplayer_heaptrc.exe
+.\build\windows\pascal\heaptrc\ttplayer_heaptrc.exe
 ```
 
 ```bash
 bash tools/build-pascal-linux.sh --heaptrc tests
 SDL_AUDIODRIVER=dummy HEAPTRC_KEEP_RELEASED=1 \
-  ./pascal/bin/tests_heaptrc --all --format=plain
-# 报告：pascal/bin/tests_heaptrc.heaptrc
+  ./build/linux/pascal/heaptrc/tests_heaptrc --all --format=plain
+# 报告：build/linux/pascal/heaptrc/tests_heaptrc.heaptrc
 ```
 
 `tools/test-all.ps1 -HeapTrace` 会跑 `tests_heaptrc.exe`，并扫 dump 里的 Invalid pointer / Marked memory / unfreed blocks。那只是自动化入口，配置和解释以本节为准。
@@ -167,7 +167,7 @@ pwsh tools/pageheap.ps1 -Action Disable tests_heaptrc.exe ttplayer_heaptrc.exe
 
 ### DTrace（Windows，函数级）
 
-本机需已安装 Windows 版 DTrace。把符号路径指到 `pascal\bin`。
+本机需已安装 Windows 版 DTrace。把符号路径指到 `build\windows\pascal\profile`。
 
 **用 `-c` 启动目标，不要 `-p` 附加。** 对已经在跑的 `ttplayer` 做 `dtrace -p <pid>` 会 **Permission denied**（完整性级别 / 会话 / pid provider 限制，未根治）。要对你正在拖的窗口采样，只能让 DTrace 把进程拉起来，再在窗口里操作。
 
@@ -176,7 +176,7 @@ GUI 没有控制台，脚本里对应用 `printf` 的输出看不见。把聚合
 约 1 kHz 采样 + 用户栈，跑 10 秒后退出的例子：
 
 ```powershell
-$env:_NT_SYMBOL_PATH = 'C:\My\Repos\TTPlayer-Reborn\pascal\bin'
+$env:_NT_SYMBOL_PATH = 'C:\My\Repos\TTPlayer-Reborn\build\windows\pascal\profile'
 $script = @'
 profile:::profile-997
 /execname == "ttplayer.exe"/
@@ -189,7 +189,7 @@ tick-10s
 }
 '@
 Set-Content -Path $env:TEMP\tt-sample.d -Value $script -Encoding ascii
-dtrace -c 'C:\My\Repos\TTPlayer-Reborn\pascal\bin\ttplayer.exe' -s $env:TEMP\tt-sample.d > $env:TEMP\tt-sample.txt
+dtrace -c 'C:\My\Repos\TTPlayer-Reborn\build\windows\pascal\profile\ttplayer.exe' -s $env:TEMP\tt-sample.d > $env:TEMP\tt-sample.txt
 ```
 
 `skinpreview.exe` 同样可以（把 `execname` 和 `-c` 换成它）。`DTRACE_EXIT=0` 且文件里有 `ustack` 聚合即成功。
@@ -224,7 +224,7 @@ perf record -g -p $(pgrep -n ttplayer) -- sleep 10
 perf report
 ```
 
-或 `perf record -g -- ./pascal/bin/ttplayer`。栈是 DWARF，没有 Windows 那套 PDB/时间戳问题。
+或 `perf record -g -- ./build/linux/pascal/profile/ttplayer`。栈是 DWARF，没有 Windows 那套 PDB/时间戳问题。
 
 ## 读 live 缩放样本时
 
@@ -260,6 +260,6 @@ perf report
 
 **已经可用、不必再换工具的**
 
-- WinDbg/cdb + `pascal\bin\*.pdb`：Pascal 名、活进程 `k`。
-- DTrace `profile:::profile-997` + `ustack(30)` + `_NT_SYMBOL_PATH=pascal\bin`，`-c` 启动，10s 量级采样。
+- WinDbg/cdb + `build\windows\pascal\profile\*.pdb`：Pascal 名、活进程 `k`。
+- DTrace `profile:::profile-997` + `ustack(30)` + `_NT_SYMBOL_PATH=build\windows\pascal\profile`，`-c` 启动，10s 量级采样。
 - ETW 采集本身（进程/模块/采样栈）；坏的是事后 `xperf` 符号解析。

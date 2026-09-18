@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 option(BUILD_QT_APP "Build the Qt TTPlayerReborn GUI executable" ON)
 option(TTPLAYER_TRACY "Build the optional Tracy instrumentation DLL" OFF)
 option(TTPLAYER_TRACY_ONLY "Configure only the Tracy instrumentation DLL" OFF)
+option(TTPLAYER_TRACY_MCP "Build TracyServerBindings for the Tracy MCP server" OFF)
 
 if (TTPLAYER_TRACY_ONLY AND NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Profile" CACHE STRING "Build type" FORCE)
@@ -18,6 +19,26 @@ if (TTPLAYER_TRACY AND WIN32)
         message(FATAL_ERROR "TTPLAYER_TRACY requires Tracy in third_party/tracy (git submodule update --init --recursive)")
     endif()
     add_subdirectory(tools/tracyshim)
+endif()
+
+if (TTPLAYER_TRACY_MCP)
+    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/tracy/python/CMakeLists.txt")
+        message(FATAL_ERROR "TTPLAYER_TRACY_MCP requires Tracy in third_party/tracy (git submodule update --init --recursive)")
+    endif()
+
+    set(TRACY_STATIC OFF CACHE BOOL "Build Tracy as a static library" FORCE)
+    set(TRACY_CLIENT_PYTHON ON CACHE BOOL "Build Tracy Python bindings" FORCE)
+    add_subdirectory(third_party/tracy EXCLUDE_FROM_ALL)
+
+    # Keep the importable module at a stable path for MCP launchers. Per-config
+    # properties prevent Visual Studio generators from appending another config directory.
+    foreach (_config IN ITEMS Debug Release Profile RelWithDebInfo MinSizeRel)
+        string(TOUPPER "${_config}" _config_upper)
+        set_target_properties(TracyServerBindings PROPERTIES
+            "RUNTIME_OUTPUT_DIRECTORY_${_config_upper}" "${CMAKE_BINARY_DIR}/python"
+            "LIBRARY_OUTPUT_DIRECTORY_${_config_upper}" "${CMAKE_BINARY_DIR}/python"
+        )
+    endforeach()
 endif()
 
 if (TTPLAYER_TRACY_ONLY)
@@ -129,44 +150,13 @@ set_target_properties(ttcore_probe PROPERTIES
     INSTALL_RPATH "$ORIGIN;${_ttcore_rpath}"
 )
 
-set(_pascal_bin "${CMAKE_SOURCE_DIR}/pascal/bin")
-add_custom_command(TARGET ttcore POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${_pascal_bin}"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ttcore> "${_pascal_bin}/"
-    COMMENT "Copy ttcore shared library to pascal/bin"
-)
 if (WIN32 AND SDL2_DLL)
     add_custom_command(TARGET ttcore POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SDL2_DLL}" "$<TARGET_FILE_DIR:ttcore>/"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SDL2_DLL}" "${_pascal_bin}/"
         COMMENT "Copy SDL2.dll next to ttcore.dll"
     )
 endif()
-if (WIN32)
-    add_custom_command(TARGET ttcore POST_BUILD
-        COMMAND ${CMAKE_COMMAND}
-            "-Dsrc=$<TARGET_FILE_DIR:ttcore>"
-            "-Dbase=$<TARGET_FILE_BASE_NAME:ttcore>"
-            "-Ddst=${_pascal_bin}"
-            -P "${CMAKE_SOURCE_DIR}/cmake/CopyPdbIfPresent.cmake"
-        COMMENT "Copy ttcore PDB to pascal/bin if present"
-    )
-endif()
 ttplayer_convert_dwarf_to_pdb(ttcore_probe)
-add_custom_command(TARGET ttcore_probe POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ttcore_probe> "${_pascal_bin}/"
-    COMMENT "Copy ttcore_probe to pascal/bin"
-)
-if (WIN32)
-    add_custom_command(TARGET ttcore_probe POST_BUILD
-        COMMAND ${CMAKE_COMMAND}
-            "-Dsrc=$<TARGET_FILE_DIR:ttcore_probe>"
-            "-Dbase=$<TARGET_FILE_BASE_NAME:ttcore_probe>"
-            "-Ddst=${_pascal_bin}"
-            -P "${CMAKE_SOURCE_DIR}/cmake/CopyPdbIfPresent.cmake"
-        COMMENT "Copy ttcore_probe PDB to pascal/bin if present"
-    )
-endif()
 
 if (NOT BUILD_QT_APP)
     return()

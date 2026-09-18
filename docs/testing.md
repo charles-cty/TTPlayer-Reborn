@@ -7,7 +7,7 @@ TTPlayer Reborn 采用四层测试框架，保证 Lazarus/FPC 重写版与 Qt C+
 ```
 tools/test-all.ps1
 ├── Layer 1  差分测试（test-layer1.ps1）
-└── Layer 2/3/4  FPCUnit（pascal/bin/tests.exe）
+└── Layer 2/3/4  FPCUnit（build/windows/pascal/debug/tests.exe）
     ├── Layer 2  快照测试（UTestLayer2）
     ├── Layer 3  Expect 测试（UTestLayer3）
     └── Layer 4  Metamorphic 测试（UTestMetamorphic）
@@ -65,7 +65,7 @@ pwsh tools/test-layer1.ps1 -Skin Classic  # 测试单个皮肤
 
 #### 掩码机制
 
-文本渲染（矢量字体）和时变内容（频谱动画）在跨实现时无法逐像素一致，通过 `tests/golden/masks/<皮肤>.json` 排除：
+文本渲染（矢量字体）和时变内容（频谱动画）在跨实现时无法逐像素一致，通过 `build/windows/tests/golden/masks/<皮肤>.json` 排除：
 
 - 排除类型：`info`、`lyric`、`playlist`、`visual`、`stereo`、`status`、`icon`
 - 排除区域内：弱断言（非空）
@@ -73,7 +73,7 @@ pwsh tools/test-layer1.ps1 -Skin Classic  # 测试单个皮肤
 
 #### 失败诊断
 
-测试失败时，在 `tests/artifacts/layer2/<皮肤>/` 下输出三联图：
+测试失败时，在 `build/windows/tests/artifacts/layer2/<皮肤>/` 下输出三联图：
 - `<帧名>.expected.png` — Qt golden
 - `<帧名>.actual.png` — Pascal 实际输出
 - `<帧名>.diff.png` — 红色标注差异像素
@@ -94,14 +94,16 @@ pwsh tools/test-layer1.ps1 -Skin Classic  # 测试单个皮肤
 #### Golden 生成
 
 ```powershell
-# Qt 版需已编译（build-mingw64/TTPlayerReborn.exe）
+# Qt 版需已编译（build/windows/qt/debug/TTPlayerReborn.exe）
 pwsh tools/gen-golden.ps1 -SkipBuild   # 跳过编译步骤
 pwsh tools/gen-golden.ps1              # 先编译再生成
 ```
 
 `gen-golden.ps1` 对每套皮肤依次运行：
-1. `--dump-skin` → `tests/golden/skinjson/<皮肤>.json`
-2. `--dump-frames` → `tests/golden/frames/<皮肤>/<帧名>.png` + `tests/golden/masks/<皮肤>.json`
+1. `--dump-skin` → `build/windows/tests/golden/skinjson/<皮肤>.json`
+2. `--dump-frames` → `build/windows/tests/golden/frames/<皮肤>/<帧名>.png` + `build/windows/tests/golden/masks/<皮肤>.json`
+
+这些文件是 Qt 版生成的本地缓存，不进入 Git。`tools/test-all.ps1` 在缓存缺失时自动生成；需要强制刷新时直接运行 `tools/gen-golden.ps1`。
 
 **何时需要重新生成**：修改 Qt 侧渲染逻辑（`PlayerWindow::paintEvent`、`SkinButton::paintEvent` 等）后，需重新生成 golden，然后重新跑 Layer 2 验证 Pascal 侧是否仍然一致。
 
@@ -179,7 +181,7 @@ pwsh tools/test-all.ps1
 - `-SkipLayer1`：跳过 Layer 1
 - `-SkipFPCUnit`：跳过 Layer 2/3/4
 - `-SkipSmoke`：跳过 Layer 5 GUI 冒烟（无桌面会话时使用）
-- `-HeapTrace`：跑 `pascal\bin\tests_heaptrc.exe`（需先 `tools\build-pascal.ps1 -HeapTrace`）。HeapTrc / PageHeap 的配置与解释见 [debugging-and-profiling.md](debugging-and-profiling.md)
+- `-HeapTrace`：跑 `build\windows\pascal\heaptrc\tests_heaptrc.exe`（需先 `tools\build-pascal.ps1 -HeapTrace`）。HeapTrc / PageHeap 的配置与解释见 [debugging-and-profiling.md](debugging-and-profiling.md)
 
 Layer 5（`tools/smoke_skinpreview.py`）在四个窗口渲染之外，还会：点 EQ `enabled` 断言标题变为 `Equalizer ON`、换到 Subaru/HiFi 等尺寸差明显的皮肤并断言窗口尺寸或像素变化、把 Player 放到 EQ 旁发 `WM_ENTERSIZEMOVE`/`SetWindowPos`/`WM_EXITSIZEMOVE` 断言吸附间隙 ~0（LCL 逻辑像素；原生 WndProc 子类化才能收到跨进程的这两条消息）。
 
@@ -211,10 +213,10 @@ stderr 里 `gtk_widget_get_window: assertion 'GTK_IS_WIDGET'` 视为失败（把
 
 ```powershell
 # 运行全部 FPCUnit 测试（带详细输出）
-.\pascal\bin\tests.exe -a --format=plain
+.\build\windows\pascal\debug\tests.exe -a --format=plain
 
 # 只跑某个测试类
-.\pascal\bin\tests.exe --suite=TMetamorphicTest --format=plain
+.\build\windows\pascal\debug\tests.exe --suite=TMetamorphicTest --format=plain
 ```
 
 ### 构建后测试

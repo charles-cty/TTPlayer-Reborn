@@ -4,7 +4,7 @@ unit UTestLayer2;
 
 // Layer 2：渲染快照测试。用 USkinRender 离屏渲染 player_window / equalizer_window
 // 的各状态帧，与 Qt 版 golden PNG 逐像素比对（masks.json 中的文本/动画区域除外）。
-// 失败时输出 expected/actual/diff 三联 PNG 到 tests/artifacts/layer2/。
+// 失败时输出 expected/actual/diff 三联 PNG 到 build/<platform>/tests/artifacts/layer2/。
 //
 // 覆盖帧：
 //   player__default / player__progress37 / player__hover-play /
@@ -36,7 +36,40 @@ type
 implementation
 
 var
-  RepoRoot: string;
+  RepoRoot, GoldenRoot: string;
+
+function FindRepoRoot: string;
+var
+  currentDir, parentDir: string;
+begin
+  currentDir := ExcludeTrailingPathDelimiter(
+    ExpandFileName(ExtractFilePath(ParamStr(0))));
+  while currentDir <> '' do
+  begin
+    if DirectoryExists(currentDir + PathDelim + 'Skin') and
+       DirectoryExists(currentDir + PathDelim + 'pascal') then
+      Exit(IncludeTrailingPathDelimiter(currentDir));
+    parentDir := ExcludeTrailingPathDelimiter(
+      ExpandFileName(currentDir + PathDelim + '..'));
+    if parentDir = currentDir then Break;
+    currentDir := parentDir;
+  end;
+  raise Exception.Create('Could not locate repository root from ' + ParamStr(0));
+end;
+
+function FindGoldenRoot: string;
+begin
+  Result := GetEnvironmentVariable('TTPLAYER_GOLDEN_DIR');
+  if Result <> '' then
+    Exit(IncludeTrailingPathDelimiter(ExpandFileName(Result)));
+{$IFDEF WINDOWS}
+  Result := RepoRoot + 'build' + PathDelim + 'windows' + PathDelim +
+    'tests' + PathDelim + 'golden' + PathDelim;
+{$ELSE}
+  Result := RepoRoot + 'build' + PathDelim + 'linux' + PathDelim +
+    'tests' + PathDelim + 'golden' + PathDelim;
+{$ENDIF}
+end;
 
 // 加载 masks.json 中指定 section（'player'/'equalizer'）的矩形列表。
 function LoadMaskSection(const SkinName, Section: string): TJSONArray;
@@ -47,7 +80,7 @@ var
   obj: TJSONObject;
 begin
   Result := nil;
-  path := RepoRoot + 'tests' + PathDelim + 'golden' + PathDelim + 'masks' +
+  path := GoldenRoot + 'masks' +
     PathDelim + SkinName + '.json';
   if not FileExists(path) then Exit;
   fs := TFileStream.Create(path, fmOpenRead or fmShareDenyWrite);
@@ -219,8 +252,8 @@ var
   x, y, diffCount, d: Integer;
   pe, pa: PBGRAPixel;
 begin
-  goldenPath := RepoRoot + 'tests' + PathDelim + 'golden' + PathDelim +
-    'frames' + PathDelim + SkinName + PathDelim + FrameName + '.png';
+  goldenPath := GoldenRoot + 'frames' + PathDelim + SkinName + PathDelim +
+    FrameName + '.png';
   if not FileExists(goldenPath) then
   begin
     Fail(Format('%s/%s: 缺少 golden 帧', [SkinName, FrameName]));
@@ -265,13 +298,18 @@ begin
 
       if diffCount > 0 then
       begin
-        artifactDir := RepoRoot + 'tests' + PathDelim + 'artifacts' +
+{$IFDEF WINDOWS}
+        artifactDir := RepoRoot + 'build' + PathDelim + 'windows' + PathDelim;
+{$ELSE}
+        artifactDir := RepoRoot + 'build' + PathDelim + 'linux' + PathDelim;
+{$ENDIF}
+        artifactDir := artifactDir + 'tests' + PathDelim + 'artifacts' +
           PathDelim + 'layer2' + PathDelim + SkinName;
         ForceDirectories(artifactDir);
         expected.SaveToFile(artifactDir + PathDelim + FrameName + '.expected.png');
         Actual.SaveToFile(artifactDir + PathDelim + FrameName + '.actual.png');
         diff.SaveToFile(artifactDir + PathDelim + FrameName + '.diff.png');
-        Fail(Format('%s/%s: %d 个像素不一致（三联图已存 tests/artifacts/layer2）',
+        Fail(Format('%s/%s: %d 个像素不一致（三联图已存 build/<platform>/tests/artifacts/layer2）',
           [SkinName, FrameName, diffCount]));
       end;
     finally
@@ -554,9 +592,8 @@ begin
 end;
 
 initialization
-  // 测试可执行文件位于 pascal\bin\，仓库根在其上两级。
-  RepoRoot := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..' + PathDelim +
-    '..' + PathDelim) ;
+  RepoRoot := FindRepoRoot;
+  GoldenRoot := FindGoldenRoot;
   RegisterTest(TSnapshotTest);
 
 end.

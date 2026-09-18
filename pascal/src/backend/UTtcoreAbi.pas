@@ -276,7 +276,7 @@ end;
 
 function LoadTtcore: Boolean;
 var
-  exeDir, repo, libName: string;
+  exeDir, libName: string;
   paths: array of string;
   i: Integer;
 begin
@@ -288,21 +288,14 @@ begin
   GError := '';
   libName := TtcoreLibName;
   exeDir := IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0)));
-  repo := ExpandFileName(exeDir + '..' + PathDelim + '..' + PathDelim);
-  repo := IncludeTrailingPathDelimiter(repo);
 {$IFDEF WINDOWS}
   EnsureWinRuntimeSearchPath;
 {$ENDIF}
 
-  SetLength(paths, 8);
+  SetLength(paths, 3);
   paths[0] := SysUtils.GetEnvironmentVariable('TTCORE_LIB');
   paths[1] := exeDir + libName;
-  paths[2] := repo + 'pascal' + PathDelim + 'bin' + PathDelim + libName;
-  paths[3] := repo + 'build-ttcore' + PathDelim + libName;
-  paths[4] := repo + 'build' + PathDelim + libName;
-  paths[5] := repo + 'build-linux' + PathDelim + libName;
-  paths[6] := repo + libName;
-  paths[7] := libName;
+  paths[2] := libName;
 
   Result := False;
   for i := 0 to High(paths) do

@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/third_party/ffmpeg"
-BUILD="$ROOT/build-ffmpeg-mingw64"
+BUILD="$ROOT/build/windows/deps/ffmpeg-mingw64"
 PREFIX="$BUILD/prefix"
 STAMP="$PREFIX/share/ttcore-ffmpeg-id"
 VERSION="n8.1.2"

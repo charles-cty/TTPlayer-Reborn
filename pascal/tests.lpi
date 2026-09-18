@@ -19,13 +19,15 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="bin/tests"/>
+            <Filename Value="../build/$(BuildPlatform)/pascal/release/tests"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
             <OtherUnitFiles Value="src/skin;src/render;src/playlist;src/lyric;src/ui;src/ui/platform;src/backend;src/debug;src/config;tests"/>
-            <UnitOutputDirectory Value="lib/tests/Release/$(TargetCPU)-$(TargetOS)"/>
+            <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/tests/release/$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
+          <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+          <BuildMacros><Count Value="1"/><Item1><Identifier Value="BuildPlatform"/></Item1></BuildMacros>
           <CodeGeneration>
             <Optimizations>
               <OptimizationLevel Value="2"/>
@@ -44,13 +46,15 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="bin/tests"/>
+            <Filename Value="../build/$(BuildPlatform)/pascal/profile/tests"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
             <OtherUnitFiles Value="src/skin;src/render;src/playlist;src/lyric;src/ui;src/ui/platform;src/backend;src/debug;src/config;tests"/>
-            <UnitOutputDirectory Value="lib/tests/Profile/$(TargetCPU)-$(TargetOS)"/>
+            <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/tests/profile/$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
+          <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+          <BuildMacros><Count Value="1"/><Item1><Identifier Value="BuildPlatform"/></Item1></BuildMacros>
           <CodeGeneration>
             <Optimizations>
               <OptimizationLevel Value="2"/>
@@ -72,13 +76,15 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="bin/tests_heaptrc"/>
+            <Filename Value="../build/$(BuildPlatform)/pascal/heaptrc/tests_heaptrc"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
             <OtherUnitFiles Value="src/skin;src/render;src/playlist;src/lyric;src/ui;src/ui/platform;src/backend;src/debug;src/config;tests"/>
-            <UnitOutputDirectory Value="lib/tests_heaptrc/$(TargetCPU)-$(TargetOS)"/>
+            <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/tests/heaptrc/$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
+          <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+          <BuildMacros><Count Value="1"/><Item1><Identifier Value="BuildPlatform"/></Item1></BuildMacros>
           <Parsing>
             <SyntaxOptions>
               <IncludeAssertionCode Value="True"/>
@@ -137,13 +143,20 @@
   <CompilerOptions>
     <Version Value="11"/>
     <Target>
-      <Filename Value="bin/tests"/>
+      <Filename Value="../build/$(BuildPlatform)/pascal/debug/tests"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
       <OtherUnitFiles Value="src/skin;src/render;src/playlist;src/lyric;src/ui;src/ui/platform;src/backend;src/debug;src/config;tests"/>
-      <UnitOutputDirectory Value="lib/tests/Debug/$(TargetCPU)-$(TargetOS)"/>
+      <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/tests/debug/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
+    <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+    <BuildMacros>
+      <Count Value="1"/>
+      <Item1>
+        <Identifier Value="BuildPlatform"/>
+      </Item1>
+    </BuildMacros>
     <Parsing>
       <SyntaxOptions>
         <IncludeAssertionCode Value="True"/>

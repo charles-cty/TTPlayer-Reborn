@@ -134,7 +134,7 @@ Lazarus 工程（全自绘）
 | 皮肤引擎 | `pascal/src/skin/`（USkinTypes/USkinXmlParser/USkinLoader/USkinJsonDump） |
 | 渲染原语 | `pascal/src/render/USkinRender`（QtPutImage 精确合成、九宫格、LED） |
 | 后端接口+桩 | `pascal/src/backend/UPlayerBackend`（IPlayerBackend + TStubBackend） |
-| ttcore C ABI | `src/ttcore/ttcore.{h,cpp}` + CMake `ttcore` SHARED（`BUILD_QT_APP=OFF` 可只编库）；产物 `libttcore.so` / `ttcore.dll` 复制到 `pascal/bin`。Windows：`third_party/ffmpeg`（shallow submodule，n8.1.2）音频-only 静态库 + MinGW CRT 打进 `ttcore.dll`，`SDL2.dll` 复制到旁边（`tools/build-ffmpeg-win.ps1` 然后 `tools/build-ttcore-win.ps1`）。运行时只有这两份 DLL，不依赖 MSYS2 / MinGW CRT DLL / `C:\Programs`。Linux：发行版 pkg-config（`tools/build-ttcore-linux.sh`，apt：`libavformat-dev` 等） |
+| ttcore C ABI | `src/ttcore/ttcore.{h,cpp}` + CMake `ttcore` SHARED（`BUILD_QT_APP=OFF` 可只编库）；构建树在 `build/<platform>/ttcore/<config>/`，运行时部署到 `build/<platform>/pascal/<config>/`。Windows：`third_party/ffmpeg`（shallow submodule，n8.1.2）音频-only 静态库 + MinGW CRT 打进 `ttcore.dll`，`SDL2.dll` 复制到旁边（`tools/build-ffmpeg-win.ps1` 然后 `tools/build-ttcore-win.ps1`）。运行时只有这两份 DLL，不依赖 MSYS2 / MinGW CRT DLL / `C:\Programs`。Linux：发行版 pkg-config（`tools/build-ttcore-linux.sh`，apt：`libavformat-dev` 等） |
 | Pascal FFI 后端 | `pascal/src/backend/UTtcoreAbi` + `UTtcoreBackend`（`ttplayer` 使用；回调 `TThread.Queue`） |
 | 播放列表模型 | `pascal/src/playlist/UPlaylistModel` + `UTtbl` + `UPlaylistBook` + `UPlaylistMetadataLoader`（FFmpeg via ttcore） |
 | LRC 解析 | `pascal/src/lyric/ULrcParser` |
@@ -150,7 +150,7 @@ Lazarus 工程（全自绘）
 | GTK3 探测 | `skinpreview --probe` + `tools/test-gtk3-wayland.sh` + `tools/smoke_gtk3_wayland.py` |
 | Qt SkinDumper | `src/tools/SkinDumper.{h,cpp}` + `--dump-skin` |
 | Qt FrameDumper | `src/tools/FrameDumper.{h,cpp}` + `--dump-frames`（捕帧前 `clearMask`，playlist/lyric 按 `baseSize`） |
-| Golden 基准（11 套皮肤） | `tests/golden/skinjson/`, `frames/`, `masks/` |
+| Golden 基准（11 套皮肤） | Qt 版生成到 `build/windows/tests/golden/`，作为本地缓存，不进入 Git |
 | 测试（Windows 48/48；Linux FPCUnit 89/89，含 AlphaShape + DpiScale + NearestResample + snap Detach + ttcore FFI + Config/Menus） | `tools/test-all.ps1`（Layer 1/2/3/4 + PlaylistModel + LRC + TTBL + WindowSnap/MR-4 + Layer 5）；Linux：`tools/test-gtk3-wayland.sh`；ttcore：`UTestTtcoreBackend` + `ttcore_probe`；配置/菜单：`UTestPlayerConfig` + `UTestPlayerMenus` |
 | 配置 / 托盘 / 右键 | `pascal/src/config/UPlayerConfig` + `UPlayerMenuSpec` + `pascal/src/ui/UTtplayerHost`：属性式 `TTPlayer.xml`（exe 目录，回退 Qt 遗留路径），系统托盘 + 播放器右键共用 Qt 命令集，`切换皮肤` 枚举 `Skin/*.skn` |
 

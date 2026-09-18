@@ -17,7 +17,7 @@
     跳过 Layer 2/3/4（FPCUnit）。
 
 .PARAMETER HeapTrace
-    跑 HeapTrc 构建的 FPCUnit（pascal\bin\tests_heaptrc.exe）。
+    跑 HeapTrc 构建的 FPCUnit（build\windows\pascal\heaptrc\tests_heaptrc.exe）。
     先 tools\build-pascal.ps1 -HeapTrace。Windows 与 Linux 都用这一套 Pascal
     堆追踪；Windows 上 C++/CRT 堆另加 tools\pageheap.ps1。
     未设置 HEAPTRC_KEEP_RELEASED 时默认打开，UAF 会变成 Invalid pointer。
@@ -27,7 +27,7 @@ param(
     [switch]$SkipLayer1,
     [switch]$SkipFPCUnit,
     [switch]$SkipSmoke,    # 跳过 GUI 冒烟测试（无显示环境时使用）
-    [switch]$HeapTrace     # 跑 pascal\bin\tests_heaptrc.exe（先 tools\build-pascal.ps1 -HeapTrace）
+    [switch]$HeapTrace     # 跑 build\windows\pascal\heaptrc\tests_heaptrc.exe
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,6 +42,15 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $failed = @()
 # Do not prepend MSYS2: ttcore.dll must load with only SDL2.dll beside it.
 
+$goldenRoot = Join-Path $RepoRoot 'build\windows\tests\golden'
+if ((-not $SkipLayer1 -or -not $SkipFPCUnit) -and
+    -not (Test-Path (Join-Path $goldenRoot '.complete'))) {
+    Write-Host '[test-all] Qt golden 缓存不存在，正在生成...' -ForegroundColor Cyan
+    & (Join-Path $PSScriptRoot 'gen-golden.ps1')
+    if ($LASTEXITCODE -ne 0) { throw "Qt golden 生成失败（退出码 $LASTEXITCODE）" }
+}
+$env:TTPLAYER_GOLDEN_DIR = $goldenRoot
+
 # ── Layer 1：解析差分（Pascal ttdump vs Qt golden） ──────────────────────────
 if (-not $SkipLayer1) {
     Write-Host ''
@@ -55,7 +64,8 @@ if (-not $SkipFPCUnit) {
     Write-Host ''
     Write-Host '── Layer 2/3/4  FPCUnit（快照 / expect / metamorphic）──' -ForegroundColor Cyan
     $testsName = if ($HeapTrace) { 'tests_heaptrc.exe' } else { 'tests.exe' }
-    $testsExe = Join-Path $RepoRoot "pascal\bin\$testsName"
+    $testsConfig = if ($HeapTrace) { 'heaptrc' } else { 'debug' }
+    $testsExe = Join-Path $RepoRoot "build\windows\pascal\$testsConfig\$testsName"
     if (-not (Test-Path $testsExe)) {
         if ($HeapTrace) {
             throw "找不到 tests_heaptrc.exe，请先运行 tools\build-pascal.ps1 -HeapTrace"
@@ -63,7 +73,7 @@ if (-not $SkipFPCUnit) {
         throw "找不到 tests.exe，请先运行 tools\build-pascal.ps1"
     }
     if ($HeapTrace) {
-        $dumpPath = Join-Path $RepoRoot 'pascal\bin\tests_heaptrc.heaptrc'
+        $dumpPath = Join-Path $RepoRoot 'build\windows\pascal\heaptrc\tests_heaptrc.heaptrc'
         if (-not $env:HEAPTRC_KEEP_RELEASED) {
             $env:HEAPTRC_KEEP_RELEASED = '1'
         }
@@ -72,8 +82,8 @@ if (-not $SkipFPCUnit) {
         if (Test-Path $dumpPath) { Remove-Item -LiteralPath $dumpPath -Force }
     }
     $savedPath = $env:PATH
-    $pascalBin = Join-Path $RepoRoot 'pascal\bin'
-    $env:PATH = "$pascalBin;$([Environment]::SystemDirectory)"
+    $pascalRuntime = Join-Path $RepoRoot "build\windows\pascal\$testsConfig"
+    $env:PATH = "$pascalRuntime;$([Environment]::SystemDirectory)"
     if (-not $env:SDL_AUDIODRIVER) { $env:SDL_AUDIODRIVER = 'dummy' }
     try {
         & $testsExe -a --format=plain
@@ -82,7 +92,7 @@ if (-not $SkipFPCUnit) {
         $env:PATH = $savedPath
     }
     if ($HeapTrace) {
-        $dumpPath = Join-Path $RepoRoot 'pascal\bin\tests_heaptrc.heaptrc'
+        $dumpPath = Join-Path $RepoRoot 'build\windows\pascal\heaptrc\tests_heaptrc.heaptrc'
         if (-not (Test-Path $dumpPath)) {
             Write-Host "  [HeapTrc] 没有 dump：$dumpPath" -ForegroundColor Red
             $failed += 'HeapTrcDump'
@@ -114,7 +124,7 @@ if (-not $SkipSmoke) {
     $pyExe = 'C:\Program Files\Python312\python.exe'
     if (-not (Test-Path $pyExe)) {
         Write-Host '  [跳过] 未找到 Python，请安装 python.org Python 3.12+' -ForegroundColor Yellow
-    } elseif (-not (Test-Path (Join-Path $RepoRoot 'pascal\bin\skinpreview.exe'))) {
+    } elseif (-not (Test-Path (Join-Path $RepoRoot 'build\windows\pascal\debug\skinpreview.exe'))) {
         Write-Host '  [跳过] skinpreview.exe 未构建，请先运行 tools\build-pascal.ps1' -ForegroundColor Yellow
     } else {
         & $pyExe $smokeScript

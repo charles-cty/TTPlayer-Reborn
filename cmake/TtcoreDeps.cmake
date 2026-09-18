@@ -3,7 +3,7 @@
 # Windows: bundled static audio-only FFmpeg (tools/build-ffmpeg-win.ps1) + SDL2.dll.
 
 option(TTCORE_STATIC_FFMPEG "Link a bundled static audio-only FFmpeg" OFF)
-set(TTCORE_FFMPEG_ROOT "${CMAKE_SOURCE_DIR}/build-ffmpeg-mingw64/prefix"
+set(TTCORE_FFMPEG_ROOT "${CMAKE_SOURCE_DIR}/build/windows/deps/ffmpeg-mingw64/prefix"
     CACHE PATH "Prefix produced by tools/build-ffmpeg-win.ps1")
 
 if (WIN32)

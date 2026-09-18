@@ -23,13 +23,15 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="bin/ttplayer"/>
+            <Filename Value="../build/$(BuildPlatform)/pascal/release/ttplayer"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
             <OtherUnitFiles Value="src/skin;src/render;src/backend;src/ui;src/ui/platform;src/playlist;src/lyric;src/debug;src/config"/>
-            <UnitOutputDirectory Value="lib/ttplayer/Release/$(TargetCPU)-$(TargetOS)"/>
+            <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/ttplayer/release/$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
+          <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+          <BuildMacros><Count Value="1"/><Item1><Identifier Value="BuildPlatform"/></Item1></BuildMacros>
           <CodeGeneration>
             <Optimizations>
               <OptimizationLevel Value="2"/>
@@ -53,13 +55,15 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="bin/ttplayer"/>
+            <Filename Value="../build/$(BuildPlatform)/pascal/profile/ttplayer"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
             <OtherUnitFiles Value="src/skin;src/render;src/backend;src/ui;src/ui/platform;src/playlist;src/lyric;src/debug;src/config"/>
-            <UnitOutputDirectory Value="lib/ttplayer/Profile/$(TargetCPU)-$(TargetOS)"/>
+            <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/ttplayer/profile/$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
+          <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+          <BuildMacros><Count Value="1"/><Item1><Identifier Value="BuildPlatform"/></Item1></BuildMacros>
           <CodeGeneration>
             <Optimizations>
               <OptimizationLevel Value="2"/>
@@ -86,13 +90,15 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="bin/ttplayer_heaptrc"/>
+            <Filename Value="../build/$(BuildPlatform)/pascal/heaptrc/ttplayer_heaptrc"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
             <OtherUnitFiles Value="src/skin;src/render;src/backend;src/ui;src/ui/platform;src/playlist;src/lyric;src/debug;src/config"/>
-            <UnitOutputDirectory Value="lib/ttplayer_heaptrc/$(TargetCPU)-$(TargetOS)"/>
+            <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/ttplayer/heaptrc/$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
+          <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+          <BuildMacros><Count Value="1"/><Item1><Identifier Value="BuildPlatform"/></Item1></BuildMacros>
           <Parsing>
             <SyntaxOptions>
               <IncludeAssertionCode Value="True"/>
@@ -156,13 +162,20 @@
   <CompilerOptions>
     <Version Value="11"/>
     <Target>
-      <Filename Value="bin/ttplayer"/>
+      <Filename Value="../build/$(BuildPlatform)/pascal/debug/ttplayer"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
       <OtherUnitFiles Value="src/skin;src/render;src/backend;src/ui;src/ui/platform;src/playlist;src/lyric;src/debug;src/config"/>
-      <UnitOutputDirectory Value="lib/ttplayer/Debug/$(TargetCPU)-$(TargetOS)"/>
+      <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/ttplayer/debug/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
+    <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+    <BuildMacros>
+      <Count Value="1"/>
+      <Item1>
+        <Identifier Value="BuildPlatform"/>
+      </Item1>
+    </BuildMacros>
     <Parsing>
       <SyntaxOptions>
         <IncludeAssertionCode Value="True"/>

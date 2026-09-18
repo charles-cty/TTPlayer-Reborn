@@ -13,7 +13,7 @@ type
   TPlayerMenusTest = class(TTestCase)
   published
     procedure TestDiscoverSkinsFromTempDir;
-    procedure TestFindSkinDirectoryPrefersExeThenTwoUp;
+    procedure TestFindSkinDirectoryPrefersExeThenAncestor;
     procedure TestTrayAndPlayModeCaptions;
     procedure TestLyricOffsetReparse;
     procedure TestLyricEncodingCaptions;
@@ -70,7 +70,7 @@ begin
   end;
 end;
 
-procedure TPlayerMenusTest.TestFindSkinDirectoryPrefersExeThenTwoUp;
+procedure TPlayerMenusTest.TestFindSkinDirectoryPrefersExeThenAncestor;
 var
   root, exeDir, exeSkin, twoUpSkin: string;
 

@@ -8,18 +8,17 @@ Tracy 是开发时的可选 DLL。Windows Pascal 的 ttplayer/tests Profile 配�
 
 ```powershell
 git submodule update --init --recursive
-cmake -S . -B build-tracy -G Ninja -DCMAKE_BUILD_TYPE=Profile -DBUILD_QT_APP=OFF -DTTPLAYER_TRACY=ON -DTTPLAYER_TRACY_ONLY=ON
-cmake --build build-tracy --target tttracy
+pwsh -File tools/build-tracy-win.ps1
 pwsh -File tools/build-pascal.ps1 -Project ttplayer -Config Profile
 ```
 
-MSVC Profile 使用优化、调试符号和静态 CRT，产物不依赖 MSVC Debug DLL。构建后自动复制 `tttracy.dll` 和已生成的 `tttracy.pdb` 到 `pascal/bin`。显式指定 Profile 也会更新已有 build-tracy 的 Debug 配置；多配置生成器构建时另加 `--config Profile`。
+MSVC Profile 使用优化、调试符号和静态 CRT，产物不依赖 MSVC Debug DLL。Tracy 的构建树位于 `build/windows/tracy/profile/`；同一次构建也会生成 MCP 所需的 `build/windows/tracy/profile/python/TracyServerBindings*.pyd`（文件名带 Python ABI 标签），并使用当前 `python.exe` 实际导入该模块进行 ABI 检查。`tools/build-pascal.ps1 -Config Profile` 会在缺失时自动构建，并把 `tttracy.dll` 和 PDB 复制到 `build/windows/pascal/profile/`。
 
 缺 DLL 时插桩为空操作；缺少所需导出时禁用插桩并向 Windows 调试输出报告不兼容。zone 上下文现在使用 64 位值和 v2 导出，必须一起重建 Pascal 程序与 DLL，旧版 DLL 不兼容。DLL 查找每进程只尝试一次，更新后重启程序并重新采集。
 
 shim 按线程缓存每个 zone 名称及其源位置，首次遇到名称时分配，重复 begin/end 不再逐次分配源位置或 new/delete 上下文。缓存保留到进程退出，保证 Tracy 异步读取元数据时指针有效；名称应为固定标签，不要拼入尺寸或时间戳。初始化或缓存分配失败时 begin 返回空上下文，不让 C++ 异常跨越 Pascal ABI。Tracy 自身的事件队列等内部设施仍可能分配内存。
 
-回归检查：构建 `tttracy_test` target 后运行 `build-tracy/tools/tracyshim/tttracy_test.exe`，验证重复 zone 无 shim 分配、嵌套上下文、元数据生命周期和分配失败处理。另分别构建 tests 的 Profile 与 Release 并运行 `pascal/bin/tests.exe --suite=TTracyTest --format=plain`，在同目录保留 DLL，验证启用及禁用路径。Profile 下若放有 DLL，测试要求它能加载且 ABI 匹配。
+回归检查：构建 `tttracy_test` target 后运行 `build/windows/tracy/profile/tools/tracyshim/Profile/tttracy_test.exe`，验证重复 zone 无 shim 分配、嵌套上下文、元数据生命周期和分配失败处理。另分别构建 tests 的 Profile 与 Release 并运行 `build/windows/pascal/profile/tests.exe --suite=TTracyTest --format=plain`，在同目录保留 DLL，验证启用及禁用路径。Profile 下若放有 DLL，测试要求它能加载且 ABI 匹配。
 
 ## 固定统计口径
 

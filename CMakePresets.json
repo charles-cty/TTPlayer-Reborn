@@ -7,16 +7,8 @@
   },
   "configurePresets": [
     {
-      "name": "ttcore-base",
+      "name": "windows-base",
       "hidden": true,
-      "cacheVariables": {
-        "BUILD_QT_APP": "OFF"
-      }
-    },
-    {
-      "name": "windows-ninja",
-      "hidden": true,
-      "inherits": "ttcore-base",
       "generator": "Ninja",
       "condition": {
         "type": "equals",
@@ -28,48 +20,100 @@
       }
     },
     {
-      "name": "debug",
-      "displayName": "Debug",
-      "inherits": ["ttcore-base", "windows-ninja"],
-      "binaryDir": "${sourceDir}/build/${hostSystemName}/ttcore-debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+      "name": "linux-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
       }
     },
     {
-      "name": "release",
-      "displayName": "Release",
-      "inherits": ["ttcore-base", "windows-ninja"],
-      "binaryDir": "${sourceDir}/build/${hostSystemName}/ttcore-release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
+      "name": "ttcore-windows-debug",
+      "inherits": "windows-base",
+      "binaryDir": "${sourceDir}/build/windows/ttcore/debug",
+      "cacheVariables": { "BUILD_QT_APP": "OFF", "CMAKE_BUILD_TYPE": "Debug" }
     },
     {
-      "name": "profile",
-      "displayName": "Profile",
-      "inherits": ["ttcore-base", "windows-ninja"],
-      "binaryDir": "${sourceDir}/build/${hostSystemName}/ttcore-profile",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Profile"
-      }
+      "name": "ttcore-windows-release",
+      "inherits": "windows-base",
+      "binaryDir": "${sourceDir}/build/windows/ttcore/release",
+      "cacheVariables": { "BUILD_QT_APP": "OFF", "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "ttcore-windows-profile",
+      "inherits": "windows-base",
+      "binaryDir": "${sourceDir}/build/windows/ttcore/profile",
+      "cacheVariables": { "BUILD_QT_APP": "OFF", "CMAKE_BUILD_TYPE": "Profile" }
+    },
+    {
+      "name": "qt-windows-debug",
+      "inherits": "windows-base",
+      "binaryDir": "${sourceDir}/build/windows/qt/debug",
+      "cacheVariables": { "BUILD_QT_APP": "ON", "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "qt-windows-release",
+      "inherits": "windows-base",
+      "binaryDir": "${sourceDir}/build/windows/qt/release",
+      "cacheVariables": { "BUILD_QT_APP": "ON", "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "qt-windows-profile",
+      "inherits": "windows-base",
+      "binaryDir": "${sourceDir}/build/windows/qt/profile",
+      "cacheVariables": { "BUILD_QT_APP": "ON", "CMAKE_BUILD_TYPE": "Profile" }
+    },
+    {
+      "name": "ttcore-linux-debug",
+      "inherits": "linux-base",
+      "binaryDir": "${sourceDir}/build/linux/ttcore/debug",
+      "cacheVariables": { "BUILD_QT_APP": "OFF", "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "ttcore-linux-release",
+      "inherits": "linux-base",
+      "binaryDir": "${sourceDir}/build/linux/ttcore/release",
+      "cacheVariables": { "BUILD_QT_APP": "OFF", "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "ttcore-linux-profile",
+      "inherits": "linux-base",
+      "binaryDir": "${sourceDir}/build/linux/ttcore/profile",
+      "cacheVariables": { "BUILD_QT_APP": "OFF", "CMAKE_BUILD_TYPE": "Profile" }
+    },
+    {
+      "name": "qt-linux-debug",
+      "inherits": "linux-base",
+      "binaryDir": "${sourceDir}/build/linux/qt/debug",
+      "cacheVariables": { "BUILD_QT_APP": "ON", "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "qt-linux-release",
+      "inherits": "linux-base",
+      "binaryDir": "${sourceDir}/build/linux/qt/release",
+      "cacheVariables": { "BUILD_QT_APP": "ON", "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "qt-linux-profile",
+      "inherits": "linux-base",
+      "binaryDir": "${sourceDir}/build/linux/qt/profile",
+      "cacheVariables": { "BUILD_QT_APP": "ON", "CMAKE_BUILD_TYPE": "Profile" }
     }
   ],
   "buildPresets": [
-    {
-      "name": "debug",
-      "configurePreset": "debug",
-      "targets": ["ttcore", "ttcore_probe"]
-    },
-    {
-      "name": "release",
-      "configurePreset": "release",
-      "targets": ["ttcore", "ttcore_probe"]
-    },
-    {
-      "name": "profile",
-      "configurePreset": "profile",
-      "targets": ["ttcore", "ttcore_probe"]
-    }
+    { "name": "ttcore-windows-debug", "configurePreset": "ttcore-windows-debug", "targets": ["ttcore", "ttcore_probe"] },
+    { "name": "ttcore-windows-release", "configurePreset": "ttcore-windows-release", "targets": ["ttcore", "ttcore_probe"] },
+    { "name": "ttcore-windows-profile", "configurePreset": "ttcore-windows-profile", "targets": ["ttcore", "ttcore_probe"] },
+    { "name": "qt-windows-debug", "configurePreset": "qt-windows-debug", "targets": ["TTPlayerReborn"] },
+    { "name": "qt-windows-release", "configurePreset": "qt-windows-release", "targets": ["TTPlayerReborn"] },
+    { "name": "qt-windows-profile", "configurePreset": "qt-windows-profile", "targets": ["TTPlayerReborn"] },
+    { "name": "ttcore-linux-debug", "configurePreset": "ttcore-linux-debug", "targets": ["ttcore", "ttcore_probe"] },
+    { "name": "ttcore-linux-release", "configurePreset": "ttcore-linux-release", "targets": ["ttcore", "ttcore_probe"] },
+    { "name": "ttcore-linux-profile", "configurePreset": "ttcore-linux-profile", "targets": ["ttcore", "ttcore_probe"] },
+    { "name": "qt-linux-debug", "configurePreset": "qt-linux-debug", "targets": ["TTPlayerReborn"] },
+    { "name": "qt-linux-release", "configurePreset": "qt-linux-release", "targets": ["TTPlayerReborn"] },
+    { "name": "qt-linux-profile", "configurePreset": "qt-linux-profile", "targets": ["TTPlayerReborn"] }
   ]
 }

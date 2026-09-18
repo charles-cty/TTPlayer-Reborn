@@ -108,6 +108,9 @@ FPCBIN="$(resolve_fpc)"
 LAZDIR="$(resolve_lazdir)"
 LAZBUILD_BIN="$(resolve_lazbuild)"
 export PATH="$(dirname "$FPCBIN"):$PATH"
+config_lc="$(printf '%s' "$CONFIG" | tr '[:upper:]' '[:lower:]')"
+runtime="$ROOT/build/linux/pascal/$config_lc"
+mkdir -p "$runtime"
 
 if [[ ! -x "$FPCBIN" ]]; then
   echo "找不到 fpc：$FPCBIN（设置 FPC）" >&2
@@ -124,13 +127,6 @@ fi
 
 echo "[build-pascal-linux] fpc=$FPCBIN  lazbuild=$LAZBUILD_BIN  lazarusdir=$LAZDIR"
 LAZBUILD=("$LAZBUILD_BIN" --lazarusdir="$LAZDIR")
-mkdir -p "$PASCAL/bin"
-for proj in ttdump tests skinpreview ttplayer; do
-  mkdir -p "$PASCAL/lib/${proj}/Debug/x86_64-linux" \
-    "$PASCAL/lib/${proj}/Release/x86_64-linux" \
-    "$PASCAL/lib/${proj}/Profile/x86_64-linux" \
-    "$PASCAL/lib/${proj}_heaptrc/x86_64-linux"
-done
 
 echo "[build-pascal-linux] 注册 BGRABitmap 包"
 "${LAZBUILD[@]}" --add-package-link "$PASCAL/vendor/bgrabitmap/bgrabitmap/bgrabitmappack4nolcl.lpk"
@@ -153,12 +149,15 @@ for proj in "${projects[@]}"; do
   case "$proj" in
     skinpreview|ttplayer) extra+=(--ws="$WS") ;;
   esac
+  objdir="$ROOT/build/linux/pascal/obj/$proj/$config_lc/x86_64-linux"
+  mkdir -p "$objdir"
+  extra+=(--opt="-FE$runtime" --opt="-FU$objdir")
   echo "[build-pascal-linux] $CONFIG 构建 $proj ${extra[*]}"
   "${LAZBUILD[@]}" "${extra[@]}" "$lpi"
 done
 
 echo "[build-pascal-linux] 完成 ($CONFIG)"
 if [[ "$CONFIG" == "HeapTrc" ]]; then
-  echo "[build-pascal-linux] HeapTrc 产物：pascal/bin/*_heaptrc ；报告默认写到同名 .heaptrc"
+  echo "[build-pascal-linux] HeapTrc 产物：build/linux/pascal/heaptrc/*_heaptrc；报告默认写到同名 .heaptrc"
   echo "[build-pascal-linux] HEAPTRACEFILE=... HEAPTRC_KEEP_RELEASED=1 可覆盖"
 fi

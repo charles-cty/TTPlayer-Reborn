@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    用 MSYS2 MinGW64 + Ninja 只编 ttcore.dll（BUILD_QT_APP=OFF），并复制到 pascal\bin。
+    用 MSYS2 MinGW64 + Ninja 只编 ttcore.dll（BUILD_QT_APP=OFF），并部署到独立 Pascal 构建目录。
     FFmpeg 与 MinGW CRT 静态打进 DLL；SDL2.dll 复制到同一目录。
     路径来自环境变量或 PATH，不写死 C:\msys64：
 
@@ -26,7 +26,7 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $RepoRoot
 . (Join-Path $PSScriptRoot 'Cv2pdb.ps1')
 
-$ffmpegLib = Join-Path $RepoRoot 'build-ffmpeg-mingw64\prefix\lib\libavcodec.a'
+$ffmpegLib = Join-Path $RepoRoot 'build\windows\deps\ffmpeg-mingw64\prefix\lib\libavcodec.a'
 if (-not (Test-Path -LiteralPath $ffmpegLib)) {
     Write-Host '[build-ttcore-win] static FFmpeg prefix missing, building it'
     & (Join-Path $PSScriptRoot 'build-ffmpeg-win.ps1')
@@ -49,7 +49,9 @@ if ($Config -ne 'Release') {
     $cv2pdb = Get-Cv2pdbExecutable
 }
 
-$BuildDir = Join-Path $RepoRoot "build\Windows\ttcore-$($Config.ToLowerInvariant())"
+$configDir = $Config.ToLowerInvariant()
+$BuildDir = Join-Path $RepoRoot "build\windows\ttcore\$configDir"
+$PascalRuntimeDir = Join-Path $RepoRoot "build\windows\pascal\$configDir"
 $cmakeArgs = @(
     '-S', $RepoRoot,
     '-B', $BuildDir,
@@ -69,23 +71,23 @@ Write-Host "[build-ttcore-win] cmake --build ttcore ttcore_probe ($Config)"
 & cmake.exe --build $BuildDir --target ttcore ttcore_probe
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed: $LASTEXITCODE" }
 
-$dll = Join-Path $RepoRoot 'pascal\bin\ttcore.dll'
-if (-not (Test-Path -LiteralPath $dll)) {
-    throw "未生成 $dll"
-}
+$dll = Join-Path $BuildDir 'ttcore.dll'
+if (-not (Test-Path -LiteralPath $dll)) { throw "未生成 $dll" }
+New-Item -ItemType Directory -Force -Path $PascalRuntimeDir | Out-Null
+Copy-Item -LiteralPath $dll -Destination $PascalRuntimeDir -Force
+Copy-Item -LiteralPath (Join-Path $BuildDir 'ttcore_probe.exe') -Destination $PascalRuntimeDir -Force
 Write-Host "[build-ttcore-win] $dll ($((Get-Item -LiteralPath $dll).Length) bytes)"
-$sdl2 = Join-Path $RepoRoot 'pascal\bin\SDL2.dll'
-if (Test-Path -LiteralPath $sdl2) {
-    Write-Host "[build-ttcore-win] $sdl2 ($((Get-Item -LiteralPath $sdl2).Length) bytes)"
-} else {
-    throw "未复制 $sdl2"
-}
+$sdl2 = Join-Path $BuildDir 'SDL2.dll'
+if (-not (Test-Path -LiteralPath $sdl2)) { throw "未生成 $sdl2" }
+Copy-Item -LiteralPath $sdl2 -Destination $PascalRuntimeDir -Force
+Write-Host "[build-ttcore-win] runtime deployed to $PascalRuntimeDir"
 
 if ($Config -ne 'Release') {
-    $pdb = Join-Path $RepoRoot 'pascal\bin\ttcore.pdb'
+    $pdb = Join-Path $BuildDir 'ttcore.pdb'
     if (-not (Test-Path -LiteralPath $pdb)) {
         throw "未生成 $pdb（cv2pdb）"
     }
+    Copy-Item -LiteralPath $pdb -Destination $PascalRuntimeDir -Force
     Write-Host "[build-ttcore-win] $pdb ($((Get-Item -LiteralPath $pdb).Length) bytes)"
 }
 

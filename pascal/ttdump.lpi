@@ -19,13 +19,18 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="bin/ttdump"/>
+            <Filename Value="../build/$(BuildPlatform)/pascal/release/ttdump"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
             <OtherUnitFiles Value="src/skin;src/backend;src/debug"/>
-            <UnitOutputDirectory Value="lib/ttdump/Release/$(TargetCPU)-$(TargetOS)"/>
+            <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/ttdump/release/$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
+          <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+          <BuildMacros>
+            <Count Value="1"/>
+            <Item1><Identifier Value="BuildPlatform"/></Item1>
+          </BuildMacros>
           <CodeGeneration>
             <Optimizations>
               <OptimizationLevel Value="2"/>
@@ -44,13 +49,18 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="bin/ttdump"/>
+            <Filename Value="../build/$(BuildPlatform)/pascal/profile/ttdump"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
             <OtherUnitFiles Value="src/skin;src/backend;src/debug"/>
-            <UnitOutputDirectory Value="lib/ttdump/Profile/$(TargetCPU)-$(TargetOS)"/>
+            <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/ttdump/profile/$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
+          <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+          <BuildMacros>
+            <Count Value="1"/>
+            <Item1><Identifier Value="BuildPlatform"/></Item1>
+          </BuildMacros>
           <CodeGeneration>
             <Optimizations>
               <OptimizationLevel Value="2"/>
@@ -69,13 +79,18 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="bin/ttdump_heaptrc"/>
+            <Filename Value="../build/$(BuildPlatform)/pascal/heaptrc/ttdump_heaptrc"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
             <OtherUnitFiles Value="src/skin;src/backend;src/debug"/>
-            <UnitOutputDirectory Value="lib/ttdump_heaptrc/$(TargetCPU)-$(TargetOS)"/>
+            <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/ttdump/heaptrc/$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
+          <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+          <BuildMacros>
+            <Count Value="1"/>
+            <Item1><Identifier Value="BuildPlatform"/></Item1>
+          </BuildMacros>
           <CodeGeneration>
             <Checks>
               <IOChecks Value="True"/>
@@ -126,13 +141,20 @@
   <CompilerOptions>
     <Version Value="11"/>
     <Target>
-      <Filename Value="bin/ttdump"/>
+      <Filename Value="../build/$(BuildPlatform)/pascal/debug/ttdump"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
       <OtherUnitFiles Value="src/skin;src/backend;src/debug"/>
-      <UnitOutputDirectory Value="lib/ttdump/Debug/$(TargetCPU)-$(TargetOS)"/>
+      <UnitOutputDirectory Value="../build/$(BuildPlatform)/pascal/obj/ttdump/debug/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
+    <Conditionals Value="if (TargetOS=&apos;win32&apos;) or (TargetOS=&apos;win64&apos;) then&#10;  BuildPlatform := &apos;windows&apos;&#10;else&#10;  BuildPlatform := TargetOS;"/>
+    <BuildMacros>
+      <Count Value="1"/>
+      <Item1>
+        <Identifier Value="BuildPlatform"/>
+      </Item1>
+    </BuildMacros>
     <Parsing>
       <SyntaxOptions>
         <IncludeAssertionCode Value="True"/>

@@ -172,19 +172,26 @@ end;
 
 function FindSkinDirectory(const ExeDirectory: string): string;
 var
-  exe, nextToExe, twoUp: string;
+  exe, nextToExe, currentDir, candidate, parentDir: string;
 begin
   exe := Trim(ExeDirectory);
   if exe = '' then
     exe := ExtractFilePath(ParamStr(0));
   exe := IncludeTrailingPathDelimiter(ExpandFileName(exe));
   nextToExe := ExcludeTrailingPathDelimiter(exe + 'Skin');
-  twoUp := ExcludeTrailingPathDelimiter(
-    ExpandFileName(exe + '..' + PathDelim + '..' + PathDelim + 'Skin'));
   if DirectoryExists(nextToExe) then
     Exit(nextToExe);
-  if DirectoryExists(twoUp) then
-    Exit(twoUp);
+  currentDir := ExcludeTrailingPathDelimiter(exe);
+  while currentDir <> '' do
+  begin
+    candidate := currentDir + PathDelim + 'Skin';
+    if DirectoryExists(candidate) then
+      Exit(candidate);
+    parentDir := ExcludeTrailingPathDelimiter(
+      ExpandFileName(currentDir + PathDelim + '..'));
+    if parentDir = currentDir then Break;
+    currentDir := parentDir;
+  end;
   Result := nextToExe;
 end;
 

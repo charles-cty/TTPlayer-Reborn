@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-    用 MSYS2 MinGW64 编一份音频-only 静态 FFmpeg，安装到 build-ffmpeg-mingw64\prefix。
+    用 MSYS2 MinGW64 编一份音频-only 静态 FFmpeg，安装到
+    build\windows\deps\ffmpeg-mingw64\prefix。
     不启用 GPL、不拉 x264/gnutls 等外部库。产物给 ttcore.dll 静态链接。
 #>
 Set-StrictMode -Version 3.0
@@ -30,7 +31,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "build-ffmpeg-win.sh failed with exit $LASTEXITCODE"
 }
 
-$lib = Join-Path $RepoRoot 'build-ffmpeg-mingw64\prefix\lib\libavcodec.a'
+$lib = Join-Path $RepoRoot 'build\windows\deps\ffmpeg-mingw64\prefix\lib\libavcodec.a'
 if (-not (Test-Path -LiteralPath $lib)) {
     throw "未生成 $lib"
 }

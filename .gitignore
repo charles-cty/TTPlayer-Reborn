@@ -1,7 +1,5 @@
 # ---- 构建产物 ----
-build/
-build*/
-build-*/
+/build/
 out/
 */build/
 *.pdb
@@ -41,14 +39,9 @@ __pycache__/
 *.log
 
 # ---- Lazarus / FPC 构建产物 ----
-pascal/bin/
-pascal/lib/
 pascal/*.compiled
 pascal/*.res
 pascal/probe.lpi
 pascal/probe.lpr
 pascal/probebmp.lpi
 pascal/probebmp.lpr
-
-# ---- 测试临时产物（本地，不入库）----
-tests/artifacts/

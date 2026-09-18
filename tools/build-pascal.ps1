@@ -12,11 +12,12 @@
 .PARAMETER Config
     Debug / Release / Profile / HeapTrc（默认 Debug）。
     Profile = Release 优化 + DWARF。Debug 与 Profile 在 Windows 上跑 cv2pdb 生成 PDB。
+    Profile 还会构建 Tracy shim，并把 DLL 与 PDB 部署到产物目录。
 
 .PARAMETER HeapTrace
     等同于 -Config HeapTrc（保留旧开关）。
     HeapTrc：lazbuild --bm=HeapTrc，-gh + -gl + -dENABLE_HEAPTRC，
-    输出到 bin\<proj>_heaptrc.exe。
+    输出到 build\windows\pascal\heaptrc\<proj>_heaptrc.exe。
     Windows 上 C++/CRT 堆（ttcore.dll）另需 tools/pageheap.ps1。
 #>
 [CmdletBinding()]
@@ -33,6 +34,7 @@ if ($HeapTrace) { $Config = 'HeapTrc' }
 
 $RepoRoot  = Split-Path -Parent $PSScriptRoot
 $PascalDir = Join-Path $RepoRoot 'pascal'
+$PascalBuildRoot = Join-Path $RepoRoot 'build\windows\pascal'
 . (Join-Path $PSScriptRoot 'WinToolchain.ps1')
 . (Join-Path $PSScriptRoot 'Cv2pdb.ps1')
 
@@ -56,32 +58,76 @@ foreach ($pkg in $Packages) {
 # 工程列表（按依赖顺序）
 $Projects = @('ttdump', 'skinpreview', 'tests', 'ttplayer')
 if ($Project) { $Projects = @($Project) }
+$configDir = $Config.ToLowerInvariant()
+$runtimeDir = Join-Path $PascalBuildRoot $configDir
+New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 
 foreach ($proj in $Projects) {
     $lpi = Join-Path $PascalDir "$proj.lpi"
     if (-not (Test-Path $lpi)) { throw "找不到工程：$lpi" }
 
-    $outDir = Join-Path $PascalDir "lib\$proj"
-    if ($Config -eq 'HeapTrc') {
-        $outDir = Join-Path $PascalDir "lib\${proj}_heaptrc"
-    } else {
-        $outDir = Join-Path $PascalDir "lib\$proj\$Config"
-    }
-    if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir | Out-Null }
+    $outDir = Join-Path $PascalBuildRoot "obj\$proj\$configDir\x86_64-win64"
+    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 
     Write-Host "[build-pascal] $Config 构建工程：$proj (--bm=$Config)" -ForegroundColor Cyan
-    & $LazBuild --lazarusdir=$LazDir --bm=$Config $lpi
+    $lazArgs = @(
+        "--lazarusdir=$LazDir",
+        "--bm=$Config",
+        "--opt=-FE$runtimeDir",
+        "--opt=-FU$outDir",
+        $lpi
+    )
+    & $LazBuild @lazArgs
     if ($LASTEXITCODE -ne 0) { throw "工程构建失败：$proj" }
 
     if ($Config -in @('Debug', 'Profile')) {
         $exeName = if ($Config -eq 'HeapTrc') { "${proj}_heaptrc.exe" } else { "$proj.exe" }
-        $exe = Join-Path $PascalDir "bin\$exeName"
+        $exe = Join-Path $runtimeDir $exeName
         Convert-DwarfToPdb -Binary $exe
+    }
+}
+
+if ($Config -eq 'Profile') {
+    $tracyBuildDir = Join-Path $RepoRoot 'build\windows\tracy\profile'
+    $tracyDllCandidates = @(
+        (Join-Path $tracyBuildDir 'tools\tracyshim\Profile\tttracy.dll'),
+        (Join-Path $tracyBuildDir 'tools\tracyshim\tttracy.dll')
+    )
+    $tracyDll = $tracyDllCandidates |
+        Where-Object { Test-Path -LiteralPath $_ } |
+        Select-Object -First 1
+    $tracyBindings = @(
+        Get-ChildItem -LiteralPath (Join-Path $tracyBuildDir 'python') -Filter 'TracyServerBindings*.pyd' -File -ErrorAction SilentlyContinue
+    )
+
+    if ((-not $tracyDll) -or $tracyBindings.Count -ne 1) {
+        & (Join-Path $PSScriptRoot 'build-tracy-win.ps1')
+        if ($LASTEXITCODE -ne 0) { throw "Tracy 构建失败：$LASTEXITCODE" }
+        $tracyDll = $tracyDllCandidates |
+            Where-Object { Test-Path -LiteralPath $_ } |
+            Select-Object -First 1
+        $tracyBindings = @(
+            Get-ChildItem -LiteralPath (Join-Path $tracyBuildDir 'python') -Filter 'TracyServerBindings*.pyd' -File -ErrorAction SilentlyContinue
+        )
+    }
+    if (-not $tracyDll) {
+        throw "Profile 需要 Tracy DLL，但构建后仍未在 $tracyBuildDir 中找到。"
+    }
+    if ($tracyBindings.Count -ne 1) {
+        throw "Profile 需要一个 TracyServerBindings*.pyd，构建后实际找到 $($tracyBindings.Count) 个。"
+    }
+
+    Copy-Item -LiteralPath $tracyDll -Destination $runtimeDir -Force
+    Write-Host "[build-pascal] Tracy DLL 已部署到 $runtimeDir" -ForegroundColor Cyan
+
+    $tracyPdb = Join-Path (Split-Path -Parent $tracyDll) 'tttracy.pdb'
+    if (Test-Path -LiteralPath $tracyPdb) {
+        Copy-Item -LiteralPath $tracyPdb -Destination $runtimeDir -Force
     }
 }
 
 Write-Host "[build-pascal] 全部构建完成 ($Config)" -ForegroundColor Green
 if ($Config -eq 'HeapTrc') {
-    Write-Host '[build-pascal] HeapTrc 产物：pascal\bin\*_heaptrc.exe ；报告默认写到同名 .heaptrc' -ForegroundColor Yellow
-    Write-Host '[build-pascal] Windows C++ 堆请再开：pwsh tools\pageheap.ps1 -Action Enable tests_heaptrc.exe' -ForegroundColor Yellow
+    Write-Host '[build-pascal] HeapTrc 产物：build\windows\pascal\heaptrc\*_heaptrc.exe ；报告默认写到同名 .heaptrc' -ForegroundColor Yellow
+    Write-Host '[build-pascal] Windows C++ 堆请再开：pwsh tools\pageheap.ps1 -Action Enable build\windows\pascal\heaptrc\tests_heaptrc.exe' -ForegroundColor Yellow
 }

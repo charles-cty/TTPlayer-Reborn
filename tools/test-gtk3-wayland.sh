@@ -11,9 +11,9 @@ export NO_AT_BRIDGE=1
 export GDK_BACKEND=x11
 export GTK_CSD=0
 
-TESTS="$ROOT/pascal/bin/tests"
-PREVIEW="$ROOT/pascal/bin/skinpreview"
-OUTDIR="$ROOT/tests/artifacts/gtk3"
+TESTS="$ROOT/build/linux/pascal/debug/tests"
+PREVIEW="$ROOT/build/linux/pascal/debug/skinpreview"
+OUTDIR="$ROOT/build/linux/tests/artifacts/gtk3"
 mkdir -p "$OUTDIR"
 
 if [[ -z "${DISPLAY:-}" ]]; then

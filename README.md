@@ -199,7 +199,7 @@ bash tools/test-gtk3-wayland.sh
 
 **Windows（PowerShell）**
 
-FFmpeg 不走 pacman 共享包：从 `third_party/ffmpeg`（shallow submodule，pin n8.1.2）编音频-only 静态库，再打进 `ttcore.dll`。CMake 把 `SDL2.dll` 复制到 `pascal\bin`。
+FFmpeg 不走 pacman 共享包：从 `third_party/ffmpeg`（shallow submodule，pin n8.1.2）编音频-only 静态库，再打进 `ttcore.dll`。所有产物统一放在 `build/<platform>/<component>/<config>/`；Windows Pascal 运行时位于 `build/windows/pascal/<config>/`。
 
 ```powershell
 $env:MSYS2_ROOT  = 'X:\path\to\msys64'
@@ -229,11 +229,11 @@ pwsh tools/build-pascal.ps1 -Config Profile
 
 ```bash
 # Linux：先装上一节的发行版包，再装发行版 Qt6 Widgets / QuaZip-Qt6
-cmake --preset debug     # 或 release / profile
-cmake --build --preset debug
+cmake --preset qt-linux-debug     # 或 qt-linux-release / qt-linux-profile
+cmake --build --preset qt-linux-debug
 ```
 
-Windows 同样用 MSYS2 MinGW64（`MSYS2_ROOT`），不要写死安装路径。
+Windows 同样用 MSYS2 MinGW64（`MSYS2_ROOT`），不要写死安装路径；推荐直接运行 `pwsh tools/build-qt-win.ps1 -Config Debug`。
 
 ---
 
