@@ -1871,7 +1871,7 @@ begin
 
   wnd := FSkin^.PlaylistWindow;
   sz := BgSize;
-  EnsureSkinFrame(FFrame, fw, fh);
+  EnsureSkinFrame(FFrame, fw, fh, wnd.BackgroundPixmap = nil);
 
   if wnd.BackgroundPixmap <> nil then
   begin
@@ -1880,7 +1880,7 @@ begin
         FLogicW, FLogicH, True)
     else
     begin
-      EnsureSkinFrame(FNineScratch, FLogicW, FLogicH);
+      EnsureSkinFrame(FNineScratch, FLogicW, FLogicH, False);
       DrawNinePatch(FNineScratch, wnd.BackgroundPixmap, wnd.ResizeRect,
         wnd.ResizeTile, FLogicW, FLogicH, True);
       BlitNearest(FFrame, FNineScratch);

@@ -86,8 +86,10 @@ function NearestResample(Src: TBGRABitmap; DestW, DestH: Integer): TBGRABitmap;
 // 窗口客户区尺寸变了就要按新尺寸九宫格重绘，不能把旧帧当放大镜拉伸。
 function SkinFrameNeedsRebuild(Frame: TBGRABitmap; DestW, DestH: Integer): Boolean;
 
-// 原地改尺寸并清空。同尺寸不重新分配。
-procedure EnsureSkinFrame(var Frame: TBGRABitmap; DestW, DestH: Integer);
+// 原地改尺寸；默认清空。同尺寸不重新分配。若调用者随后完整覆盖背景，
+// 可传 False 跳过整帧清屏。
+procedure EnsureSkinFrame(var Frame: TBGRABitmap; DestW, DestH: Integer;
+  ClearFrame: Boolean = True);
 
 // 右省略：UTF-8 按字符二分，避免逐字 TextSize。装得下则原样返回。
 // MaxW<=0 或 Measure=nil 时返回 S（与旧 ElideRight 一致）。
@@ -281,7 +283,8 @@ begin
     (Frame.Width <> DestW) or (Frame.Height <> DestH);
 end;
 
-procedure EnsureSkinFrame(var Frame: TBGRABitmap; DestW, DestH: Integer);
+procedure EnsureSkinFrame(var Frame: TBGRABitmap; DestW, DestH: Integer;
+  ClearFrame: Boolean);
 begin
   if DestW < 1 then DestW := 1;
   if DestH < 1 then DestH := 1;
@@ -292,7 +295,11 @@ begin
   end;
   if (Frame.Width <> DestW) or (Frame.Height <> DestH) then
     Frame.SetSize(DestW, DestH);
-  Frame.FillRect(0, 0, DestW, DestH, BGRAPixelTransparent, dmSet);
+  // Callers which immediately paint a complete background can skip this
+  // full-frame clear.  It is otherwise redundant and expensive during live
+  // resize; keep the historical clearing behavior by default.
+  if ClearFrame then
+    Frame.FillRect(0, 0, DestW, DestH, BGRAPixelTransparent, dmSet);
 end;
 
 function ElideUtf8Right(const S: string; MaxW: Integer;

@@ -779,9 +779,9 @@ begin
   AssertTrue('不再用精细 ClearType',
     Pos('fqFineClearTypeRGB', viewSrc) = 0);
   AssertTrue('播放列表复用 FFrame',
-    Pos('EnsureSkinFrame(FFrame, fw, fh)', playlistSrc) > 0);
+    Pos('EnsureSkinFrame(FFrame, fw, fh,', playlistSrc) > 0);
   AssertTrue('歌词复用 FFrame',
-    Pos('EnsureSkinFrame(FFrame, fw, fh)', lyricSrc) > 0);
+    Pos('EnsureSkinFrame(FFrame, fw, fh,', lyricSrc) > 0);
   AssertTrue('播放列表 HWND 合帧',
     Pos('FResizeSession.Tick(LiveNowUs)', playlistSrc) > 0);
   AssertTrue('歌词 HWND 合帧',
