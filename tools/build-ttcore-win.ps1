@@ -11,11 +11,17 @@
 .PARAMETER Config
     Debug / Release / Profile（默认 Debug）。
     Profile = Release 优化 + DWARF，Windows 上再经 cv2pdb 生成 PDB。
+
+.PARAMETER DeployConfig
+    可选，将运行时部署到指定的 Pascal 配置目录。默认与 Config 相同。
+    例如 HeapTrc 的 Pascal 产物使用 Debug ttcore，但部署到 heaptrc 目录。
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release', 'Profile')]
-    [string]$Config = 'Debug'
+    [string]$Config = 'Debug',
+    [ValidateSet('', 'Debug', 'Release', 'Profile', 'HeapTrc')]
+    [string]$DeployConfig = ''
 )
 
 Set-StrictMode -Version 3.0
@@ -37,11 +43,13 @@ if ($env:MSYS2_ROOT -or $env:MINGW64_BIN) {
     Add-Mingw64ToPath
 }
 
-foreach ($name in @('cmake.exe', 'ninja.exe', 'pkg-config.exe', 'g++.exe')) {
+$commands = @{}
+foreach ($name in @('cmake.exe', 'ninja.exe', 'pkg-config.exe', 'gcc.exe', 'g++.exe', 'windres.exe')) {
     $c = Get-Command $name -ErrorAction SilentlyContinue
     if (-not $c) {
         throw "找不到 $name。设置 MSYS2_ROOT（或 MINGW64_BIN）或把 MinGW64 bin 加入 PATH。"
     }
+    $commands[$name] = $c
 }
 
 $cv2pdb = $null
@@ -50,12 +58,23 @@ if ($Config -ne 'Release') {
 }
 
 $configDir = $Config.ToLowerInvariant()
+$deployConfigDir = if ($DeployConfig) {
+    $DeployConfig.ToLowerInvariant()
+} else {
+    $configDir
+}
 $BuildDir = Join-Path $RepoRoot "build\windows\ttcore\$configDir"
-$PascalRuntimeDir = Join-Path $RepoRoot "build\windows\pascal\$configDir"
+$PascalRuntimeDir = Join-Path $RepoRoot "build\windows\pascal\$deployConfigDir"
+$gcc = $commands['gcc.exe'].Source.Replace('\', '/')
+$gxx = $commands['g++.exe'].Source.Replace('\', '/')
+$windres = $commands['windres.exe'].Source.Replace('\', '/')
 $cmakeArgs = @(
     '-S', $RepoRoot,
     '-B', $BuildDir,
     '-G', 'Ninja',
+    "-DCMAKE_C_COMPILER=$gcc",
+    "-DCMAKE_CXX_COMPILER=$gxx",
+    "-DCMAKE_RC_COMPILER=$windres",
     '-DBUILD_QT_APP=OFF',
     "-DCMAKE_BUILD_TYPE=$Config",
     '-DTTCORE_STATIC_FFMPEG=ON'

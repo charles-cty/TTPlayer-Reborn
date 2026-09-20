@@ -13,6 +13,8 @@
     Debug / Release / Profile / HeapTrc（默认 Debug）。
     Profile = Release 优化 + DWARF。Debug 与 Profile 在 Windows 上跑 cv2pdb 生成 PDB。
     Profile 还会构建 Tracy shim，并把 DLL 与 PDB 部署到产物目录。
+    tests 和 ttplayer 会自动增量构建 ttcore，并部署 ttcore.dll 与 SDL2.dll。
+    HeapTrc 使用 Debug ttcore 并部署到 HeapTrc 产物目录。
 
 .PARAMETER HeapTrace
     等同于 -Config HeapTrc（保留旧开关）。
@@ -58,6 +60,7 @@ foreach ($pkg in $Packages) {
 # 工程列表（按依赖顺序）
 $Projects = @('ttdump', 'skinpreview', 'tests', 'ttplayer')
 if ($Project) { $Projects = @($Project) }
+$needsTtcore = @($Projects | Where-Object { $_ -in @('tests', 'ttplayer') }).Count -gt 0
 $configDir = $Config.ToLowerInvariant()
 $runtimeDir = Join-Path $PascalBuildRoot $configDir
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
@@ -85,6 +88,13 @@ foreach ($proj in $Projects) {
         $exe = Join-Path $runtimeDir $exeName
         Convert-DwarfToPdb -Binary $exe
     }
+}
+
+if ($needsTtcore) {
+    $ttcoreConfig = if ($Config -eq 'HeapTrc') { 'Debug' } else { $Config }
+    Write-Host "[build-pascal] 增量构建并部署 ttcore ($ttcoreConfig -> $Config)" -ForegroundColor Cyan
+    & (Join-Path $PSScriptRoot 'build-ttcore-win.ps1') -Config $ttcoreConfig -DeployConfig $Config
+    if ($LASTEXITCODE -ne 0) { throw "ttcore 构建失败：$LASTEXITCODE" }
 }
 
 if ($Config -eq 'Profile') {
