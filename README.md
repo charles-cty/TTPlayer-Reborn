@@ -208,13 +208,13 @@ $env:LAZARUS_DIR = 'X:\path\to\lazarus'
 
 git submodule update --init --depth 1
 pwsh tools/build-ffmpeg-win.ps1
-pwsh tools/build-ttcore-win.ps1                 # 默认 Debug
-pwsh tools/build-ttcore-win.ps1 -Config Profile
-pwsh tools/build-pascal.ps1                     # ttdump + tests + skinpreview + ttplayer
+pwsh tools/build-ttcore-win.ps1                 # 可选：单独构建 Debug ttcore
+pwsh tools/build-ttcore-win.ps1 -Config Profile # 可选：单独构建 Profile ttcore
+pwsh tools/build-pascal.ps1                     # 自动增量构建 ttcore，再构建全部 Pascal 工程
 pwsh tools/build-pascal.ps1 -Config Profile
 ```
 
-`tools/build-ttcore-win.ps1` 在静态 FFmpeg 前缀缺失时会自动调用 `build-ffmpeg-win.ps1`。
+`tools/build-pascal.ps1` 在构建 `tests` 或 `ttplayer` 时会调用 `build-ttcore-win.ps1`，并将 `ttcore.dll` 和 `SDL2.dll` 部署到同一产物目录；只构建 `ttdump` 或 `skinpreview` 时不会引入这项依赖。`build-ttcore-win.ps1` 在静态 FFmpeg 前缀缺失时会自动调用 `build-ffmpeg-win.ps1`。
 
 ### 构建 Qt 对照版
 
