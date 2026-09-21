@@ -20,11 +20,14 @@ type
   TSkinImageMap = class
   private
     FNames: TStringList;
+    FQuantizedNames: TStringList;
   public
     constructor Create;
     destructor Destroy; override;
-    procedure Add(const AName: string; ABitmap: TBGRABitmap);
+    procedure Add(const AName: string; ABitmap: TBGRABitmap;
+      AQuantizedColorFormat: Boolean = False);
     function Find(const AName: string): TBGRABitmap;
+    function IsQuantizedColorFormat(const AName: string): Boolean;
     function Count: Integer;
   end;
 
@@ -60,17 +63,24 @@ begin
   FNames.Sorted := True;
   FNames.OwnsObjects := True;
   FNames.Duplicates := dupIgnore;
+  FQuantizedNames := TStringList.Create;
+  FQuantizedNames.Sorted := True;
+  FQuantizedNames.Duplicates := dupIgnore;
 end;
 
 destructor TSkinImageMap.Destroy;
 begin
   FNames.Free;
+  FQuantizedNames.Free;
   inherited Destroy;
 end;
 
-procedure TSkinImageMap.Add(const AName: string; ABitmap: TBGRABitmap);
+procedure TSkinImageMap.Add(const AName: string; ABitmap: TBGRABitmap;
+  AQuantizedColorFormat: Boolean);
 begin
   FNames.AddObject(LowerCase(AName), ABitmap);
+  if AQuantizedColorFormat then
+    FQuantizedNames.Add(LowerCase(AName));
 end;
 
 function TSkinImageMap.Find(const AName: string): TBGRABitmap;
@@ -81,6 +91,13 @@ begin
     Result := TBGRABitmap(FNames.Objects[idx])
   else
     Result := nil;
+end;
+
+function TSkinImageMap.IsQuantizedColorFormat(const AName: string): Boolean;
+var
+  idx: Integer;
+begin
+  Result := FQuantizedNames.Find(LowerCase(AName), idx);
 end;
 
 function TSkinImageMap.Count: Integer;
@@ -377,9 +394,8 @@ function LoadAndProcess(Images: TSkinImageMap; const AName: string;
   const TransColor: TSkinColor): TBGRABitmap;
 var
   src: TBGRABitmap;
-  x, y, exactKeys, quantizedKeys: Integer;
+  x, y: Integer;
   p: PBGRAPixel;
-  allowQuantizedKey: Boolean;
 
   function IsEndpointKeyMatch(const Pixel: TBGRAPixel): Boolean;
   const
@@ -398,25 +414,6 @@ begin
   if src = nil then Exit;
 
   Result := src.Duplicate;
-  exactKeys := 0;
-  quantizedKeys := 0;
-  for y := 0 to Result.Height - 1 do
-  begin
-    p := Result.ScanLine[y];
-    for x := 0 to Result.Width - 1 do
-    begin
-      if (p^.red = TransColor.R) and (p^.green = TransColor.G) and
-         (p^.blue = TransColor.B) then
-        Inc(exactKeys)
-      else if (TransColor.R in [0, 255]) and (TransColor.G in [0, 255]) and
-              (TransColor.B in [0, 255]) and IsEndpointKeyMatch(p^) then
-        Inc(quantizedKeys);
-      Inc(p);
-    end;
-  end;
-  // Exact color keys remain exact.  Use the quantized form only when it is a
-  // repeated image key (not an isolated near-magenta artwork pixel).
-  allowQuantizedKey := (exactKeys = 0) and (quantizedKeys >= 16);
   for y := 0 to Result.Height - 1 do
   begin
     p := Result.ScanLine[y];
@@ -425,7 +422,11 @@ begin
       if (p^.red = TransColor.R) and (p^.green = TransColor.G) and
          (p^.blue = TransColor.B) then
         p^ := BGRAPixelTransparent;  // 完全透明（0,0,0,0）
-      if allowQuantizedKey and IsEndpointKeyMatch(p^) then
+      // Match Qt's RGB16 -> ARGB32 color-key semantics.  BGRABitmap exposes
+      // a 5/6-bit endpoint as 248/252, while Qt expands it back to 255.
+      if Images.IsQuantizedColorFormat(AName) and
+         (TransColor.R in [0, 255]) and (TransColor.G in [0, 255]) and
+         (TransColor.B in [0, 255]) and IsEndpointKeyMatch(p^) then
         p^ := BGRAPixelTransparent;
       Inc(p);
     end;

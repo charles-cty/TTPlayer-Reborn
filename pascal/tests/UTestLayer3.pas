@@ -123,17 +123,18 @@ begin
   InitSkinData(skin);
   try
     // Darkstar's 16-bit BMP #ff00ff pixels are decoded by BGRABitmap as
-    // #f800f8.  A repeated endpoint color is still the declared color key.
-    source := TBGRABitmap.Create(5, 5, BGRA(248, 0, 248, 255));
-    source.SetPixel(2, 2, BGRA(24, 32, 40, 255));
-    images.Add('bg.bmp', source);
+    // #f800f8.  Qt treats that RGB16 endpoint as the declared #ff00ff key,
+    // even when the image contains only a few key pixels.
+    source := TBGRABitmap.Create(2, 2, BGRA(248, 0, 248, 255));
+    source.SetPixel(1, 1, BGRA(24, 32, 40, 255));
+    images.Add('bg.bmp', source, True);
     AssertTrue(ParseSkinXml(Xml, images, TSkinColor.Make(255, 0, 255), skin));
     background := skin.PlayerWindow.BackgroundPixmap;
     AssertTrue(background <> nil);
     AssertEquals('quantized magenta key', 0,
       Integer(background.GetPixel(0, 0).alpha));
     AssertEquals('non-key artwork remains opaque', 255,
-      Integer(background.GetPixel(2, 2).alpha));
+      Integer(background.GetPixel(1, 1).alpha));
   finally
     FreeSkinData(skin);
     images.Free;

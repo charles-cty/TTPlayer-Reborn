@@ -48,6 +48,30 @@ uses
   StrUtils, Character, LazUTF8, LConvEncoding, Zipper, FileUtil, LazFileUtils,
   BGRABitmap, FPImage, BGRAReadBMP, BGRAReadPng, BGRAReadJpeg;
 
+function IsBmpQuantizedColorFormat(const FilePath: string): Boolean;
+var
+  stream: TFileStream;
+  signature: array[0..1] of Byte;
+  dibSize: LongWord;
+  bitsPerPixel: Word;
+begin
+  Result := False;
+  stream := TFileStream.Create(FilePath, fmOpenRead or fmShareDenyNone);
+  try
+    if stream.Size < 30 then Exit;
+    stream.ReadBuffer(signature, SizeOf(signature));
+    if (signature[0] <> Ord('B')) or (signature[1] <> Ord('M')) then Exit;
+    stream.Position := 14;
+    stream.ReadBuffer(dibSize, SizeOf(dibSize));
+    if (dibSize < 40) or (stream.Size < 30) then Exit;
+    stream.Position := 28;
+    stream.ReadBuffer(bitsPerPixel, SizeOf(bitsPerPixel));
+    Result := bitsPerPixel = 16;
+  finally
+    stream.Free;
+  end;
+end;
+
 { XML 清洗：对应 SkinEngine.cpp 匿名命名空间的 sanitize 系列函数 }
 
 function IsXmlNameStart(C: WideChar): Boolean;
@@ -582,7 +606,9 @@ begin
             end
             else
               bmp := TBGRABitmap.Create(DirPath + PathDelim + rec.Name);
-            Images.Add(rec.Name, bmp);
+            Images.Add(rec.Name, bmp,
+              (ext = '.bmp') and IsBmpQuantizedColorFormat(
+                DirPath + PathDelim + rec.Name));
           except
             // 与 Qt 版一致：加载失败的图片静默跳过
           end;
