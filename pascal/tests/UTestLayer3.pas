@@ -7,7 +7,8 @@ unit UTestLayer3;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry, USkinTypes, USkinXmlParser;
+  Classes, SysUtils, fpcunit, testregistry, BGRABitmap, BGRABitmapTypes,
+  USkinTypes, USkinXmlParser;
 
 type
   TParserLogicTest = class(TTestCase)
@@ -16,6 +17,7 @@ type
     procedure TestParseColor;
     procedure TestParseLogFont;
     procedure TestParseBool;
+    procedure TestQuantizedEndpointColorKey;
   end;
 
 implementation
@@ -106,6 +108,36 @@ begin
   AssertFalse(ParseBoolAttr('0'));
   AssertFalse(ParseBoolAttr('no'));
   AssertFalse(ParseBoolAttr(''));
+end;
+
+procedure TParserLogicTest.TestQuantizedEndpointColorKey;
+const
+  Xml = '<skin version="2" name="16-bit" transparent_color="#ff00ff">' +
+    '<player_window image="bg.bmp"/></skin>';
+var
+  images: TSkinImageMap;
+  skin: TSkinData;
+  source, background: TBGRABitmap;
+begin
+  images := TSkinImageMap.Create;
+  InitSkinData(skin);
+  try
+    // Darkstar's 16-bit BMP #ff00ff pixels are decoded by BGRABitmap as
+    // #f800f8.  A repeated endpoint color is still the declared color key.
+    source := TBGRABitmap.Create(5, 5, BGRA(248, 0, 248, 255));
+    source.SetPixel(2, 2, BGRA(24, 32, 40, 255));
+    images.Add('bg.bmp', source);
+    AssertTrue(ParseSkinXml(Xml, images, TSkinColor.Make(255, 0, 255), skin));
+    background := skin.PlayerWindow.BackgroundPixmap;
+    AssertTrue(background <> nil);
+    AssertEquals('quantized magenta key', 0,
+      Integer(background.GetPixel(0, 0).alpha));
+    AssertEquals('non-key artwork remains opaque', 255,
+      Integer(background.GetPixel(2, 2).alpha));
+  finally
+    FreeSkinData(skin);
+    images.Free;
+  end;
 end;
 
 initialization

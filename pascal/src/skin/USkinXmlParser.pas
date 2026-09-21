@@ -377,8 +377,20 @@ function LoadAndProcess(Images: TSkinImageMap; const AName: string;
   const TransColor: TSkinColor): TBGRABitmap;
 var
   src: TBGRABitmap;
-  x, y: Integer;
+  x, y, exactKeys, quantizedKeys: Integer;
   p: PBGRAPixel;
+  allowQuantizedKey: Boolean;
+
+  function IsEndpointKeyMatch(const Pixel: TBGRAPixel): Boolean;
+  const
+    // BGRABitmap keeps 5/6-bit BMP endpoint channels at 248/252, while the
+    // XML color key is expressed as 8-bit #rrggbb (usually #ff00ff).
+    EndpointTolerance = 8;
+  begin
+    Result := (Abs(Integer(Pixel.red) - TransColor.R) <= EndpointTolerance) and
+      (Abs(Integer(Pixel.green) - TransColor.G) <= EndpointTolerance) and
+      (Abs(Integer(Pixel.blue) - TransColor.B) <= EndpointTolerance);
+  end;
 begin
   Result := nil;
   if AName = '' then Exit;
@@ -386,6 +398,25 @@ begin
   if src = nil then Exit;
 
   Result := src.Duplicate;
+  exactKeys := 0;
+  quantizedKeys := 0;
+  for y := 0 to Result.Height - 1 do
+  begin
+    p := Result.ScanLine[y];
+    for x := 0 to Result.Width - 1 do
+    begin
+      if (p^.red = TransColor.R) and (p^.green = TransColor.G) and
+         (p^.blue = TransColor.B) then
+        Inc(exactKeys)
+      else if (TransColor.R in [0, 255]) and (TransColor.G in [0, 255]) and
+              (TransColor.B in [0, 255]) and IsEndpointKeyMatch(p^) then
+        Inc(quantizedKeys);
+      Inc(p);
+    end;
+  end;
+  // Exact color keys remain exact.  Use the quantized form only when it is a
+  // repeated image key (not an isolated near-magenta artwork pixel).
+  allowQuantizedKey := (exactKeys = 0) and (quantizedKeys >= 16);
   for y := 0 to Result.Height - 1 do
   begin
     p := Result.ScanLine[y];
@@ -394,6 +425,8 @@ begin
       if (p^.red = TransColor.R) and (p^.green = TransColor.G) and
          (p^.blue = TransColor.B) then
         p^ := BGRAPixelTransparent;  // 完全透明（0,0,0,0）
+      if allowQuantizedKey and IsEndpointKeyMatch(p^) then
+        p^ := BGRAPixelTransparent;
       Inc(p);
     end;
   end;
