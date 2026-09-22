@@ -42,9 +42,22 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $failed = @()
 # Do not prepend MSYS2: ttcore.dll must load with only SDL2.dll beside it.
 
+$defaultSkinDir = Join-Path $RepoRoot 'Skin'
+if (-not $env:TTPLAYER_SKIN_DIR) {
+    $env:TTPLAYER_SKIN_DIR = $defaultSkinDir
+}
+Write-Host "[test-all] 皮肤目录：$($env:TTPLAYER_SKIN_DIR)" -ForegroundColor DarkGray
+
 $goldenRoot = Join-Path $RepoRoot 'build\windows\tests\golden'
+$goldenIndex = Join-Path $goldenRoot 'skin-index.json'
+$skinCountMismatch = $false
+if (Test-Path -LiteralPath $goldenIndex) {
+    try {
+        $skinCountMismatch = @((Get-Content -LiteralPath $goldenIndex -Raw -Encoding UTF8 | ConvertFrom-Json)).Count -ne @(Get-ChildItem -LiteralPath $env:TTPLAYER_SKIN_DIR -Filter '*.skn' -File).Count
+    } catch { $skinCountMismatch = $true }
+} else { $skinCountMismatch = $true }
 if ((-not $SkipLayer1 -or -not $SkipFPCUnit) -and
-    -not (Test-Path (Join-Path $goldenRoot '.complete'))) {
+    ((-not (Test-Path (Join-Path $goldenRoot '.complete'))) -or $skinCountMismatch)) {
     Write-Host '[test-all] Qt golden 缓存不存在，正在生成...' -ForegroundColor Cyan
     & (Join-Path $PSScriptRoot 'gen-golden.ps1')
     if ($LASTEXITCODE -ne 0) { throw "Qt golden 生成失败（退出码 $LASTEXITCODE）" }

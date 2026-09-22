@@ -24,6 +24,7 @@ uses
 type
   TSnapshotTest = class(TTestCase)
   private
+    FSnapshotFailures: Integer;
     procedure CheckSkinFrames(const SkinName: string);
     procedure CompareFrame(const SkinName, FrameName: string;
       Actual: TBGRABitmap; Masks: TJSONArray);
@@ -36,7 +37,7 @@ type
 implementation
 
 var
-  RepoRoot, GoldenRoot: string;
+  RepoRoot, SkinRoot, GoldenRoot: string;
 
 function FindRepoRoot: string;
 var
@@ -71,6 +72,35 @@ begin
 {$ENDIF}
 end;
 
+function FindSkinRoot: string;
+var
+  configured: string;
+begin
+  configured := GetEnvironmentVariable('TTPLAYER_SKIN_DIR');
+  if (configured <> '') and DirectoryExists(configured) then
+    Exit(IncludeTrailingPathDelimiter(ExpandFileName(configured)));
+  Result := RepoRoot + 'Skin' + PathDelim;
+end;
+
+function GoldenIdForSkin(const SkinFile: string): string;
+var path, content: string; fs: TFileStream; data: TJSONData; i: Integer; item: TJSONObject;
+begin
+  Result := ChangeFileExt(SkinFile, '');
+  path := GoldenRoot + 'skin-index.json';
+  if not FileExists(path) then Exit;
+  fs := TFileStream.Create(path, fmOpenRead or fmShareDenyWrite);
+  try SetLength(content, fs.Size); if fs.Size > 0 then fs.ReadBuffer(content[1], fs.Size); finally fs.Free; end;
+  data := GetJSON(content);
+  try
+    if data is TJSONArray then
+      for i := 0 to TJSONArray(data).Count - 1 do
+      begin
+        item := TJSONObject(TJSONArray(data).Items[i]);
+        if item.Get('file', '') = SkinFile then begin Result := item.Get('id', Result); Exit; end;
+      end;
+  finally data.Free; end;
+end;
+
 // 加载 masks.json 中指定 section（'player'/'equalizer'）的矩形列表。
 function LoadMaskSection(const SkinName, Section: string): TJSONArray;
 var
@@ -80,8 +110,8 @@ var
   obj: TJSONObject;
 begin
   Result := nil;
-  path := GoldenRoot + 'masks' +
-    PathDelim + SkinName + '.json';
+  path := GoldenRoot + 'masks' + PathDelim +
+    GoldenIdForSkin(SkinName + '.skn') + '.json';
   if not FileExists(path) then Exit;
   fs := TFileStream.Create(path, fmOpenRead or fmShareDenyWrite);
   try
@@ -252,7 +282,8 @@ var
   x, y, diffCount, d: Integer;
   pe, pa: PBGRAPixel;
 begin
-  goldenPath := GoldenRoot + 'frames' + PathDelim + SkinName + PathDelim +
+  goldenPath := GoldenRoot + 'frames' + PathDelim +
+    GoldenIdForSkin(SkinName + '.skn') + PathDelim +
     FrameName + '.png';
   if not FileExists(goldenPath) then
   begin
@@ -328,8 +359,12 @@ var
   sknPath: string;
   eqGains: array[0..9] of Double;
 begin
-  sknPath := RepoRoot + 'Skin' + PathDelim + SkinName + '.skn';
+  sknPath := SkinRoot + SkinName + '.skn';
   if not FileExists(sknPath) then Exit;
+  // Qt could not produce a golden for some legacy skins; those are reported
+  // by gen-golden/errors and are not render-comparable here.
+  if not DirectoryExists(GoldenRoot + 'frames' + PathDelim +
+    GoldenIdForSkin(SkinName + '.skn')) then Exit;
 
   engine := TSkinEngine.Create;
   masks := LoadMaskRects(SkinName);
@@ -467,19 +502,29 @@ var
   skinName: string;
 begin
   found := False;
-  if FindFirst(RepoRoot + 'Skin' + PathDelim + '*.skn', faAnyFile, rec) = 0 then
+  if FindFirst(SkinRoot + '*.skn', faAnyFile, rec) = 0 then
   begin
     try
       repeat
         skinName := ChangeFileExt(rec.Name, '');
         found := True;
-        CheckSkinFrames(skinName);
+        try
+          CheckSkinFrames(skinName);
+        except
+          on E: Exception do
+          begin
+            Inc(FSnapshotFailures);
+            WriteLn('[layer2] FAIL ', skinName, ': ', E.Message);
+          end;
+        end;
       until FindNext(rec) <> 0;
     finally
       FindClose(rec);
     end;
   end;
   AssertTrue('Skin 目录下应有 .skn 皮肤', found);
+  if FSnapshotFailures > 0 then
+    Fail(Format('%d 个皮肤存在渲染差异（详见 layer2 日志和 artifacts）', [FSnapshotFailures]));
 end;
 
 function CountPixelDiffs(A, B: TBGRABitmap): Integer;
@@ -518,11 +563,11 @@ var
 begin
   Result := False;
   Engine := nil;
-  if FindFirst(RepoRoot + 'Skin' + PathDelim + '*.skn', faAnyFile, rec) <> 0 then
+  if FindFirst(SkinRoot + '*.skn', faAnyFile, rec) <> 0 then
     Exit;
   try
     repeat
-      sknPath := RepoRoot + 'Skin' + PathDelim + rec.Name;
+      sknPath := SkinRoot + rec.Name;
       Engine := TSkinEngine.Create;
       if Engine.LoadFromFile(sknPath) then
       begin
@@ -593,6 +638,7 @@ end;
 
 initialization
   RepoRoot := FindRepoRoot;
+  SkinRoot := FindSkinRoot;
   GoldenRoot := FindGoldenRoot;
   RegisterTest(TSnapshotTest);
 

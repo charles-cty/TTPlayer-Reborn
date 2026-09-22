@@ -11,6 +11,7 @@
 param(
     # 只测指定皮肤名（不含扩展名），缺省全部。
     [string]$Skin = '',
+    [string]$SkinDir = '',
     [ValidateSet('Debug', 'Release', 'Profile')]
     [string]$Config = 'Debug'
 )
@@ -20,13 +21,17 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot  = Split-Path -Parent $PSScriptRoot
 $configDir = $Config.ToLowerInvariant()
 $TtDump    = Join-Path $RepoRoot "build\windows\pascal\$configDir\ttdump.exe"
-$SkinDir   = Join-Path $RepoRoot 'Skin'
+$defaultSkinDir = Join-Path $RepoRoot 'Skin'
+if (-not $SkinDir) { $SkinDir = $env:TTPLAYER_SKIN_DIR }
+if (-not $SkinDir) { $SkinDir = $defaultSkinDir }
+$SkinDir = [System.IO.Path]::GetFullPath($SkinDir)
+if (-not (Test-Path -LiteralPath $SkinDir -PathType Container)) { throw "找不到皮肤目录：$SkinDir" }
 $GoldenRoot = Join-Path $RepoRoot 'build\windows\tests\golden'
 $GoldenDir = Join-Path $GoldenRoot 'skinjson'
 $OutDir    = Join-Path $RepoRoot 'build\windows\tests\artifacts\layer1'
 
 if (-not (Test-Path $TtDump)) { throw "找不到 ttdump.exe，请先运行 tools\build-pascal.ps1" }
-if (-not (Test-Path (Join-Path $GoldenRoot '.complete'))) {
+if (-not (Test-Path (Join-Path $GoldenRoot 'skin-index.json'))) {
     Write-Host '[layer1] Qt golden 缓存不存在，正在生成...' -ForegroundColor Cyan
     & (Join-Path $PSScriptRoot 'gen-golden.ps1')
     if ($LASTEXITCODE -ne 0) { throw "Qt golden 生成失败（退出码 $LASTEXITCODE）" }
@@ -73,21 +78,29 @@ function Compare-Json($Expected, $Actual, [string]$Path, [ref]$Diffs) {
     }
 }
 
-$goldens = Get-ChildItem -Path $GoldenDir -Filter '*.json' | Sort-Object Name
-if ($Skin) { $goldens = $goldens | Where-Object { $_.BaseName -eq $Skin } }
-if ($goldens.Count -eq 0) { throw '没有可比对的 golden 文件' }
+$indexPath = Join-Path $GoldenRoot 'skin-index.json'
+if (-not (Test-Path -LiteralPath $indexPath)) { throw '缺少 skin-index.json，请重新生成 Qt golden' }
+$entries = @(Get-Content -LiteralPath $indexPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+if ($Skin) { $entries = @($entries | Where-Object { $_.name -eq $Skin -or $_.id -eq $Skin }) }
+if ($entries.Count -eq 0) { throw '没有可比对的 golden 文件' }
 
 $passCount = 0
 $failList = @()
-foreach ($golden in $goldens) {
-    $name = $golden.BaseName
-    $sknPath = Join-Path $SkinDir "$name.skn"
+foreach ($entry in $entries) {
+    $name = [string]$entry.name
+    $id = [string]$entry.id
+    $golden = Join-Path $GoldenDir "$id.json"
+    $sknPath = Join-Path $SkinDir ([string]$entry.file)
+    if (-not (Test-Path -LiteralPath $golden)) {
+        Write-Host "[layer1] SKIP $name（Qt 未生成 golden）" -ForegroundColor Yellow
+        continue
+    }
     if (-not (Test-Path $sknPath)) {
         Write-Host "[layer1] 跳过 $name（找不到 .skn）" -ForegroundColor Yellow
         continue
     }
 
-    $actualPath = Join-Path $OutDir "$name.json"
+    $actualPath = Join-Path $OutDir "$id.json"
     & $TtDump $sknPath $actualPath 2>$null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[layer1] FAIL $name（ttdump 退出码 $LASTEXITCODE）" -ForegroundColor Red
@@ -95,7 +108,7 @@ foreach ($golden in $goldens) {
         continue
     }
 
-    $expected = Get-Content $golden.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+    $expected = Get-Content $golden -Raw -Encoding UTF8 | ConvertFrom-Json
     $actual   = Get-Content $actualPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
     $diffs = @()

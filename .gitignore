@@ -2,6 +2,7 @@
 /build/
 out/
 */build/
+/Skin/
 *.pdb
 tools/.cache/
 
