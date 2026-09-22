@@ -5,6 +5,10 @@
 #include <QByteArray>
 #include <QStringList>
 #include <QTextStream>
+#ifdef Q_OS_WIN
+#  include <windows.h>
+#  include <shellapi.h>
+#endif
 
 namespace {
 
@@ -20,13 +24,32 @@ QString takeOption(QStringList& args, const QString& key) {
     return value;
 }
 
-// 测试辅助模式分发：--dump-skin 导出皮肤解析结果供 differential testing 使用。
-// 返回 -1 表示不是辅助模式，应继续正常启动播放器。
-int runToolMode(int argc, char** argv) {
+// Windows CRT argv is the ANSI code page; PowerShell passes UTF-16 via
+// CreateProcessW.  Decode the real command line so --dump-skin/--dump-frames
+// can open non-ASCII skin paths.
+QStringList toolArguments(int argc, char** argv) {
     QStringList args;
+#ifdef Q_OS_WIN
+    int wargc = 0;
+    wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+    if (wargv) {
+        for (int i = 1; i < wargc; ++i) {
+            args.append(QString::fromWCharArray(wargv[i]));
+        }
+        LocalFree(wargv);
+        return args;
+    }
+#endif
     for (int i = 1; i < argc; ++i) {
         args.append(QString::fromLocal8Bit(argv[i]));
     }
+    return args;
+}
+
+// 测试辅助模式分发：--dump-skin 导出皮肤解析结果供 differential testing 使用。
+// 返回 -1 表示不是辅助模式，应继续正常启动播放器。
+int runToolMode(int argc, char** argv) {
+    QStringList args = toolArguments(argc, argv);
     if (!args.contains(QStringLiteral("--dump-skin")) &&
         !args.contains(QStringLiteral("--dump-frames"))) {
         return -1;

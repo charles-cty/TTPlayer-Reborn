@@ -8,7 +8,8 @@ interface
 
 uses
   Classes, SysUtils, fpcunit, testregistry, BGRABitmap, BGRABitmapTypes,
-  USkinTypes, USkinXmlParser;
+  FileUtil,
+  USkinTypes, USkinXmlParser, USkinLoader, USkinRender;
 
 type
   TParserLogicTest = class(TTestCase)
@@ -18,6 +19,13 @@ type
     procedure TestParseLogFont;
     procedure TestParseBool;
     procedure TestQuantizedEndpointColorKey;
+    procedure TestEmptyLogFontFaceIsSansSerif;
+    procedure TestNestedMiniWindowKeepsBackground;
+    procedure TestRgb555SpriteSplit;
+    procedure TestPngNamedAsBmpFill;
+    procedure TestPlaylistBlendUsesQtRound;
+    procedure TestEqualizerDefaultSizeWithoutBackground;
+    procedure TestPackedChromeShiftsToOrigin;
   end;
 
 implementation
@@ -93,10 +101,10 @@ begin
   f := ParseLogFont('16,0,0,0,400,0,0,0,0,0,0,0,0,Arial');
   AssertEquals(16, f.PixelSize);
 
-  // 字段不足 → 保持默认
+  // 字段不足 → QFont 默认族名，pixelSize 未设
   f := ParseLogFont('-11,0,0');
   AssertEquals(-1, f.PixelSize);
-  AssertEquals('', f.Family);
+  AssertEquals('Sans Serif', f.Family);
 end;
 
 procedure TParserLogicTest.TestParseBool;
@@ -138,6 +146,260 @@ begin
   finally
     FreeSkinData(skin);
     images.Free;
+  end;
+end;
+
+procedure TParserLogicTest.TestEmptyLogFontFaceIsSansSerif;
+var
+  f: TSkinFont;
+begin
+  // Amethystine Visual.xml: Font="-12,...,2," 空 lfFaceName。
+  f := ParseLogFont('-12,0,0,0,400,0,1,0,134,3,2,4,2,');
+  AssertEquals('Sans Serif', f.Family);
+  AssertEquals(12, f.PixelSize);
+  AssertFalse(f.Bold);
+end;
+
+procedure TParserLogicTest.TestNestedMiniWindowKeepsBackground;
+const
+  Xml = '<skin version="2" name="et">' +
+    '<mini_window image="mini-player.bmp">' +
+    '<play position="0,0,9,9" image="play.bmp"/>' +
+    '<mini_window position=""/>' +
+    '</mini_window></skin>';
+var
+  images: TSkinImageMap;
+  skin: TSkinData;
+  bg, play: TBGRABitmap;
+begin
+  images := TSkinImageMap.Create;
+  InitSkinData(skin);
+  try
+    bg := TBGRABitmap.Create(4, 2, BGRA(10, 20, 30, 255));
+    play := TBGRABitmap.Create(9, 9, BGRA(1, 2, 3, 255));
+    images.Add('mini-player.bmp', bg);
+    images.Add('play.bmp', play);
+    AssertTrue(ParseSkinXml(Xml, images, TSkinColor.Make(255, 0, 255), skin));
+    AssertEquals('mini-player.bmp', skin.MiniWindow.BackgroundImageName);
+    AssertTrue(skin.MiniWindow.BackgroundPixmap <> nil);
+    AssertEquals(4, skin.MiniWindow.BackgroundPixmap.Width);
+    AssertEquals(2, skin.MiniWindow.BackgroundPixmap.Height);
+  finally
+    FreeSkinData(skin);
+    images.Free;
+  end;
+end;
+
+procedure WriteBytes(const Path: string; const Data: array of Byte);
+var
+  fs: TFileStream;
+begin
+  fs := TFileStream.Create(Path, fmCreate);
+  try
+    if Length(Data) > 0 then
+      fs.WriteBuffer(Data[0], Length(Data));
+  finally
+    fs.Free;
+  end;
+end;
+
+procedure WriteUtf8File(const Path, Text: string);
+var
+  fs: TFileStream;
+begin
+  fs := TFileStream.Create(Path, fmCreate);
+  try
+    if Text <> '' then
+      fs.WriteBuffer(Text[1], Length(Text));
+  finally
+    fs.Free;
+  end;
+end;
+
+function MakeTempSkinDir: string;
+begin
+  Result := IncludeTrailingPathDelimiter(
+    IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) +
+    'l3tmp-' + IntToStr(Random(100000000)));
+  if not ForceDirectories(Result) then
+    raise Exception.Create('cannot create temp skin dir ' + Result);
+end;
+
+procedure TParserLogicTest.TestRgb555SpriteSplit;
+const
+  Xml = '<skin version="2" name="rgb555" transparent_color="#ff00ff">' +
+    '<player_window image="close.bmp">' +
+    '<close position="0,0,8,1" image="close.bmp"/>' +
+    '</player_window></skin>';
+  Rgb555Sheet: array[0..117] of Byte = (
+    $42, $4D, $76, $00, $00, $00, $00, $00, $00, $00, $36, $00, $00, $00, $28, $00,
+    $00, $00, $20, $00, $00, $00, $01, $00, $00, $00, $01, $00, $10, $00, $00, $00,
+    $00, $00, $40, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00,
+    $00, $00, $00, $00, $00, $00, $FF, $7F, $FF, $7F, $FF, $7F, $FF, $7F, $FF, $7F,
+    $FF, $7F, $1F, $7C, $1F, $7C, $FF, $7F, $FF, $7F, $FF, $7F, $FF, $7F, $FF, $7F,
+    $FF, $7F, $1F, $7C, $1F, $7C, $FF, $7F, $FF, $7F, $FF, $7F, $FF, $7F, $FF, $7F,
+    $FF, $7F, $1F, $7C, $1F, $7C, $FF, $7F, $FF, $7F, $FF, $7F, $FF, $7F, $FF, $7F,
+    $FF, $7F, $1F, $7C, $1F, $7C);
+var
+  dir: string;
+  engine: TSkinEngine;
+  closeElem: PSkinElement;
+begin
+  dir := MakeTempSkinDir;
+  engine := TSkinEngine.Create;
+  try
+    WriteBytes(dir + 'close.bmp', Rgb555Sheet);
+    WriteUtf8File(dir + 'Skin.xml', Xml);
+    if not engine.LoadFromDirectory(dir) then
+      Fail('load 16-bit sheet dir=' + dir +
+        ' bmpExists=' + BoolToStr(FileExists(dir + 'close.bmp'), True) +
+        ' xmlExists=' + BoolToStr(FileExists(dir + 'Skin.xml'), True));
+    closeElem := engine.SkinData.PlayerWindow.FindElement('close');
+    AssertTrue(closeElem <> nil);
+    AssertEquals('opaque-run width', 6, closeElem^.StatePixmaps[0].Width);
+    AssertEquals(4, closeElem^.StateCount);
+    AssertEquals(255, Integer(closeElem^.StatePixmaps[0].GetPixel(0, 0).red));
+  finally
+    engine.Free;
+    DeleteDirectory(dir, False);
+  end;
+end;
+
+procedure TParserLogicTest.TestPngNamedAsBmpFill;
+const
+  Xml = '<skin version="2" name="pngbmp" transparent_color="#ff00ff">' +
+    '<player_window image="volume_fill.bmp">' +
+    '<volume position="0,0,26,7" fill_image="volume_fill.bmp"/>' +
+    '</player_window></skin>';
+var
+  dir: string;
+  src: TBGRABitmap;
+  engine: TSkinEngine;
+  vol: PSkinElement;
+  pngPath: string;
+  pngBytes: TBytes;
+  fs: TFileStream;
+begin
+  dir := MakeTempSkinDir;
+  engine := TSkinEngine.Create;
+  src := TBGRABitmap.Create(26, 7, BGRA(10, 20, 30, 255));
+  try
+    pngPath := dir + 'volume_fill.png';
+    src.SaveToFile(pngPath);
+    fs := TFileStream.Create(pngPath, fmOpenRead or fmShareDenyNone);
+    try
+      SetLength(pngBytes, fs.Size);
+      if fs.Size > 0 then
+        fs.ReadBuffer(pngBytes[0], fs.Size);
+    finally
+      fs.Free;
+    end;
+    WriteBytes(dir + 'volume_fill.bmp', pngBytes);
+    WriteUtf8File(dir + 'Skin.xml', Xml);
+    if not engine.LoadFromDirectory(dir) then
+      Fail('load png-as-bmp dir=' + dir +
+        ' bmpExists=' + BoolToStr(FileExists(dir + 'volume_fill.bmp'), True) +
+        ' xmlExists=' + BoolToStr(FileExists(dir + 'Skin.xml'), True) +
+        ' pngExists=' + BoolToStr(FileExists(pngPath), True));
+    vol := engine.SkinData.PlayerWindow.FindElement('volume');
+    AssertTrue(vol <> nil);
+    AssertTrue('fill loaded', vol^.FillPixmap <> nil);
+    AssertEquals(26, vol^.FillPixmap.Width);
+    AssertEquals(7, vol^.FillPixmap.Height);
+  finally
+    src.Free;
+    engine.Free;
+    DeleteDirectory(dir, False);
+  end;
+end;
+
+procedure TParserLogicTest.TestPlaylistBlendUsesQtRound;
+var
+  skin: TSkinData;
+begin
+  InitSkinData(skin);
+  try
+    skin.PlaylistConfig.HasColorText := True;
+    skin.PlaylistConfig.ColorText := TSkinColor.Make(10, 10, 10);
+    skin.PlaylistConfig.HasColorHilight := True;
+    skin.PlaylistConfig.ColorHilight := TSkinColor.Make(0, 0, 0);
+    skin.PlaylistConfig.HasColorBkgnd := True;
+    skin.PlaylistConfig.ColorBkgnd := TSkinColor.Make(20, 20, 20);
+    ResolvePlaylistTheme(skin);
+    // qRound(10*0.45 + 0*0.55) = qRound(4.5) = 5；Pascal Round(4.5)=4。
+    AssertEquals(5, Integer(skin.PlaylistConfig.ColorDuration.R));
+    AssertEquals(5, Integer(skin.PlaylistConfig.ColorDuration.G));
+    AssertEquals(5, Integer(skin.PlaylistConfig.ColorDuration.B));
+  finally
+    FreeSkinData(skin);
+  end;
+end;
+
+procedure TParserLogicTest.TestEqualizerDefaultSizeWithoutBackground;
+var
+  skin: TSkinData;
+  frame: TBGRABitmap;
+  gains: array[0..9] of Double;
+  i: Integer;
+begin
+  InitSkinData(skin);
+  for i := 0 to 9 do
+    gains[i] := 0;
+  frame := RenderEqualizerWindow(skin, gains, 0, 0, 0, False, '', bvsNormal);
+  try
+    AssertEquals(640, frame.Width);
+    AssertEquals(480, frame.Height);
+  finally
+    frame.Free;
+    FreeSkinData(skin);
+  end;
+end;
+
+procedure TParserLogicTest.TestPackedChromeShiftsToOrigin;
+var
+  skin: TSkinData;
+  frame: TBGRABitmap;
+  px: TBGRAPixel;
+begin
+  InitSkinData(skin);
+  try
+    skin.LyricWindow.BackgroundPixmap :=
+      TBGRABitmap.Create(40, 30, BGRAPixelTransparent);
+    skin.LyricWindow.BackgroundPixmap.FillRect(20, 15, 30, 23,
+      BGRA(10, 20, 30, 255), dmSet);
+    frame := RenderLyricWindow(skin, 40, 30);
+    try
+      px := frame.GetPixel(0, 0);
+      AssertEquals('lyric packed alpha', 255, Integer(px.alpha));
+      AssertEquals('lyric packed red', 10, Integer(px.red));
+      AssertEquals('lyric packed green', 20, Integer(px.green));
+      AssertEquals('lyric packed blue', 30, Integer(px.blue));
+      AssertEquals('lyric packed last chrome', 255,
+        Integer(frame.GetPixel(9, 7).alpha));
+      AssertEquals('lyric old origin cleared', 0,
+        Integer(frame.GetPixel(20, 15).alpha));
+      AssertEquals('lyric outside chrome', 0,
+        Integer(frame.GetPixel(10, 7).alpha));
+    finally
+      frame.Free;
+    end;
+
+    skin.PlaylistWindow.BackgroundPixmap :=
+      TBGRABitmap.Create(24, 18, BGRAPixelTransparent);
+    skin.PlaylistWindow.BackgroundPixmap.FillRect(8, 6, 16, 12,
+      BGRA(40, 50, 60, 255), dmSet);
+    frame := RenderPlaylistWindow(skin, 24, 18);
+    try
+      px := frame.GetPixel(0, 0);
+      AssertEquals('playlist packed alpha', 255, Integer(px.alpha));
+      AssertEquals('playlist packed red', 40, Integer(px.red));
+      AssertEquals('playlist old origin cleared', 0,
+        Integer(frame.GetPixel(8, 6).alpha));
+    finally
+      frame.Free;
+    end;
+  finally
+    FreeSkinData(skin);
   end;
 end;
 

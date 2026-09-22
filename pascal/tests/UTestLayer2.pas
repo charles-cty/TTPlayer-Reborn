@@ -18,7 +18,7 @@ unit UTestLayer2;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry, fpjson, jsonparser,
+  Classes, SysUtils, LazFileUtils, fpcunit, testregistry, fpjson, jsonparser,
   BGRABitmap, BGRABitmapTypes, USkinTypes, USkinLoader, USkinRender;
 
 type
@@ -152,6 +152,55 @@ begin
   obj.Add('w', W);
   obj.Add('h', H);
   Masks.Add(obj);
+end;
+
+// FrameDumper QWidget::render packs opaque chrome to (0,0). Masks.json still
+// uses Skin.xml coordinates, so shift them by the background's opaque origin.
+function OpaqueOrigin(Bmp: TBGRABitmap): TPoint;
+var
+  x, y: Integer;
+  p: PBGRAPixel;
+  found: Boolean;
+begin
+  Result.X := 0;
+  Result.Y := 0;
+  if Bmp = nil then Exit;
+  found := False;
+  Result.X := Bmp.Width;
+  Result.Y := Bmp.Height;
+  for y := 0 to Bmp.Height - 1 do
+  begin
+    p := Bmp.ScanLine[y];
+    for x := 0 to Bmp.Width - 1 do
+    begin
+      if p^.alpha <> 0 then
+      begin
+        found := True;
+        if x < Result.X then Result.X := x;
+        if y < Result.Y then Result.Y := y;
+      end;
+      Inc(p);
+    end;
+  end;
+  if not found then
+  begin
+    Result.X := 0;
+    Result.Y := 0;
+  end;
+end;
+
+procedure TranslateMaskRects(Masks: TJSONArray; Dx, Dy: Integer);
+var
+  i: Integer;
+  r: TJSONObject;
+begin
+  if (Masks = nil) or ((Dx = 0) and (Dy = 0)) then Exit;
+  for i := 0 to Masks.Count - 1 do
+  begin
+    r := TJSONObject(Masks[i]);
+    r.Integers['x'] := r.Integers['x'] + Dx;
+    r.Integers['y'] := r.Integers['y'] + Dy;
+  end;
 end;
 
 // FrameDumper 以皮肤 baseSize 捕帧。扩进比较掩码：
@@ -335,7 +384,8 @@ begin
         artifactDir := RepoRoot + 'build' + PathDelim + 'linux' + PathDelim;
 {$ENDIF}
         artifactDir := artifactDir + 'tests' + PathDelim + 'artifacts' +
-          PathDelim + 'layer2' + PathDelim + SkinName;
+          PathDelim + 'layer2' + PathDelim +
+          GoldenIdForSkin(SkinName + '.skn');
         ForceDirectories(artifactDir);
         expected.SaveToFile(artifactDir + PathDelim + FrameName + '.expected.png');
         Actual.SaveToFile(artifactDir + PathDelim + FrameName + '.actual.png');
@@ -351,6 +401,55 @@ begin
   end;
 end;
 
+// FrameDumper 按 SkinSlider 创建序（XML 中 preamp/balance/surround/eqfactor）
+// 应用 pattern[i % 12]；surround 的范围是 0..100，会夹取。
+procedure ApplyFrameDumperEqPattern(const Skin: TSkinData;
+  var EqGains: array of Double; out Preamp, Balance, Surround: Double);
+const
+  Pattern: array[0..11] of Double = (
+    -12.0, -6.0, 0.0, 6.0, 12.0, 6.0, 0.0, -6.0, -12.0, 0.0, 6.0, 3.0);
+var
+  i, band, idx: Integer;
+  elemType: string;
+begin
+  for i := 0 to High(EqGains) do
+    EqGains[i] := 0;
+  Preamp := 0;
+  Balance := 0;
+  Surround := 0;
+  idx := 0;
+  for i := 0 to High(Skin.EqualizerWindow.Elements) do
+  begin
+    elemType := Skin.EqualizerWindow.Elements[i].ElementType;
+    if SameText(elemType, 'preamp') then
+    begin
+      Preamp := Pattern[idx mod 12];
+      Inc(idx);
+    end
+    else if SameText(elemType, 'balance') then
+    begin
+      Balance := Pattern[idx mod 12];
+      Inc(idx);
+    end
+    else if SameText(elemType, 'surround') then
+    begin
+      Surround := Pattern[idx mod 12];
+      if Surround < 0 then Surround := 0;
+      if Surround > 100 then Surround := 100;
+      Inc(idx);
+    end
+    else if SameText(elemType, 'eqfactor') then
+    begin
+      for band := 0 to 9 do
+      begin
+        if band <= High(EqGains) then
+          EqGains[band] := Pattern[idx mod 12];
+        Inc(idx);
+      end;
+    end;
+  end;
+end;
+
 procedure TSnapshotTest.CheckSkinFrames(const SkinName: string);
 var
   engine: TSkinEngine;
@@ -358,9 +457,11 @@ var
   masks, eqMasks, lyricMasks, plMasks: TJSONArray;
   sknPath: string;
   eqGains: array[0..9] of Double;
+  preampGain, balanceValue, surroundValue: Double;
+  origin: TPoint;
 begin
   sknPath := SkinRoot + SkinName + '.skn';
-  if not FileExists(sknPath) then Exit;
+  if not FileExistsUTF8(sknPath) then Exit;
   // Qt could not produce a golden for some legacy skins; those are reported
   // by gen-golden/errors and are not render-comparable here.
   if not DirectoryExists(GoldenRoot + 'frames' + PathDelim +
@@ -413,9 +514,8 @@ begin
 
     // ── 均衡器帧 ──────────────────────────────────────────────────────
     // equalizer__default: 初始状态（gains=0, preamp=0, balance=0, surround=0）。
-    // equalizer__sliders: 各频段错落图案（对应 FrameDumper 的确定性 pattern[]）。
-    //   pattern = {-12,-6,0,6,12,6,0,-6,-12,0,6,3}，按 XML slider 顺序应用：
-    //   balance(-12), surround(clamp→0), preamp(0), eqfactor[0..9]
+    // equalizer__sliders: FrameDumper 对 findChildren<SkinSlider*>（XML 创建序）
+    // 依次 setValue(pattern[i % 12])，pattern = {-12,-6,0,6,12,6,0,-6,-12,0,6,3}。
     eqMasks := LoadMaskSection(SkinName, 'equalizer');
     try
       // equalizer__default: EQ 初始状态 — Qt 默认均衡器关闭（EqEnabled=False）
@@ -428,13 +528,10 @@ begin
         frame.Free;
       end;
 
-      // equalizer__sliders: EQ 仍关闭（FrameDumper 仅移动滑块，不改变开关状态）
-      eqGains[0] :=  6.0;  eqGains[1] := 12.0;  eqGains[2] :=  6.0;
-      eqGains[3] :=  0.0;  eqGains[4] := -6.0;  eqGains[5] := -12.0;
-      eqGains[6] :=  0.0;  eqGains[7] :=  6.0;  eqGains[8] :=  3.0;
-      eqGains[9] := -12.0;
+      ApplyFrameDumperEqPattern(engine.SkinData, eqGains, preampGain,
+        balanceValue, surroundValue);
       frame := RenderEqualizerWindow(engine.SkinData,
-        eqGains, 0.0, -12.0, 0.0, False, '', bvsNormal);
+        eqGains, preampGain, balanceValue, surroundValue, False, '', bvsNormal);
       try
         CompareFrame(SkinName, 'equalizer__sliders', frame, eqMasks);
       finally
@@ -452,6 +549,8 @@ begin
     try
       if engine.SkinData.LyricWindow.BackgroundPixmap <> nil then
       begin
+        origin := OpaqueOrigin(engine.SkinData.LyricWindow.BackgroundPixmap);
+        TranslateMaskRects(lyricMasks, -origin.X, -origin.Y);
         frame := RenderLyricWindow(engine.SkinData,
           engine.SkinData.LyricWindow.BackgroundPixmap.Width,
           engine.SkinData.LyricWindow.BackgroundPixmap.Height);
@@ -477,6 +576,8 @@ begin
         ExpandPlaylistCompareMasks(plMasks, engine.SkinData,
           engine.SkinData.PlaylistWindow.BackgroundPixmap.Width,
           engine.SkinData.PlaylistWindow.BackgroundPixmap.Height);
+        origin := OpaqueOrigin(engine.SkinData.PlaylistWindow.BackgroundPixmap);
+        TranslateMaskRects(plMasks, -origin.X, -origin.Y);
         frame := RenderPlaylistWindow(engine.SkinData,
           engine.SkinData.PlaylistWindow.BackgroundPixmap.Width,
           engine.SkinData.PlaylistWindow.BackgroundPixmap.Height);

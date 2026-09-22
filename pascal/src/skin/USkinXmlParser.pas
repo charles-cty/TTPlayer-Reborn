@@ -188,7 +188,8 @@ var
   lfHeight, px, lfWeight: Integer;
   faceName: string;
 begin
-  Result := TSkinFont.Make('');
+  // QFont() 默认族名为 "Sans Serif"；空 lfFaceName 时 Qt 仍导出该默认值。
+  Result := TSkinFont.Make('Sans Serif');
   parts := LogFontStr.Split([',']);
   if Length(parts) >= 14 then
   begin
@@ -734,6 +735,11 @@ begin
     Exit;
   end;
 
+  // Qt parse() 只把 <skin> 的直接子节点当窗口；嵌套的 <mini_window/> 是普通元素。
+  if (Node.ParentNode = nil) or (Node.ParentNode.NodeType <> ELEMENT_NODE) or
+     (string(TDOMElement(Node.ParentNode).TagName) <> 'skin') then
+    Exit;
+
   wnd := nil;
   if name = 'player_window' then wnd := @ctx.Skin^.PlayerWindow
   else if name = 'mini_window' then wnd := @ctx.Skin^.MiniWindow
@@ -989,6 +995,15 @@ end;
 
 { 播放列表配色推导（对应 SkinEngine.cpp 匿名命名空间 + resolvePlaylistTheme） }
 
+// Qt qRound：一半远离 0（正数 0.5 → 1）。Pascal Round 是银行家舍入。
+function QtRound(X: Double): Integer;
+begin
+  if X >= 0 then
+    Result := Trunc(X + 0.5)
+  else
+    Result := Trunc(X - 0.5);
+end;
+
 function BlendColors(const A, B: TSkinColor; RatioToB: Double): TSkinColor;
 var
   clamped, inv: Double;
@@ -998,16 +1013,16 @@ begin
   if clamped > 1 then clamped := 1;
   inv := 1.0 - clamped;
   Result := TSkinColor.Make(
-    Round(A.R * inv + B.R * clamped),
-    Round(A.G * inv + B.G * clamped),
-    Round(A.B * inv + B.B * clamped));
+    QtRound(A.R * inv + B.R * clamped),
+    QtRound(A.G * inv + B.G * clamped),
+    QtRound(A.B * inv + B.B * clamped));
 end;
 
 function AdjustBrightness(const C: TSkinColor; Factor: Double): TSkinColor;
 
   function Scale(Channel: Integer): Integer;
   begin
-    Result := Round(Channel * Factor);
+    Result := QtRound(Channel * Factor);
     if Result < 0 then Result := 0;
     if Result > 255 then Result := 255;
   end;
@@ -1018,7 +1033,7 @@ end;
 
 function ColorLuma(const C: TSkinColor): Integer;
 begin
-  Result := Round(C.R * 0.299 + C.G * 0.587 + C.B * 0.114);
+  Result := QtRound(C.R * 0.299 + C.G * 0.587 + C.B * 0.114);
 end;
 
 function ContrastingTextColor(const Background: TSkinColor): TSkinColor;

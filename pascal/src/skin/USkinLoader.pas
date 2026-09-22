@@ -46,7 +46,8 @@ implementation
 
 uses
   StrUtils, Character, LazUTF8, LConvEncoding, Zipper, FileUtil, LazFileUtils,
-  BGRABitmap, FPImage, BGRAReadBMP, BGRAReadPng, BGRAReadJpeg;
+  BGRABitmap, BGRABitmapTypes, BGRAIconCursor, FPImage, BGRAReadBMP,
+  BGRAReadPng, BGRAReadJpeg;
 
 function IsBmpQuantizedColorFormat(const FilePath: string): Boolean;
 var
@@ -70,6 +71,143 @@ begin
   finally
     stream.Free;
   end;
+end;
+
+// Qt QImage RGB555→ARGB32 用 (x<<3)|(x>>2)。BGRAReaderBMP 只做 x<<3（248 vs 255）。
+procedure ExpandRgb555Channels(Bmp: TBGRABitmap);
+var
+  x, y: Integer;
+  p: PBGRAPixel;
+begin
+  if Bmp = nil then Exit;
+  for y := 0 to Bmp.Height - 1 do
+  begin
+    p := Bmp.ScanLine[y];
+    for x := 0 to Bmp.Width - 1 do
+    begin
+      p^.red := p^.red or (p^.red shr 5);
+      p^.green := p^.green or (p^.green shr 5);
+      p^.blue := p^.blue or (p^.blue shr 5);
+      Inc(p);
+    end;
+  end;
+  Bmp.InvalidateBitmap;
+end;
+
+// QImage(path) 按文件内容识别格式，所以 volume_fill.bmp 实际是 PNG 也能加载。
+function LoadSkinBitmap(const FilePath: string): TBGRABitmap;
+var
+  magic: array[0..7] of Byte;
+  n: Integer;
+  stream, srcStream, dstStream: TFileStream;
+  reader: TFPCustomImageReader;
+  isPng, isJpeg, isBmp, isIco: Boolean;
+  tmp: string;
+  ico: TBGRAIconCursor;
+  icoBmp: TBGRACustomBitmap;
+begin
+  Result := nil;
+  FillChar(magic, SizeOf(magic), 0);
+  n := 0;
+  stream := TFileStream.Create(FilePath, fmOpenRead or fmShareDenyNone);
+  try
+    n := stream.Size;
+    if n > SizeOf(magic) then
+      n := SizeOf(magic);
+    if n > 0 then
+      stream.ReadBuffer(magic, n);
+  finally
+    stream.Free;
+  end;
+  isPng := (n >= 8) and (magic[0] = $89) and (magic[1] = Ord('P')) and
+    (magic[2] = Ord('N')) and (magic[3] = Ord('G'));
+  isJpeg := (n >= 2) and (magic[0] = $FF) and (magic[1] = $D8);
+  isBmp := (n >= 2) and (magic[0] = Ord('B')) and (magic[1] = Ord('M'));
+  isIco := (n >= 4) and (magic[0] = 0) and (magic[1] = 0) and
+    (magic[2] = 1) and (magic[3] = 0);
+
+  // Qt QImage ICO 取目录第一帧（常见 16×16），不是最大尺寸。
+  if isIco then
+  begin
+    ico := nil;
+    try
+      ico := TBGRAIconCursor.Create(ifIco);
+      ico.LoadFromFile(FilePath);
+      if ico.Count > 0 then
+      begin
+        icoBmp := ico.GetBitmap(0);
+        if icoBmp is TBGRABitmap then
+          Result := TBGRABitmap(icoBmp)
+        else if icoBmp <> nil then
+        begin
+          Result := TBGRABitmap.Create(icoBmp);
+          icoBmp.Free;
+        end;
+      end;
+    except
+      FreeAndNil(Result);
+    end;
+    ico.Free;
+    Exit;
+  end;
+
+  if isPng or isJpeg then
+  begin
+    // QImage sniffs content; BGRABitmap.Create(filename) keys off the
+    // extension, so a PNG stored as *.bmp needs a matching suffix.
+    tmp := FilePath + '.sniff';
+    if isPng then
+      tmp := tmp + '.png'
+    else
+      tmp := tmp + '.jpg';
+    srcStream := TFileStream.Create(FilePath, fmOpenRead or fmShareDenyNone);
+    try
+      dstStream := TFileStream.Create(tmp, fmCreate);
+      try
+        if srcStream.Size > 0 then
+          dstStream.CopyFrom(srcStream, srcStream.Size);
+      finally
+        dstStream.Free;
+      end;
+    finally
+      srcStream.Free;
+    end;
+    try
+      Result := TBGRABitmap.Create(tmp);
+    except
+      Result := nil;
+    end;
+    DeleteFile(tmp);
+    Exit;
+  end;
+
+  if not isBmp then
+  begin
+    try
+      Result := TBGRABitmap.Create(FilePath);
+    except
+      Result := nil;
+    end;
+    Exit;
+  end;
+
+  reader := nil;
+  try
+    reader := TBGRAReaderBMP.Create;
+    TBGRAReaderBMP(reader).TransparencyOption := toOpaque;
+    Result := TBGRABitmap.Create;
+    stream := TFileStream.Create(FilePath, fmOpenRead or fmShareDenyNone);
+    try
+      Result.LoadFromStream(stream, reader);
+    finally
+      stream.Free;
+    end;
+    if IsBmpQuantizedColorFormat(FilePath) then
+      ExpandRgb555Channels(Result);
+  except
+    FreeAndNil(Result);
+  end;
+  reader.Free;
 end;
 
 { XML 清洗：对应 SkinEngine.cpp 匿名命名空间的 sanitize 系列函数 }
@@ -503,7 +641,7 @@ var
   encoded: Boolean;
 begin
   Result := '';
-  if not FileExists(Path) then Exit;
+  if not FileExistsUTF8(Path) then Exit;
 
   fs := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
   try
@@ -558,7 +696,7 @@ var
   rec: TSearchRec;
 begin
   Result := '';
-  if FileExists(DirPath + PathDelim + FileName) then
+  if FileExistsUTF8(DirPath + PathDelim + FileName) then
     Exit(DirPath + PathDelim + FileName);
 
   if FindFirst(DirPath + PathDelim + '*', faAnyFile, rec) = 0 then
@@ -578,9 +716,9 @@ end;
 function TSkinEngine.LoadImages(const DirPath: string; Images: TSkinImageMap): Boolean;
 var
   rec: TSearchRec;
-  ext: string;
+  ext, path: string;
   bmp: TBGRABitmap;
-  reader: TFPCustomImageReader;
+  quantized: Boolean;
 begin
   if FindFirst(DirPath + PathDelim + '*', faAnyFile, rec) = 0 then
   begin
@@ -590,28 +728,11 @@ begin
         ext := LowerCase(ExtractFileExt(rec.Name));
         if (ext = '.bmp') or (ext = '.png') or (ext = '.jpg') or (ext = '.ico') then
         begin
-          try
-            if ext = '.bmp' then
-            begin
-              // Qt 读 BMP 一律视为不透明（即使 32 位文件带全零 alpha 通道）。
-              // BGRABitmap 默认 toTransparent 会把这类文件读成全透明，须显式 toOpaque。
-              reader := TBGRAReaderBMP.Create;
-              try
-                TBGRAReaderBMP(reader).TransparencyOption := toOpaque;
-                bmp := TBGRABitmap.Create;
-                bmp.LoadFromFile(DirPath + PathDelim + rec.Name, reader);
-              finally
-                reader.Free;
-              end;
-            end
-            else
-              bmp := TBGRABitmap.Create(DirPath + PathDelim + rec.Name);
-            Images.Add(rec.Name, bmp,
-              (ext = '.bmp') and IsBmpQuantizedColorFormat(
-                DirPath + PathDelim + rec.Name));
-          except
-            // 与 Qt 版一致：加载失败的图片静默跳过
-          end;
+          path := DirPath + PathDelim + rec.Name;
+          bmp := LoadSkinBitmap(path);
+          if bmp = nil then Continue;
+          quantized := (ext = '.bmp') and IsBmpQuantizedColorFormat(path);
+          Images.Add(rec.Name, bmp, quantized);
         end;
       until FindNext(rec) <> 0;
     finally
@@ -701,7 +822,7 @@ begin
     // （Qt 版的 sidecarConfigCandidates 有一批历史遗留路径，经去重后
     // 对仓库内皮肤实际生效的只有这一种。）
     sidecarPath := SknPath + '.xml';
-    if FileExists(sidecarPath) then
+    if FileExistsUTF8(sidecarPath) then
       LoadSkinConfigXml(sidecarPath);
 
     ResolvePlaylistTheme(FSkin);

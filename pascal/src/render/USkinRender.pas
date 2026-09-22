@@ -1384,14 +1384,15 @@ var
   gain: Double;
 begin
   wnd := Skin.EqualizerWindow;
+  // Qt QWidget 默认客户区 640×480；无背景图时 FrameDumper 捕的就是这个尺寸。
   if wnd.BackgroundPixmap = nil then
-    Exit(TBGRABitmap.Create(1, 1, BGRAPixelTransparent));
-
-  Result := TBGRABitmap.Create(wnd.BackgroundPixmap.Width,
-    wnd.BackgroundPixmap.Height, BGRAPixelTransparent);
-
-  // 背景
-  QtPutImage(Result, 0, 0, wnd.BackgroundPixmap);
+    Result := TBGRABitmap.Create(640, 480, BGRAPixelTransparent)
+  else
+  begin
+    Result := TBGRABitmap.Create(wnd.BackgroundPixmap.Width,
+      wnd.BackgroundPixmap.Height, BGRAPixelTransparent);
+    QtPutImage(Result, 0, 0, wnd.BackgroundPixmap);
+  end;
 
   // title：直接按 position 绘制，不做 hover/press 状态变换
   elem := wnd.FindElement('title');
@@ -1626,26 +1627,36 @@ begin
   cdw    := DestW - left - right;
   cdh    := DestH - top - bottom;
 
+  // QPixmap::copy of an empty rect is a null pixmap; skip those GetPart calls
+  // so a 0-wide/0-tall slice cannot inject leftover pixels.
   // ── 四角（原样贴，不拉伸）────────────────────────────────────────
-  // topLeft
-  slice := Base.GetPart(Classes.Rect(0, 0, left, top));
-  try QtPutImage(Dest, 0, 0, slice); finally slice.Free; end;
-  // topRight
-  slice := Base.GetPart(Classes.Rect(bgW - right, 0, bgW, top));
-  try QtPutImage(Dest, DestW - right, 0, slice); finally slice.Free; end;
-  // bottomLeft
-  slice := Base.GetPart(Classes.Rect(0, bgH - bottom, left, bgH));
-  try QtPutImage(Dest, 0, DestH - bottom, slice); finally slice.Free; end;
-  // bottomRight
-  slice := Base.GetPart(Classes.Rect(bgW - right, bgH - bottom, bgW, bgH));
-  try QtPutImage(Dest, DestW - right, DestH - bottom, slice); finally slice.Free; end;
+  if (left > 0) and (top > 0) then
+  begin
+    slice := Base.GetPart(Classes.Rect(0, 0, left, top));
+    try QtPutImage(Dest, 0, 0, slice); finally slice.Free; end;
+  end;
+  if (right > 0) and (top > 0) then
+  begin
+    slice := Base.GetPart(Classes.Rect(bgW - right, 0, bgW, top));
+    try QtPutImage(Dest, DestW - right, 0, slice); finally slice.Free; end;
+  end;
+  if (left > 0) and (bottom > 0) then
+  begin
+    slice := Base.GetPart(Classes.Rect(0, bgH - bottom, left, bgH));
+    try QtPutImage(Dest, 0, DestH - bottom, slice); finally slice.Free; end;
+  end;
+  if (right > 0) and (bottom > 0) then
+  begin
+    slice := Base.GetPart(Classes.Rect(bgW - right, bgH - bottom, bgW, bgH));
+    try QtPutImage(Dest, DestW - right, DestH - bottom, slice); finally slice.Free; end;
+  end;
 
   // ── 四边 + 中心 ───────────────────────────────────────────────────
   // ExclusiveMids=True：与 Qt PlaylistWindow::rebuildBackground 一致，
   // topMid/bottomMid 宽 = DestW-left-right，不伸进四角。
   // ExclusiveMids=False：topMid/bottomMid 铺到 DestW，之后角片覆盖，
   // 透明角由中段瓦片透出（Lyric 路径）。
-  if top > 0 then
+  if (top > 0) and (cw > 0) then
   begin
     slice := Base.GetPart(Classes.Rect(cx, 0, cx + cw, top));
     try
@@ -1657,7 +1668,7 @@ begin
       else PutScaled(cx, 0, slice, dstRect.Right - dstRect.Left, top);
     finally slice.Free; end;
   end;
-  if bottom > 0 then
+  if (bottom > 0) and (cw > 0) then
   begin
     slice := Base.GetPart(Classes.Rect(cx, bgH - bottom, cx + cw, bgH));
     try
@@ -1671,7 +1682,7 @@ begin
   end;
 
   // midLeft / midRight / center: top 到 DestH-bottom
-  if left > 0 then
+  if (left > 0) and (ch > 0) then
   begin
     slice := Base.GetPart(Classes.Rect(0, cy, left, cy + ch));
     try
@@ -1680,7 +1691,7 @@ begin
       else PutScaled(0, cy, slice, left, cdh);
     finally slice.Free; end;
   end;
-  if right > 0 then
+  if (right > 0) and (ch > 0) then
   begin
     slice := Base.GetPart(Classes.Rect(bgW - right, cy, bgW, cy + ch));
     try
@@ -1691,7 +1702,7 @@ begin
   end;
 
   // center: left..DestW-right, top..DestH-bottom
-  if (cdw > 0) and (cdh > 0) then
+  if (cdw > 0) and (cdh > 0) and (cw > 0) and (ch > 0) then
   begin
     slice := Base.GetPart(Classes.Rect(cx, cy, cx + cw, cy + ch));
     try
@@ -1709,32 +1720,66 @@ begin
   // ExclusiveMids 路径角片已在最前绘制且中段不侵入，无需再盖一次。
   if not ExclusiveMids then
   begin
-    if left > 0 then
+    if (left > 0) and (top > 0) then
     begin
-      if top > 0 then
-      begin
-        slice := Base.GetPart(Classes.Rect(0, 0, left, top));
-        try QtPutImage(Dest, 0, 0, slice); finally slice.Free; end;
-      end;
-      if bottom > 0 then
-      begin
-        slice := Base.GetPart(Classes.Rect(0, bgH - bottom, left, bgH));
-        try QtPutImage(Dest, 0, DestH - bottom, slice); finally slice.Free; end;
-      end;
+      slice := Base.GetPart(Classes.Rect(0, 0, left, top));
+      try QtPutImage(Dest, 0, 0, slice); finally slice.Free; end;
     end;
-    if right > 0 then
+    if (left > 0) and (bottom > 0) then
     begin
-      if top > 0 then
-      begin
-        slice := Base.GetPart(Classes.Rect(bgW - right, 0, bgW, top));
-        try QtPutImage(Dest, DestW - right, 0, slice); finally slice.Free; end;
-      end;
-      if bottom > 0 then
-      begin
-        slice := Base.GetPart(Classes.Rect(bgW - right, bgH - bottom, bgW, bgH));
-        try QtPutImage(Dest, DestW - right, DestH - bottom, slice); finally slice.Free; end;
-      end;
+      slice := Base.GetPart(Classes.Rect(0, bgH - bottom, left, bgH));
+      try QtPutImage(Dest, 0, DestH - bottom, slice); finally slice.Free; end;
     end;
+    if (right > 0) and (top > 0) then
+    begin
+      slice := Base.GetPart(Classes.Rect(bgW - right, 0, bgW, top));
+      try QtPutImage(Dest, DestW - right, 0, slice); finally slice.Free; end;
+    end;
+    if (right > 0) and (bottom > 0) then
+    begin
+      slice := Base.GetPart(Classes.Rect(bgW - right, bgH - bottom, bgW, bgH));
+      try QtPutImage(Dest, DestW - right, DestH - bottom, slice); finally slice.Free; end;
+    end;
+  end;
+end;
+
+// QWidget::render of a WA_TranslucentBackground lyric/playlist window places
+// the opaque bounding box at (0,0) in the captured frame (FrameDumper). Skins
+// that pack chrome into a corner of a color-keyed canvas otherwise compare as
+// a pure translation against Qt golden.
+procedure PackOpaqueToOrigin(Bmp: TBGRABitmap);
+var
+  minX, minY, maxX, maxY, x, y: Integer;
+  p: PBGRAPixel;
+  part: TBGRABitmap;
+begin
+  if Bmp = nil then Exit;
+  minX := Bmp.Width;
+  minY := Bmp.Height;
+  maxX := -1;
+  maxY := -1;
+  for y := 0 to Bmp.Height - 1 do
+  begin
+    p := Bmp.ScanLine[y];
+    for x := 0 to Bmp.Width - 1 do
+    begin
+      if p^.alpha <> 0 then
+      begin
+        if x < minX then minX := x;
+        if y < minY then minY := y;
+        if x > maxX then maxX := x;
+        if y > maxY then maxY := y;
+      end;
+      Inc(p);
+    end;
+  end;
+  if (maxX < 0) or ((minX = 0) and (minY = 0)) then Exit;
+  part := Bmp.GetPart(Classes.Rect(minX, minY, maxX + 1, maxY + 1));
+  try
+    Bmp.Fill(BGRAPixelTransparent);
+    QtPutImage(Bmp, 0, 0, part);
+  finally
+    part.Free;
   end;
 end;
 
@@ -1791,6 +1836,8 @@ begin
       elem^.Align, bounds.W, bounds.H);
     DrawButton(Result, elem^, drawRect, bvsNormal);
   end;
+
+  PackOpaqueToOrigin(Result);
 end;
 
 // kToolbarGroupCount 与 Qt PlaylistWindow::kToolbarGroupCount 一致。
@@ -1912,6 +1959,8 @@ begin
     closeBounds.X := closeX;
     DrawButton(Result, closeElem^, closeBounds, bvsNormal);
   end;
+
+  PackOpaqueToOrigin(Result);
 end;
 
 end.

@@ -151,6 +151,11 @@ int run(const QString& skinPath, const QString& outDir) {
     {
         EqualizerWindow eq(&audio);
         eq.applySkin(skin);
+        // 无背景图时 QWidget 默认 640×480；setValue 后部分皮肤会缩成滑块包围盒
+        //（气球皮肤 351×135）。钉住默认尺寸，与 Pascal 无背景回退一致。
+        if (skin.equalizerWindow.backgroundPixmap.isNull()) {
+            eq.setFixedSize(640, 480);
+        }
         dump(&eq, QStringLiteral("equalizer__default"));
 
         // 各频段滑块错落图案：确定性的固定序列（直接驱动子控件视觉，不触发音频）
@@ -158,6 +163,9 @@ int run(const QString& skinPath, const QString& outDir) {
         const double pattern[] = {-12.0, -6.0, 0.0, 6.0, 12.0, 6.0, 0.0, -6.0, -12.0, 0.0, 6.0, 3.0};
         for (int i = 0; i < sliders.size(); ++i) {
             sliders[i]->setValue(pattern[i % 12]);
+        }
+        if (skin.equalizerWindow.backgroundPixmap.isNull()) {
+            eq.setFixedSize(640, 480);
         }
         dump(&eq, QStringLiteral("equalizer__sliders"));
     }

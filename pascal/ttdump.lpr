@@ -9,7 +9,7 @@ program ttdump;
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   UHeapTraceConfig,
-  Classes, SysUtils, USkinTypes, USkinLoader, USkinJsonDump;
+  Classes, SysUtils, LazFileUtils, USkinTypes, USkinLoader, USkinJsonDump;
 
 var
   skinPath, outPath, json: string;
@@ -27,7 +27,7 @@ begin
   skinPath := ParamStr(1);
   outPath := ParamStr(2);
 
-  if not (FileExists(skinPath) or DirectoryExists(skinPath)) then
+  if not (FileExistsUTF8(skinPath) or DirectoryExistsUTF8(skinPath)) then
   begin
     WriteLn(ErrOutput, 'ttdump: skin path does not exist: ', skinPath);
     ExitCode := 2;
